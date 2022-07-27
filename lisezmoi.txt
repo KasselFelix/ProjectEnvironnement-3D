@@ -1,0 +1,87 @@
+### LU2IN013
+### Archive World-Of-Cells, version allegee
+### contact: nicolas.bredeche(at)isir.upmc.fr
+# historique 
+# - 2013-00-00: release
+# - 2020-02-13: mise a jour, correction bug arbre, ajout tuto compilation en ligne de commande
+# - 2020-02-20: mise a jour tutorial Eclipse
+
+
+Ce repertoire contient une version simplifiee de World-Of-Cells.
+
+Pour commencer:
+- lancer applications.simpleworld.MyEcosystem
+- pendant l'execution, appuyer sur "h" pour afficher l'aide dans la console
+- etudier les codes source du package applications.simpleworld
+
+Ressources:
+- la classe World et WorldOfTrees contiennent l'essentiel des elements pour creer votre monde
+- le package objects contient la definition de quelques objets presents dans l'environnement
+- la classe PerlinNoiseLandscapeGenerator est a ecrire
+
+=-=-=-=-=
+
+Dependances:
+- Java
+- JOGL
+
+=-=-=-=-=
+
+Comment compiler et executer en ligne de commande:
+
+recuperer WorldOfCells.zip et JOGL.zip (backup local sur Moodle)
+desarchiver WorldOfCells.zip
+desarchiver JOGL.zip
+cd WorldOfCells-LI260
+ln -s ../JOGL/jar
+cd src
+cp ../*.png .
+javac -classpath "../jar/gluegen-rt.jar:../jar/jogl-all.jar:." applications/simpleworld/*.java
+java -classpath "../jar/gluegen-rt.jar:../jar/jogl-all.jar:." applications/simpleworld/MyEcosystem
+
+=-=-=-=-= 
+
+Comment compiler et executer en utilisant l'IDE Eclipse :
+
+## Eclipse Java EE IDE for Web Developers. Version: Oxygen.2 Release (4.7.2)
+
+A partir du repertoire Workspace d'Eclipse (exemple: "~/eclipse-workspace")
+1. desarchiver JOGL.zip
+2. desarchiver WorldOfCells-LU2IN013.zip
+
+Lancer Eclipse ("./eclipse"), puis:
+3. Fichier -> Java Projet -> Project name, entrez "JOGL" puis Finish
+4. Fichier -> Java Project -> Project name, Entrez "WorldOfCells-LU2IN013" puis Finish
+5. Clic droit sur WorldOfCells-LU2IN013 -> Properties -> Java Build Path -> Onglet Projects -> Add: ajouter JOGL, puis "Apply and Close"
+
+Pour tester:
+6. clic droit sur src/application/simpleworld/MyEcosystem.java du projet "WorldOfCells-LU2IN013" -> Run as -> Java Application
+
+C'est termine
+
+## Version plus ancienne d'Eclipse
+
+Suivez les instructions suivantes (ou telechargez le tutorial Tutorial-JavaOpenGL.pdf):
+
+1.a decompressez l'archive WorldOfCells dans votre workspace Eclipse, 
+1.b creez un nouveau projet du même nom que le repertoire contenant les fichiers ("WorldOfCells-LU2IN013")
+
+2. Telechargez le [[http://pages.isir.upmc.fr/~bredeche/Teaching/2i013/Ressources/JOGL.zip|backup local]] de JOGL
+2.a Decompressez l'archive '''dans le workspace''' (mais pas dans le repertoire du projet)
+2.b Dans Eclipse: ''Window->Preferences->Java->BuildPath->UserLibraries'', choisir ''new'', puis tapez ''jogl-2.0''
+2.c Choisir ''Add external JARs'', puis selectionner dans le dossier JOGL: ''jar/gluegen-rt.jar, jar/jogl-all.jar, jar/atomic/nativewindow-core.jar, jar/atomic/newt-core.jar''
+2.d Pour chaque fichier JAR, editez la ''native library location'', puis ''external folder'', et mettre le chemin vers ''JOGL/lib/linux-amd64''
+2.e Puis ''OK''
+
+3. Ajouter la bibliotheque au projet
+3.a clic-droit sur le projet: ''Build Path -> Configure Build Path''
+3.b Onglet ''Libraries'', puis ''Add Libraries'', choisir ''User Library'', cocher ''jogl-2.0'', puis bouton ''Finish''
+
+Etape 3 pour des versions plus recentes d'Eclipse, ou "Build Path" n'existe pas:
+3. Ajouter la bibliotheque au projet
+3.a Configure -> Java Build Path -> onglet Librairies -> Add external JAR -> ajouter les 4 JAR cites precedemment dans Librairies (cf. etape 2.c)
+
+## Probleme d'affichage des arbres
+
+Probleme possible sur certaines machines: les arbres ne s'affichent pas sur votre machine
+- dans src/Objects/Tree.java, il y a 8 lignes commençant par "gl.glVertex3f(...)". Il suffit d'inverser les lignes paires et impaires (1 et 2, 3 et 4, etc.)

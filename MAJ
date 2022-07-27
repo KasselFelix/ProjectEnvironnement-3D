@@ -1,0 +1,53 @@
+
+MAJ:
+
+08/04/2020:
+
+maj object.Tree
+maj ForestCA
+
+maj WorldOfcells:
+	ajout de :
+		abstract public double distance( int ib,int jb,int ia,int ja);//calcul distance dans un monde torique
+		abstract public void checkBounds( int __x , int __y );// verifie une coordonnee
+
+maj Landscape:
+
+	ajout de : 
+		int jour=0;// 0:nuit / 1:jour
+		int dureeJour=2000;// nombre d'iteration d'un jour et d'une nuit
+		int transitionJour=500;// nombre d'iteration de la transition entre jour et nuit
+	
+	modification de :
+		heightFactor = 32.0f; //64.0f; // was: 32.0f;
+        heightBooster = 2.0; // default: 2.0 // 6.0 makes nice high mountains.
+        offset =(float)(dxView*-2+10); // was: -40.//200
+
+maj LaveCA:
+	
+	ajout de:
+		step()
+		init()
+	LaveBlock.java
+	
+maj world:
+	modifivation de :
+		abstract public void displayObjectTree(World _myWorld, GL2 gl, int cellState, int x,
+				int y, double height, float offset,
+				float stepX, float stepY, float lenX, float lenY,
+				float normalizeHeight);
+		
+		abstract public void displayObjectLave(World _myWorld, GL2 gl, int cellState, int x,
+				int y, double height, float offset,
+				float stepX, float stepY, float lenX, float lenY,
+				float normalizeHeight);
+
+10/04/2020
+
+	ajout de :
+		StoneBlock
+		StoneCA
+maj landscape:		
+	click souris eteindre allumer
+	space monter
+	shift descendre

@@ -1,0 +1,354 @@
+applications/simpleworld/Agent.java:7: error: package javax.media.opengl does not exist
+import javax.media.opengl.GL2;
+                         ^
+./objects/UniqueDynamicObject.java:7: error: package javax.media.opengl does not exist
+import javax.media.opengl.GL2;
+                         ^
+./worlds/World.java:8: error: package javax.media.opengl does not exist
+import javax.media.opengl.GL2;
+                         ^
+applications/simpleworld/Agent.java:38: error: cannot find symbol
+    public void displayUniqueObject(World myWorld, GL2 gl, int offsetCA_x, int offsetCA_y, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight)
+                                                   ^
+  symbol:   class GL2
+  location: class Agent
+./objects/UniqueDynamicObject.java:33: error: cannot find symbol
+	abstract public void displayUniqueObject(World myWorld, GL2 gl, int offsetCA_x, int offsetCA_y, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight );
+	                                                        ^
+  symbol:   class GL2
+  location: class UniqueDynamicObject
+./objects/UniqueObject.java:7: error: package javax.media.opengl does not exist
+import javax.media.opengl.GL2;
+                         ^
+./worlds/World.java:134: error: cannot find symbol
+	abstract public void displayObjectAt(World _myWorld, GL2 gl, int cellState, int x,
+	                                                     ^
+  symbol:   class GL2
+  location: class World
+./worlds/World.java:139: error: cannot find symbol
+	public void displayUniqueObjects(World _myWorld, GL2 gl, int offsetCA_x, int offsetCA_y, float offset,
+	                                                 ^
+  symbol:   class GL2
+  location: class World
+./objects/UniqueObject.java:31: error: cannot find symbol
+	abstract public void displayUniqueObject(World myWorld, GL2 gl, int offsetCA_x, int offsetCA_y, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight );
+	                                                        ^
+  symbol:   class GL2
+  location: class UniqueObject
+applications/simpleworld/WorldOfTrees.java:7: error: package javax.media.opengl does not exist
+import javax.media.opengl.GL2;
+                         ^
+applications/simpleworld/WorldOfTrees.java:99: error: cannot find symbol
+	public void displayObjectAt(World _myWorld, GL2 gl, int cellState, int x,
+	                                            ^
+  symbol:   class GL2
+  location: class WorldOfTrees
+./graphics/Landscape.java:12: error: package javax.media.opengl does not exist
+import javax.media.opengl.*;
+^
+./graphics/Landscape.java:13: error: package javax.media.opengl.awt does not exist
+import javax.media.opengl.awt.GLCanvas;
+                             ^
+./graphics/Landscape.java:14: error: package javax.media.opengl.fixedfunc does not exist
+import javax.media.opengl.fixedfunc.*;
+^
+./graphics/Landscape.java:15: error: package com.jogamp.opengl.util does not exist
+import com.jogamp.opengl.util.Animator;
+                             ^
+./graphics/Landscape.java:16: error: package com.jogamp.opengl.util.gl2 does not exist
+import com.jogamp.opengl.util.gl2.GLUT;
+                                 ^
+./graphics/Landscape.java:18: error: package javax.media.opengl does not exist
+import javax.media.opengl.GL;
+                         ^
+./graphics/Landscape.java:19: error: package javax.media.opengl does not exist
+import javax.media.opengl.GLAutoDrawable;
+                         ^
+./graphics/Landscape.java:20: error: package javax.media.opengl does not exist
+import javax.media.opengl.GLCapabilities;
+                         ^
+./graphics/Landscape.java:21: error: package javax.media.opengl does not exist
+import javax.media.opengl.GLEventListener;
+                         ^
+./graphics/Landscape.java:52: error: cannot find symbol
+public class Landscape implements GLEventListener, KeyListener, MouseListener{
+                                  ^
+  symbol: class GLEventListener
+./graphics/Landscape.java:56: error: cannot find symbol
+		private static GLCapabilities caps;  // GO FAST ???
+		               ^
+  symbol:   class GLCapabilities
+  location: class Landscape
+./graphics/Landscape.java:84: error: cannot find symbol
+		static Animator animator; 
+		       ^
+  symbol:   class Animator
+  location: class Landscape
+./graphics/Landscape.java:221: error: cannot find symbol
+        public void init(GLAutoDrawable glDrawable) {
+                         ^
+  symbol:   class GLAutoDrawable
+  location: class Landscape
+./graphics/Landscape.java:258: error: cannot find symbol
+        public void display(GLAutoDrawable gLDrawable) {
+                            ^
+  symbol:   class GLAutoDrawable
+  location: class Landscape
+./graphics/Landscape.java:500: error: cannot find symbol
+        public void reshape(GLAutoDrawable gLDrawable, int x, int y, int width, int height) {
+                            ^
+  symbol:   class GLAutoDrawable
+  location: class Landscape
+./graphics/Landscape.java:523: error: cannot find symbol
+        public void dispose(GLAutoDrawable gLDrawable) {
+                            ^
+  symbol:   class GLAutoDrawable
+  location: class Landscape
+./objects/CommonObject.java:7: error: package javax.media.opengl does not exist
+import javax.media.opengl.GL2;
+                         ^
+./objects/CommonObject.java:15: error: cannot find symbol
+    public static void displayObjectAt(World myWorld, GL2 gl, int cellState, float x, float y, double height, double heightBooster, float offset, float stepX, float stepY, float lenX, float lenY, float heightFactor, float smoothFactor[])
+                                                      ^
+  symbol:   class GL2
+  location: class CommonObject
+./objects/CommonObject.java:20: error: cannot find symbol
+    public static void displayObjectAt(World myWorld, GL2 gl, float offset, float stepX, float stepY, float lenX, float lenY, float heightFactor )
+                                                      ^
+  symbol:   class GL2
+  location: class CommonObject
+./objects/Monolith.java:7: error: package javax.media.opengl does not exist
+import javax.media.opengl.GL2;
+                         ^
+./objects/Monolith.java:18: error: cannot find symbol
+    public void displayUniqueObject(World myWorld, GL2 gl, int offsetCA_x, int offsetCA_y, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight )
+                                                   ^
+  symbol:   class GL2
+  location: class Monolith
+./objects/BridgeBlock.java:7: error: package javax.media.opengl does not exist
+import javax.media.opengl.GL2;
+                         ^
+./objects/BridgeBlock.java:18: error: cannot find symbol
+    public void displayUniqueObject(World myWorld, GL2 gl, int offsetCA_x, int offsetCA_y, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight)
+                                                   ^
+  symbol:   class GL2
+  location: class BridgeBlock
+./objects/Tree.java:7: error: package javax.media.opengl does not exist
+import javax.media.opengl.GL2;
+                         ^
+./objects/Tree.java:13: error: cannot find symbol
+    public static void displayObjectAt(World myWorld, GL2 gl, int cellState, float x, float y, double height, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight )
+                                                      ^
+  symbol:   class GL2
+  location: class Tree
+./graphics/Landscape.java:185: error: cannot find symbol
+    		caps = new GLCapabilities(null); //!n
+    		           ^
+  symbol:   class GLCapabilities
+  location: class Landscape
+./graphics/Landscape.java:188: error: cannot find symbol
+    		final GLCanvas canvas = new GLCanvas(caps); // original
+    		      ^
+  symbol:   class GLCanvas
+  location: class Landscape
+./graphics/Landscape.java:188: error: cannot find symbol
+    		final GLCanvas canvas = new GLCanvas(caps); // original
+    		                            ^
+  symbol:   class GLCanvas
+  location: class Landscape
+./graphics/Landscape.java:191: error: cannot find symbol
+            animator = new Animator(canvas);
+                           ^
+  symbol:   class Animator
+  location: class Landscape
+./graphics/Landscape.java:222: error: cannot find symbol
+                GL2 gl = glDrawable.getGL().getGL2();
+                ^
+  symbol:   class GL2
+  location: class Landscape
+./graphics/Landscape.java:228: error: cannot find symbol
+                gl.glEnable(GL2.GL_DOUBLEBUFFER);
+                            ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:236: error: cannot find symbol
+                gl.glShadeModel(GLLightingFunc.GL_SMOOTH);
+                                ^
+  symbol:   variable GLLightingFunc
+  location: class Landscape
+./graphics/Landscape.java:239: error: cannot find symbol
+                gl.glEnable(GL.GL_DEPTH_TEST);
+                            ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:240: error: cannot find symbol
+                gl.glDepthFunc(GL.GL_LEQUAL);
+                               ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:241: error: cannot find symbol
+                gl.glHint(GL2ES1.GL_PERSPECTIVE_CORRECTION_HINT, GL.GL_NICEST);
+                          ^
+  symbol:   variable GL2ES1
+  location: class Landscape
+./graphics/Landscape.java:241: error: cannot find symbol
+                gl.glHint(GL2ES1.GL_PERSPECTIVE_CORRECTION_HINT, GL.GL_NICEST);
+                                                                 ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:244: error: cannot find symbol
+                gl.glCullFace(GL.GL_FRONT);
+                              ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:245: error: cannot find symbol
+                gl.glEnable(GL.GL_CULL_FACE);
+                            ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:248: error: cannot find symbol
+                gl.glEnable(GL.GL_DITHER);
+                            ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:280: error: cannot find symbol
+        		final GL2 gl = gLDrawable.getGL().getGL2();
+        		      ^
+  symbol:   class GL2
+  location: class Landscape
+./graphics/Landscape.java:281: error: cannot find symbol
+                gl.glClear(GL.GL_COLOR_BUFFER_BIT);
+                           ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:282: error: cannot find symbol
+                gl.glClear(GL.GL_DEPTH_BUFFER_BIT);
+                           ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:292: error: cannot find symbol
+	                GLUT glut = new GLUT();
+	                ^
+  symbol:   class GLUT
+  location: class Landscape
+./graphics/Landscape.java:292: error: cannot find symbol
+	                GLUT glut = new GLUT();
+	                                ^
+  symbol:   class GLUT
+  location: class Landscape
+./graphics/Landscape.java:294: error: cannot find symbol
+	                glut.glutBitmapString(GLUT.BITMAP_HELVETICA_18, "fps: " + lastFpsValue);
+	                                      ^
+  symbol:   variable GLUT
+  location: class Landscape
+./graphics/Landscape.java:315: error: cannot find symbol
+	                gl.glLightfv(GL2.GL_LIGHT1, GL2.GL_POSITION, lightPos, 0);
+	                             ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:315: error: cannot find symbol
+	                gl.glLightfv(GL2.GL_LIGHT1, GL2.GL_POSITION, lightPos, 0);
+	                                            ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:316: error: cannot find symbol
+	                gl.glLightfv(GL2.GL_LIGHT1, GL2.GL_AMBIENT, lightColorAmbient, 0);
+	                             ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:316: error: cannot find symbol
+	                gl.glLightfv(GL2.GL_LIGHT1, GL2.GL_AMBIENT, lightColorAmbient, 0);
+	                                            ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:317: error: cannot find symbol
+	                gl.glLightfv(GL2.GL_LIGHT1, GL2.GL_SPECULAR, lightColorSpecular, 0);
+	                             ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:317: error: cannot find symbol
+	                gl.glLightfv(GL2.GL_LIGHT1, GL2.GL_SPECULAR, lightColorSpecular, 0);
+	                                            ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:320: error: cannot find symbol
+	                gl.glEnable(GL2.GL_LIGHT1);
+	                            ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:321: error: cannot find symbol
+	                gl.glEnable(GL2.GL_LIGHTING);
+	                            ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:379: error: cannot find symbol
+            	gl.glBegin(GL2.GL_QUADS);                
+            	           ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:399: error: cannot find symbol
+	                        gl.glMaterialfv( GL.GL_FRONT_AND_BACK, GL2.GL_AMBIENT, color, 0 );
+	                                         ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:399: error: cannot find symbol
+	                        gl.glMaterialfv( GL.GL_FRONT_AND_BACK, GL2.GL_AMBIENT, color, 0 );
+	                                                               ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:400: error: cannot find symbol
+	                        gl.glMaterialfv( GL.GL_FRONT_AND_BACK, GL2.GL_DIFFUSE, color, 0 );
+	                                         ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:400: error: cannot find symbol
+	                        gl.glMaterialfv( GL.GL_FRONT_AND_BACK, GL2.GL_DIFFUSE, color, 0 );
+	                                                               ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:401: error: cannot find symbol
+	                        gl.glMaterialfv( GL.GL_FRONT_AND_BACK, GL2.GL_SPECULAR, color, 0 );
+	                                         ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:401: error: cannot find symbol
+	                        gl.glMaterialfv( GL.GL_FRONT_AND_BACK, GL2.GL_SPECULAR, color, 0 );
+	                                                               ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:402: error: cannot find symbol
+	                        gl.glMateriali( GL.GL_FRONT_AND_BACK, GL2.GL_SHININESS, 4 );
+	                                        ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:402: error: cannot find symbol
+	                        gl.glMateriali( GL.GL_FRONT_AND_BACK, GL2.GL_SHININESS, 4 );
+	                                                              ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:404: error: cannot find symbol
+	                        gl.glMaterialfv( GL.GL_FRONT_AND_BACK, GL2.GL_EMISSION, colorBlack, 0 );
+	                                         ^
+  symbol:   variable GL
+  location: class Landscape
+./graphics/Landscape.java:404: error: cannot find symbol
+	                        gl.glMaterialfv( GL.GL_FRONT_AND_BACK, GL2.GL_EMISSION, colorBlack, 0 );
+	                                                               ^
+  symbol:   variable GL2
+  location: class Landscape
+./graphics/Landscape.java:507: error: cannot find symbol
+        		GL2 gl = gLDrawable.getGL().getGL2();
+        		^
+  symbol:   class GL2
+  location: class Landscape
+./graphics/Landscape.java:509: error: cannot find symbol
+                gl.glMatrixMode(GLMatrixFunc.GL_PROJECTION);
+                                ^
+  symbol:   variable GLMatrixFunc
+  location: class Landscape
+./graphics/Landscape.java:514: error: cannot find symbol
+                gl.glMatrixMode(GLMatrixFunc.GL_MODELVIEW);
+                                ^
+  symbol:   variable GLMatrixFunc
+  location: class Landscape
+78 errors
