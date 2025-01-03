@@ -1,4 +1,5 @@
-"**PROJET ENVIRONNEMENT 3D**
+#**PROJET ENVIRONNEMENT 3D**
+
 Création et modélisation d'un écosystème simplifié dynamique 3D 
 Implémentant plusieurs mécanisme : automate cellulaire, 
 arbre de comportement, générateur d’altitude, modèle proie prédateur, 
