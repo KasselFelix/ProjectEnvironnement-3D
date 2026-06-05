@@ -57,8 +57,6 @@ public class LavaCA extends CellularAutomataInteger {
 	int rCratere = 5;
 	public static int eruptionRadiusRaw = 5;
 	public static int eruptionRadius = 5;
-	public int vLave = 100; // legacy — plus utilisé directement (remplacé par BASE_FLOW + SPREAD_FACTOR)
-	int tmpNewErruption = 500; // legacy — durée d'éruption désormais via SimulationConfig.eruptionDurationSec
 
 	float stepZ;
 

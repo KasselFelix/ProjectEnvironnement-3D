@@ -57,24 +57,6 @@ import javax.media.opengl.GLEventListener;
 import landscapegenerator.LoadFromFileLandscape;
 import landscapegenerator.PerlinNoiseLandscapeGenerator;
 
-/*
- * TODO
- * - clean code
- * - add objects + CA_objects
- * - add agents
- * - add my-agent + move + modify heights
- * - water flowing ; snow (same, with evaporation)
- *
- * technical issues:
- * - antialias
- * - go fast -- cf. "GO FAST" COMMENTS TO CHECK DOUBLE BUFFERING TRICK
- * 
- * 
-*/
-
-
-
-
 
 /**
  * Self-contained code 
@@ -164,18 +146,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private static final float ORBIT_RADIUS_MAX  = 120.0f;   // suivi : dezoom max
 		private static final float CAM_DIST_3D_MIN   = -300.0f;  // 3D libre : très loin
 		private static final float CAM_DIST_3D_MAX   = -3.0f;    // 3D libre : très proche, ne traverse pas
-		private static final float TOPDOWN_MIN       = -15000.0f;
-		private static final float TOPDOWN_MAX       = -1500.0f;
 		private static final float WHEEL_ORBIT_STEP  = 1.0f;     // pas fin pour cadrer l'agent de près
 		private static final float WHEEL_3D_STEP     = 6.0f;
-		private static final float WHEEL_TOPDOWN_STEP = 300.0f;  // matché au téléobjectif fh=0.04
 
-		// Zoom de la vue de dessus. La projection en téléobjectif (fh=0.04) montre
-		// 0.08 * |distance| unités de terrain ; -6250 ⇒ ~500 unités visibles,
-		// équivalent à l'ancienne ortho mais avec un parallax résiduel ~12× plus
-		// petit qu'une perspective standard (le décalage des sommets de colline
-		// devient à peine perceptible).
-		private float topDownZoom = -6250.0f;
 		/** Rayon de vue PROPRE à la vue de dessus (en cases), réglé à la molette.
 		 *  Découplé de config.viewDistanceCells (qui pilote la 3D) → zoomer en vue
 		 *  de dessus n'affecte pas la 3D. Défaut zoomé pour ne pas voir les bords. */
@@ -432,13 +405,6 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
          *  à l'œil de l'agent (déplacement relatif au regard, façon Minecraft). */
         private boolean firstPersonControl() {
         	return controllingAgent() && !VIEW_FROM_ABOVE;
-        }
-
-        /** Le menu capte-t-il vraiment le clavier/souris ? Vrai seulement s'il est
-         *  OUVERT et focalisé — un menu fermé ne « focalise » rien (le flag
-         *  menuFocused peut rester à true après fermeture). */
-        private boolean menuHasFocus() {
-        	return inGameMenu != null && inGameMenu.isOpen() && menuFocused;
         }
 
         /** Hauteur de l'œil (unités monde) au-dessus du sol de l'agent en 1ère personne. */
@@ -1850,22 +1816,16 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 		@Override
 		public void mouseClicked(MouseEvent arg0) {
-			// TODO Auto-generated method stub
-			
 		}
 
 
 		@Override
 		public void mouseEntered(MouseEvent arg0) {
-			// TODO Auto-generated method stub
-			
 		}
 
 
 		@Override
 		public void mouseExited(MouseEvent arg0) {
-			// TODO Auto-generated method stub
-			
 		}
 
 
@@ -2559,7 +2519,5 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 		@Override
 		public void keyTyped(KeyEvent arg0) {
-			// TODO Auto-generated method stub
-			
 		}
 }

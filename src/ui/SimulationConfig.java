@@ -110,8 +110,6 @@ public class SimulationConfig {
 
     // ───── Lave (cf. LavaCA.java) ──────────────────────────────────────────
     public double laveProbErruption    = 0.0;       // pErruption — 0 = jamais (sauf touche `r`)
-    @Deprecated // remplacé par constante SPREAD_FACTOR + propagation gravitaire dans LavaCA
-    public int    laveVitesseEtalement = 100;
     public float  craterHoleDepth      = 3.0f;      // profondeur du trou au centre du volcan, en × STONE_BLOCK_HEIGHT
     @Deprecated // remplacé par subsidenceIntervalSec (Module 1)
     public int    subsidencePeriod     = 6;

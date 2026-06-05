@@ -328,6 +328,9 @@ public class WorldOfCells extends World {
      * appeler plusieurs fois (chaque CA test sa propre nullité avant assign).
      * Les fields des CAs sont package-private, accessibles directement depuis ici.
      */
+    // subsidencePeriod (déprécié) reste lu comme kill-switch legacy du drainage
+    // (== 0 désactive). Géré explicitement → on assume la dépréciation ici.
+    @SuppressWarnings("deprecation")
     private void applyConfigToCAs() {
     	if (config == null) return;
     	if (forestCA != null) {
@@ -343,7 +346,6 @@ public class WorldOfCells extends World {
     	}
     	if (lavaCA != null) {
     		lavaCA.pErruption      = config.laveProbErruption;
-    		lavaCA.vLave           = config.laveVitesseEtalement;
     		lavaCA.craterHoleDepth = config.craterHoleDepth;
     		lavaCA.subsidencePeriod = config.subsidencePeriod;
     		lavaCA.erruptionPowerMin = config.erruptionPowerMin;

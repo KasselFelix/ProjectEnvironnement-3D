@@ -105,12 +105,6 @@ public class StoneBlock extends CommonObject {
      */
     private static void applyMaterialColor(GL2 gl, Material material,
                                            double height, double maxHeight,
-                                           int cx, int cy) {
-        applyMaterialColor(gl, material, height, maxHeight, cx, cy, null);
-    }
-
-    private static void applyMaterialColor(GL2 gl, Material material,
-                                           double height, double maxHeight,
                                            int cx, int cy, LavaLineage lineage) {
         double fracAlt = Math.max(0, Math.min(1, height / maxHeight));
         float r = 0.5f, g = 0.5f, b = 0.5f;
