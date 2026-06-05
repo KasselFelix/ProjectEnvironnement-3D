@@ -86,6 +86,38 @@ public final class Genome {
     }
 
     /**
+     * Libellés ASCII des axes NON-NEUTRES, séparés par ", " (pour la fiche UI,
+     * § 11 — GLUT bitmap ASCII uniquement). "-" si tous les axes sont neutres.
+     */
+    public String asciiTraits() {
+        StringBuilder sb = new StringBuilder();
+        for (Axis axis : Axis.values()) {
+            String label = asciiLabel(axis, get(axis));
+            if (label != null) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(label);
+            }
+        }
+        return sb.length() == 0 ? "-" : sb.toString();
+    }
+
+    /** Libellé ASCII d'un pôle non-neutre, ou null pour NEUTRE. */
+    private static String asciiLabel(Axis axis, Pole pole) {
+        if (pole == Pole.NEUTRAL) return null;
+        boolean pos = pole == Pole.POSITIVE;
+        switch (axis) {
+            case INTELLIGENCE: return pos ? "INTELLIGENT" : "STUPIDE";
+            case FERTILITY:    return pos ? "FERTILE" : "INFERTILE";
+            case ENDURANCE:    return pos ? "ENDURANT" : "FATIGUE";
+            case STRENGTH:     return pos ? "FORT" : "FAIBLE";
+            case WISDOM:       return pos ? "SAGE" : "NAIF";
+            case LONGEVITY:    return pos ? "LONGEVITE" : "DEGENER";
+            case ORIENTATION:  return pos ? "BON SENS" : "DESORIENTE";
+            default:           return null;
+        }
+    }
+
+    /**
      * Construit le génome d'un enfant à partir des deux parents (§ 4.4). Pour
      * chaque axe, l'enfant prend le pôle d'un des deux parents (tirage 50/50).
      *

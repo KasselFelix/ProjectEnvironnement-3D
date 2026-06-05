@@ -17,7 +17,7 @@ import agents.Humain;
 public class AgentInfoPanel {
 
     private static final int PANEL_WIDTH  = 230;
-    private static final int PANEL_HEIGHT = 150;
+    private static final int PANEL_HEIGHT = 240;
     private static final int MARGIN = 10;
     private static final int ROW_HEIGHT = 16;
 
@@ -65,6 +65,15 @@ public class AgentInfoPanel {
                 "Orient.  : " + agent.getOrientLabel(),
                 0.95f, 0.95f, 0.95f);
         textY += ROW_HEIGHT;
+
+        // Traits évolutifs (§ 11) — propres au Mouton pour l'instant.
+        if (agent instanceof Mouton) {
+            textY += 4;
+            for (String line : ((Mouton) agent).evolutionSummary()) {
+                ui.drawText(gl, px + 10, textY, viewportHeight, line, 0.75f, 0.9f, 1f);
+                textY += ROW_HEIGHT;
+            }
+        }
 
         // Indicateur caméra-follow.
         if (cameraFollow) {

@@ -641,10 +641,18 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         (3). 153 tests verts. Helper test AgentTestSupport.flattenLandArea (zone
         terre déterministe vs flake terrain Perlin).
 
-    Phase H — UI (validation par screenshot, pas test unitaire)
+    Phase H — UI (validation par screenshot, pas test unitaire)  [RÉALISÉ 2026-06-05]
         Fiche AgentInfoPanel enrichie (Genome, stade/taille, caractère, mind,
         mémoire) ; tailles d'agents distinctes à l'écran ; étiquette top-down
         optionnelle. Validé en lançant l'app (WSLg software) et capture.
+        FAIT : Genome.asciiTraits (libellés ASCII des axes non-neutres, "-" si
+        aucun) ; Mouton.evolutionSummary (lignes Stade+taille / Traits /
+        Caractere / Intel. / Memoire, ASCII pur) — logique TESTÉE.
+        AgentInfoPanel : PANEL_HEIGHT 150→240, dessine evolutionSummary pour un
+        Mouton sélectionné. Tests : GenomeTest +1, MoutonUiTest (1). 155 verts.
+        RESTE (validation VISUELLE manuelle, à lancer ./run.sh) : confirmer le
+        rendu de la fiche + les tailles variables des moutons à l'écran ;
+        étiquette top-down optionnelle non faite (secondaire).
 
     Phase I — Généralisation
         Remonter Genome/LifeStage/SemanticMemory/Mind/Character dans Agent et

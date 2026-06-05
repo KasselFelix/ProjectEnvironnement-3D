@@ -155,4 +155,20 @@ class GenomeTest {
         assertTrue(neutre > bonSens, "le neutre dévie parfois");
         assertTrue(desoriente > neutre, "le désorienté dévie souvent");
     }
+
+    /** Libellés ASCII des axes non-neutres pour la fiche UI (§ 10/§ 11) :
+     *  les axes NEUTRES ne sont pas listés ; vide → "-". */
+    @Test
+    void libellesAsciiDesTraits() {
+        Genome g = new Genome();
+        assertEquals("-", g.asciiTraits(), "génome neutre → aucun trait affiché");
+
+        g.set(Axis.INTELLIGENCE, Pole.POSITIVE);
+        g.set(Axis.STRENGTH, Pole.NEGATIVE);
+        String s = g.asciiTraits();
+        assertTrue(s.contains("INTELLIGENT"), "axe Intelligence POSITIF → INTELLIGENT");
+        assertTrue(s.contains("FAIBLE"), "axe Force NEGATIF → FAIBLE");
+        // ASCII only : pas de caractère accentué / Unicode.
+        assertTrue(s.chars().allMatch(c -> c < 128), "libellés en ASCII pur");
+    }
 }

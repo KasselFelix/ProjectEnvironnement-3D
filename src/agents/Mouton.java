@@ -185,6 +185,37 @@ public class Mouton extends Agent {
 		mind = agents.ai.Mind.fromGenome(genome);
 	}
 
+	/** Lignes ASCII résumant les traits évolutifs pour la fiche d'agent (§ 11) :
+	 *  stade & taille, traits génétiques, caractère, intelligence, mémoire. */
+	public java.util.List<String> evolutionSummary() {
+		java.util.List<String> l = new java.util.ArrayList<>();
+		l.add(String.format(java.util.Locale.US, "Stade    : %s (x%.2f)", stageLabel(), displaySize()));
+		l.add("Traits   : " + genome.asciiTraits());
+		l.add("Caractere: " + socialLabel());
+		l.add(String.format(java.util.Locale.US, "Intel.   : %.2f", mind.score()));
+		l.add("Memoire  : " + memory.size() + " lieux");
+		return l;
+	}
+
+	/** Libellé ASCII du stade de vie courant (§ 10.1). */
+	private String stageLabel() {
+		switch (currentStage()) {
+			case BABY:     return "BEBE";
+			case JUVENILE: return "JEUNE";
+			case OLD:      return "VIEUX";
+			default:       return "ADULTE";
+		}
+	}
+
+	/** Libellé ASCII du caractère social (§ 7). */
+	private String socialLabel() {
+		switch (character.social()) {
+			case SOLITARY:   return "SOLITAIRE";
+			case GREGARIOUS: return "GREGAIRE";
+			default:         return "-";
+		}
+	}
+
 	/** Niveau d'activité cognitive du tick (§ 6.2) : 1.0 pour les états de
 	 *  survie/décision (qui entraînent l'esprit), 0.0 pour le repos et l'errance. */
 	public double activityLevel() {
