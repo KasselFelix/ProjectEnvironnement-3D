@@ -96,6 +96,106 @@ public class Agent extends UniqueDynamicObject{
 		return a.genome.get(agents.ai.Axis.FERTILITY) == agents.ai.Pole.NEGATIVE;
 	}
 
+	// ===== Cognition commune (Mind / SemanticMemory / Character) — L1 =====
+	// Hissée de Mouton vers Agent pour que Loup et Humain disposent du même
+	// socle cognitif (cf. docs/evolution.txt § 5-7). Les espèces câblent
+	// l'entraînement dans leur postTick via trainMindAndCharacter() et
+	// surchargent isIsolated()/satisfaction() selon leur grégarité.
+
+	/** Mémoire sémantique (§ 5) : zones connues (eau, chasse, danger, lieu sûr).
+	 *  Capacité réglée par l'intelligence et l'âge via refreshMemoryCapacity(). */
+	public final agents.ai.SemanticMemory memory = new agents.ai.SemanticMemory();
+
+	/** Intelligence dynamique (§ 6) : score 0..1 démarrant depuis l'axe
+	 *  Intelligence, entraîné par l'activité, dégénérant avec l'âge. */
+	public agents.ai.Mind mind = new agents.ai.Mind(agents.ai.Mind.BASE_SCORE);
+
+	/** Caractère social ÉMERGENT (§ 7) : développé par session selon le vécu.
+	 *  Aucun à la naissance. */
+	public final agents.ai.Character character = new agents.ai.Character();
+
+	/** Durée d'une session de développement du caractère, en jours-jeu (§ 7.1). */
+	protected static final double CHARACTER_SESSION_DAYS = 2.0;
+
+	/** (Ré)initialise l'esprit depuis le génome courant (à appeler après avoir
+	 *  fixé le génome — fondateur au spawn, petit à la naissance). */
+	public void initMind() {
+		mind = agents.ai.Mind.fromGenome(genome);
+	}
+
+	/** Niveau d'activité cognitive du tick (§ 6.2) : 1.0 pour les états de
+	 *  survie/décision (qui entraînent l'esprit), 0.0 pour le repos et l'errance. */
+	public double activityLevel() {
+		switch (currentState) {
+			case REST:
+			case WANDER:
+				return 0.0;
+			default:
+				return 1.0;
+		}
+	}
+
+	/** Recale la capacité de la mémoire sur le génome et l'âge courants (§ 5.1),
+	 *  modulée par l'aptitude mentale dynamique (§ 6 : un esprit vif gère plus de
+	 *  souvenirs, un esprit dégénéré en perd). */
+	public void refreshMemoryCapacity() {
+		int base = agents.ai.SemanticMemory.capacityFor(genome, getAgeDays(), maxAgeDays);
+		memory.setCapacity((int) Math.round(base * mind.learningRate()));
+	}
+
+	/** true si aucun congénère n'est à portée (§ 7.3). Défaut : jamais isolé —
+	 *  les espèces grégaires (Mouton, meute de Loups) surchargent. */
+	public boolean isIsolated() { return false; }
+
+	/** Satisfaction globale ∈ [0, 1] (§ 7.3). Défaut neutre fondé sur la survie
+	 *  immédiate (feu = 0) ; les espèces affinent (faim, social…). */
+	public double satisfaction() { return isOnFire() ? 0.0 : 1.0; }
+
+	/** Entraîne l'esprit (activité ↑, âge ↓) et fait émerger le caractère par
+	 *  session (§ 6-7). Appelé depuis le postTick des espèces qui ont activé la
+	 *  cognition. Centralisé ici pour éviter la duplication Mouton/Loup. */
+	protected void trainMindAndCharacter() {
+		double lifespan = maxAgeDays > 0 ? maxAgeDays : agents.ai.LifeStage.REFERENCE_LIFESPAN_DAYS;
+		mind.train(activityLevel(), getAgeDays() / lifespan, genome.longevityFactor());
+		character.observe(isIsolated(), satisfaction());
+		int sessionTicks = Math.max(1, (int) (CHARACTER_SESSION_DAYS * 2 * world.getDureeJour()));
+		if (world.getIteration() > 0 && world.getIteration() % sessionTicks == 0) {
+			character.endSession();
+		}
+	}
+
+	/** Lignes ASCII résumant les traits évolutifs pour la fiche d'agent (§ 11) :
+	 *  stade & taille, traits génétiques, caractère, intelligence, mémoire.
+	 *  Commun à toutes les espèces (enrichit aussi la fiche Loup/Humain — L1). */
+	public java.util.List<String> evolutionSummary() {
+		java.util.List<String> l = new java.util.ArrayList<>();
+		l.add(String.format(java.util.Locale.US, "Stade    : %s (x%.2f)", stageLabel(), displaySize()));
+		l.add("Traits   : " + genome.asciiTraits());
+		l.add("Caractere: " + socialLabel());
+		l.add(String.format(java.util.Locale.US, "Intel.   : %.2f", mind.score()));
+		l.add("Memoire  : " + memory.size() + " lieux");
+		return l;
+	}
+
+	/** Libellé ASCII du stade de vie courant (§ 10.1). */
+	protected String stageLabel() {
+		switch (currentStage()) {
+			case BABY:     return "BEBE";
+			case JUVENILE: return "JEUNE";
+			case OLD:      return "VIEUX";
+			default:       return "ADULTE";
+		}
+	}
+
+	/** Libellé ASCII du caractère social (§ 7). */
+	protected String socialLabel() {
+		switch (character.social()) {
+			case SOLITARY:   return "SOLITAIRE";
+			case GREGARIOUS: return "GREGAIRE";
+			default:         return "-";
+		}
+	}
+
 	int 	_x;
 	int 	_y;
 	int		_z;

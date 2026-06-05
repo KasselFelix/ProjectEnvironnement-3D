@@ -118,24 +118,13 @@ public class Mouton extends Agent {
 	 *  regard pas-à-pas). -1 = pas de cap longue distance actif. */
 	public int directionSens = -1;
 
-	/** Mémoire sémantique (§ 5) : zones de danger connues, etc. Capacité réglée
-	 *  selon l'intelligence et l'âge (refreshMemoryCapacity). */
-	public final agents.ai.SemanticMemory memory = new agents.ai.SemanticMemory();
-
-	/** Intelligence dynamique (§ 6) : score 0..1 démarrant depuis l'axe
-	 *  Intelligence, entraîné par l'activité, dégénérant avec l'âge. */
-	public agents.ai.Mind mind = new agents.ai.Mind(agents.ai.Mind.BASE_SCORE);
-
-	/** Caractère social ÉMERGENT (§ 7) : développé par session selon le vécu et
-	 *  la satisfaction. Aucun à la naissance. */
-	public final agents.ai.Character character = new agents.ai.Character();
-
-	/** Durée d'une session de développement du caractère, en jours-jeu (§ 7.1). */
-	private static final double CHARACTER_SESSION_DAYS = 2.0;
+	// memory / mind / character + CHARACTER_SESSION_DAYS : hissés dans Agent (L1) ;
+	// hérités tels quels. Le Mouton ne garde que ce qui lui est propre.
 	/** Rayon (cases) en deçà duquel un congénère « rompt » l'isolement (§ 7.3). */
 	private static final int FLOCK_NEAR_RADIUS = 6;
 
 	/** true si aucun congénère vivant n'est à portée de troupeau (§ 7.3). */
+	@Override
 	public boolean isIsolated() {
 		for (Mouton o : world.moutons) {
 			if (o == this || !o._alive) continue;
@@ -147,6 +136,7 @@ public class Mouton extends Agent {
 	/** Satisfaction globale ∈ [0, 1] (§ 7.3) : moyenne des besoins primaires
 	 *  (faim, sécurité, social). Le besoin SOCIAL est MODULÉ par le caractère :
 	 *  un solitaire est satisfait seul, un grégaire en groupe. */
+	@Override
 	public double satisfaction() {
 		double hunger = Math.max(0.0, Math.min(1.0, energie / energieMAX));
 		double safety = (isOnFire() || currentState == agents.ai.AgentState.FLEE_PREDATOR) ? 0.0 : 1.0;
@@ -160,62 +150,8 @@ public class Mouton extends Agent {
 		return (hunger + safety + social) / 3.0;
 	}
 
-	/** (Ré)initialise l'esprit depuis le génome courant (à appeler après avoir
-	 *  fixé le génome — fondateur au spawn, agneau à la naissance). */
-	public void initMind() {
-		mind = agents.ai.Mind.fromGenome(genome);
-	}
-
-	/** Lignes ASCII résumant les traits évolutifs pour la fiche d'agent (§ 11) :
-	 *  stade & taille, traits génétiques, caractère, intelligence, mémoire. */
-	public java.util.List<String> evolutionSummary() {
-		java.util.List<String> l = new java.util.ArrayList<>();
-		l.add(String.format(java.util.Locale.US, "Stade    : %s (x%.2f)", stageLabel(), displaySize()));
-		l.add("Traits   : " + genome.asciiTraits());
-		l.add("Caractere: " + socialLabel());
-		l.add(String.format(java.util.Locale.US, "Intel.   : %.2f", mind.score()));
-		l.add("Memoire  : " + memory.size() + " lieux");
-		return l;
-	}
-
-	/** Libellé ASCII du stade de vie courant (§ 10.1). */
-	private String stageLabel() {
-		switch (currentStage()) {
-			case BABY:     return "BEBE";
-			case JUVENILE: return "JEUNE";
-			case OLD:      return "VIEUX";
-			default:       return "ADULTE";
-		}
-	}
-
-	/** Libellé ASCII du caractère social (§ 7). */
-	private String socialLabel() {
-		switch (character.social()) {
-			case SOLITARY:   return "SOLITAIRE";
-			case GREGARIOUS: return "GREGAIRE";
-			default:         return "-";
-		}
-	}
-
-	/** Niveau d'activité cognitive du tick (§ 6.2) : 1.0 pour les états de
-	 *  survie/décision (qui entraînent l'esprit), 0.0 pour le repos et l'errance. */
-	public double activityLevel() {
-		switch (currentState) {
-			case REST:
-			case WANDER:
-				return 0.0;
-			default:
-				return 1.0;
-		}
-	}
-
-	/** Recale la capacité de la mémoire sur le génome et l'âge courants (§ 5.1),
-	 *  modulée par l'aptitude mentale dynamique (§ 6 : un esprit vif gère plus de
-	 *  souvenirs, un esprit dégénéré en perd). */
-	public void refreshMemoryCapacity() {
-		int base = agents.ai.SemanticMemory.capacityFor(genome, getAgeDays(), maxAgeDays);
-		memory.setCapacity((int) Math.round(base * mind.learningRate()));
-	}
+	// initMind / evolutionSummary / stageLabel / socialLabel / activityLevel /
+	// refreshMemoryCapacity : hissés dans Agent (L1), hérités tels quels.
 
 	/** Mémorise comme DANGER la position du loup visible le plus proche (§ 5). */
 	private void recordNearestPredatorAsDanger() {
@@ -522,18 +458,9 @@ public class Mouton extends Agent {
 	protected void postTick() {
 		if ( world.getIteration() % 20 == 0 )if(_fireState==1)energie-=energieMAX/10;
 
-		// Entraînement cérébral (§ 6.2) : l'activité du tick entretient l'esprit,
-		// l'âge le dégrade (atténué par la longévité du génome).
-		double lifespan = maxAgeDays > 0 ? maxAgeDays : agents.ai.LifeStage.REFERENCE_LIFESPAN_DAYS;
-		mind.train(activityLevel(), getAgeDays() / lifespan, genome.longevityFactor());
-
-		// Développement du caractère (§ 7) : on observe le vécu du tick ; en fin
-		// de session (toutes les CHARACTER_SESSION_DAYS), on statue sur le trait.
-		character.observe(isIsolated(), satisfaction());
-		int sessionTicks = Math.max(1, (int) (CHARACTER_SESSION_DAYS * 2 * world.getDureeJour()));
-		if (world.getIteration() > 0 && world.getIteration() % sessionTicks == 0) {
-			character.endSession();
-		}
+		// Entraînement cérébral (§ 6.2) + émergence du caractère (§ 7) :
+		// centralisés dans Agent.trainMindAndCharacter() (L1).
+		trainMindAndCharacter();
 	}
 
 	/** Rayon (cases) dans lequel un congénère vivant compte comme partenaire de

@@ -66,13 +66,12 @@ public class AgentInfoPanel {
                 0.95f, 0.95f, 0.95f);
         textY += ROW_HEIGHT;
 
-        // Traits évolutifs (§ 11) — propres au Mouton pour l'instant.
-        if (agent instanceof Mouton) {
-            textY += 4;
-            for (String line : ((Mouton) agent).evolutionSummary()) {
-                ui.drawText(gl, px + 10, textY, viewportHeight, line, 0.75f, 0.9f, 1f);
-                textY += ROW_HEIGHT;
-            }
+        // Traits évolutifs (§ 11) — communs à toutes les espèces depuis L1
+        // (Mouton, Loup et Humain partagent le socle cognitif d'Agent).
+        textY += 4;
+        for (String line : agent.evolutionSummary()) {
+            ui.drawText(gl, px + 10, textY, viewportHeight, line, 0.75f, 0.9f, 1f);
+            textY += ROW_HEIGHT;
         }
 
         // Indicateur caméra-follow.
