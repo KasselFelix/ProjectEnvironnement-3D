@@ -106,6 +106,11 @@ public class InGameMenu {
                 v -> config.moutonPrepro = v, 0.0, 0.2, 0.005, "%.3f"));
         paramRows.add(doubleRow("Age max mouton",  () -> config.moutonMaxAgeDays,
                 v -> config.moutonMaxAgeDays = v, 0.0, 200.0, 1.0, "%.1f"));
+        // L3 — bascule berger / chasseur (toggle 0/1, libellé explicite).
+        paramRows.add(new Row("Humain mode",
+                () -> config.humainChasseur == 1 ? "CHASSEUR" : "Berger",
+                () -> config.humainChasseur = 0,
+                () -> config.humainChasseur = 1));
         paramRows.add(intRow("Simulation Hz",     () -> config.simulationHz,   v -> config.simulationHz   = v, 10, 60, 5));
         paramRows.add(intRow("Distance de vue",   () -> config.viewDistanceCells, v -> config.viewDistanceCells = v, 10, 200, 5));
         paramRows.add(doubleRow("Sensibilite souris", () -> (double) config.mouseLookSensitivity,

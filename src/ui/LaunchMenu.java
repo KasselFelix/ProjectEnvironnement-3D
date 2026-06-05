@@ -58,6 +58,11 @@ public class LaunchMenu {
         rows.add(intRow("Loups",   () -> config.nbLoups,   v -> config.nbLoups   = v, 0, 200, 1));
         rows.add(intRow("Moutons", () -> config.nbMoutons, v -> config.nbMoutons = v, 0, 500, 1));
         rows.add(intRow("Humains", () -> config.nbHumains, v -> config.nbHumains = v, 0, 100, 1));
+        // L3 — mode de l'Humain : berger (garde le troupeau) ou chasseur (traque les loups).
+        rows.add(new Row("mode Humain",
+                () -> config.humainChasseur == 1 ? "CHASSEUR" : "Berger",
+                () -> config.humainChasseur = 0,
+                () -> config.humainChasseur = 1));
 
         rows.add(new Section("PAYSAGE"));
         rows.add(intRow("Largeur (dx)", () -> config.landscapeDx, v -> config.landscapeDx = v, 50, 500, 10));

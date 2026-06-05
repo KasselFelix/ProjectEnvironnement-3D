@@ -15,7 +15,12 @@ public class Humain extends Agent {
 	public double vpas=3;
 
 	public int m=0;//1 si a manger ce tour
-	
+
+	/** L3 — mode CHASSEUR : au lieu de seulement garder le troupeau, l'Humain
+	 *  pourchasse activement le Loup le plus proche en vue et le tue au contact.
+	 *  false = berger classique (défaut). Réglable via SimulationConfig.humainChasseur. */
+	public boolean chasseur = false;
+
 	public Humain( int __x, int __y,World __world)
 	{
 		super(__x,__y,__world);
@@ -38,6 +43,7 @@ public class Humain extends Agent {
 		if (playerControlled) return "Piloté";
 		if (_fireState == 1)  return "En feu";
 		if (currentState == agents.ai.AgentState.FLEE_LAVA) return "Fuit lave";
+		if (currentState == agents.ai.AgentState.HUNT) return "Chasse loup";
 		if (currentState == agents.ai.AgentState.HOME) return "Rentre au foyer";
 		return currentState == agents.ai.AgentState.HERD ? "Garde le troupeau" : "Errance";
 	}
@@ -62,10 +68,21 @@ public class Humain extends Agent {
 		return world.moutons;
 	}
 
+	/** L3 — l'Humain localise les loups via le slot « predator » du Percept
+	 *  (`predatorDir`). Il ne les FUIT pas (aucun FLEE_PREDATOR dans sa FSM) : en
+	 *  mode chasseur il s'en sert pour les POURCHASSER. */
+	@Override
+	protected java.util.List<? extends objects.UniqueDynamicObject> predators() {
+		return world.loups;
+	}
+
 	@Override
 	protected agents.ai.AgentState decideState(agents.ai.Percept p) {
 		if (isOnFire())          return agents.ai.AgentState.ON_FIRE;
 		if (p.lavaVisible())     return agents.ai.AgentState.FLEE_LAVA;  // L2 — la lave tue au contact
+		// L3 — chasseur : pourchasse le loup le plus proche, même la nuit (il
+		// protège le troupeau des attaques nocturnes).
+		if (chasseur && p.predatorVisible()) return agents.ai.AgentState.HUNT;
 		if (world.getJour() == 0) return agents.ai.AgentState.HOME;  // la nuit, rentre au foyer
 		if (p.preyVisible())     return agents.ai.AgentState.HERD;   // berger : rejoint le troupeau
 		return agents.ai.AgentState.WANDER;
@@ -80,6 +97,13 @@ public class Humain extends Agent {
 		if (s == agents.ai.AgentState.FLEE_LAVA) {
 			// L2 — fuit à l'opposé de la lave la plus proche, à terre.
 			if (p.lavaDir >= 0) _orient = agents.ai.AgentState.opposite(p.lavaDir);
+			return agents.ai.MoveConstraints.landBound();
+		}
+		if (s == agents.ai.AgentState.HUNT) {
+			// L3 — fonce VERS le loup le plus proche (cap = predatorDir, pas son
+			// opposé), au sprint. Le loup le fuyant, l'Humain doit courir.
+			if (p.predatorDir >= 0) _orient = p.predatorDir;
+			vitesse = vcourse;
 			return agents.ai.MoveConstraints.landBound();
 		}
 		if (s == agents.ai.AgentState.HOME) {
@@ -98,6 +122,20 @@ public class Humain extends Agent {
 		}
 		if (Math.random() < 0.25) _orient = (int)(Math.random() * 4);
 		return agents.ai.MoveConstraints.landBound();
+	}
+
+	@Override
+	protected void postMove(agents.ai.Percept p) {
+		// L3 — chasseur : tout loup sur la case de l'Humain est abattu (le berger
+		// chasse le prédateur de son troupeau). Le loup mort est purgé par
+		// WorldOfCells.stepAgents.
+		if (!chasseur) return;
+		for (Loup l : world.loups) {
+			if (l._alive && l.x == x && l.y == y) {
+				l._alive = false;
+				m = 1;   // libellé « capture » ce tour
+			}
+		}
 	}
 
 	@Override

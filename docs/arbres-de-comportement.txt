@@ -230,8 +230,16 @@ déséquilibres se lisent sur le graphe Lotka-Volterra (touche `g`).
       de masse des Moutons visibles (`Perception.dirToFlockCentroid`). Les hooks
       FSM (`decideState`/`applyState`/`prey`) portent la logique. Effet écologique
       ajouté : le Loup fuit l'Humain (FLEE_PREDATOR, priorité sur la chasse) →
-      le berger protège réellement le troupeau. RESTE : la variante « chasseur »
-      (l'Humain poursuit activement le Loup le plus proche).
+      le berger protège réellement le troupeau.
+    * [RÉALISÉ 2026-06-06, L3] Variante CHASSEUR de l'Humain. Champ
+      `Humain.chasseur` (réglable via `SimulationConfig.humainChasseur`,
+      toggle « Berger / CHASSEUR » dans LaunchMenu + InGameMenu PARAMS). L'Humain
+      localise les loups via le slot `predator` du Percept (override `predators()`
+      = `world.loups`) ; en mode chasseur, `decideState` renvoie HUNT dès qu'un
+      loup est en vue (même la nuit) et `applyState` l'oriente VERS le loup
+      (`predatorDir`) au sprint. `postMove` abat tout loup présent sur sa cellule.
+      Libellé HUD « Chasse loup ». Tests : `HumainTest.chasseurPourchasseLeLoup`,
+      `chasseurAbatLeLoupAuContact`. 182 tests verts.
     * [RÉALISÉ 2026-06-05, volet comportemental] État « repos » (REST) : un
       Mouton à énergie MAXIMALE, sans danger, se repose (rumination) et ne se
       déplace pas ce tick — `decideState` renvoie REST, `applyState` met

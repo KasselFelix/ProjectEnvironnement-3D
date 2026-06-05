@@ -329,8 +329,11 @@ Idées d'extensions classées par effort estimé.
       berger, à `vcourse`). Un troupeau gardé tient donc les loups à distance.
       Tests : `loupFuitHumainMemeAffameAvecProie` (priorité fuite > chasse) et
       `loupSansHumainChasseNormalement` (garde-fou : pas d'Humain → HUNT normal).
-      RESTE À FAIRE : variante CHASSEUR de l'Humain (cibler/poursuivre le Loup
-      le plus proche au lieu de seulement suivre le troupeau).
+      [RÉALISÉ 2026-06-06, L3] Variante CHASSEUR de l'Humain : champ
+      `Humain.chasseur` (config `humainChasseur`, toggle Berger/CHASSEUR dans les
+      menus). En mode chasseur, l'Humain pourchasse le Loup le plus proche (état
+      HUNT, cap vers `predatorDir`) et l'abat au contact (`postMove`). Tests
+      `HumainTest.chasseurPourchasseLeLoup` / `chasseurAbatLeLoupAuContact`.
     * [RÉALISÉ] Mort par vieillesse (maxAgeDays > 0) — opérationnelle dans
       `Loup.preStepAbort()` / `Mouton.preStepAbort()`
       (`if (maxAgeDays > 0 && getAgeDays() > maxAgeDays) _alive = false`),

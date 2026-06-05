@@ -110,6 +110,7 @@ public class WorldOfCells extends World {
 			Humain humanA = new Humain(px,py,this);
 			humanA.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);  // L1
 			humanA.initMind();
+			applyConfigTo(humanA);   // L3 — mode berger/chasseur
 			humains.add(humanA);
 			agents.add(humanA);
 			uniqueDynamicObjects.add(humanA);
@@ -177,6 +178,7 @@ public class WorldOfCells extends World {
     		// L1 — diversité génétique initiale + esprit démarré depuis le génome.
     		h.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);
     		h.initMind();
+    		applyConfigTo(h);   // L3 — mode berger/chasseur
     		humains.add(h);
     		agents.add(h);
     		uniqueDynamicObjects.add(h);
@@ -235,6 +237,12 @@ public class WorldOfCells extends World {
     	if (resetDynamic) l.vitesse = l.vpas;
     }
 
+    /** L3 — applique le mode berger/chasseur de l'Humain depuis la config. */
+    private void applyConfigTo(Humain h) {
+    	if (config == null) return;
+    	h.chasseur = config.humainChasseur == 1;
+    }
+
     /** Variante mouton. */
     private void applyConfigTo(Mouton m) { applyConfigTo(m, true); }
 
@@ -275,6 +283,7 @@ public class WorldOfCells extends World {
     	applyConfigToCAs();
     	for (Loup l : loups) applyConfigTo(l, false);
     	for (Mouton m : moutons) applyConfigTo(m, false);
+    	for (Humain h : humains) applyConfigTo(h);   // L3 — bascule berger/chasseur à chaud
     }
     
     public void colorInit(int x, int y, float color[]){
