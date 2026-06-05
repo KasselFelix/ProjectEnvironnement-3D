@@ -543,12 +543,23 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         des fondateurs (§ 4.5) et câblage des autres modificateurs (endurance,
         force→taille, intelligence, orientation) — à faire dans leurs phases.
 
-    Phase B — Croissance & cycle de vie
+    Phase B — Croissance & cycle de vie            [RÉALISÉ 2026-06-05]
         LifeStage (stade depuis l'âge), gating reproduction par stade,
         sizeFactor héritable, growth(age) Gompertz, suivre son parent.
         Tests : bébé/jeune ne se reproduit pas, l'adulte oui ; sizeFactor hérité
         moyenné+muté ; growth(0)=birthFrac et croît ; un petit se dirige vers
         son parent ; orphelin n'a plus de cible parent.
+        FAIT : agents.ai.LifeStage {BABY/JUVENILE/ADULT/OLD} (of(age,lifespan)
+        fractions sevrage 0.03 / maturité 0.06 / sénescence 0.80 ; canReproduce ;
+        fertilityFactor OLD 0.5 ; gompertzGrowth birthFrac 0.40, K 4.0).
+        Mouton : isFounder (fondateur=adulte, agneau=bébé), currentStage,
+        growthScale, displaySize (sizeFactor × croissance × Force), parent +
+        shouldFollowParent + état FOLLOW_PARENT, sizeFactor héritable clampé
+        [0.8,1.2], gating repro par stade + fertilité réduite vieux. Rendu :
+        scale × displaySize dans displayMoutonAt (validation visuelle → Phase H).
+        Tests : LifeStageTest (6), MoutonLifecycleTest (7), +1 Genome
+        (strengthSizeFactor). 118 tests verts. RESTE : seed diversity fondateurs
+        (§ 4.5) toujours en attente.
 
     Phase C — Mémoire sémantique
         SemanticMemory (catégories, capacité variable, LFU + oubli lié à l'âge),

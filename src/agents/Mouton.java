@@ -57,7 +57,8 @@ public class Mouton extends Agent {
 		float altitude = m.computeAgentAltitude(myWorld, m.x, m.y, normalizeHeight);
 		float px = offset + x2 * stepX;
 		float py = offset + y2 * stepY;
-		float scale = Math.abs(lenX) * 1.5f;
+		// Taille individuelle (§ 10.2) : trait héritable × croissance (âge) × Force.
+		float scale = Math.abs(lenX) * 1.5f * (float) m.displaySize();
 
 		// Rotation Z pour aligner −Y modèle (forward) vers (udx, udy) monde.
 		// Forward modèle = (0, −1), cible monde = (udx, udy).
@@ -118,6 +119,53 @@ public class Mouton extends Agent {
 	/** Génome (Phase A évolution, cf. docs/evolution.txt § 4). Un fondateur est
 	 *  NEUTRE sur tous les axes ; un agneau l'hérite des deux parents. */
 	public agents.ai.Genome genome = new agents.ai.Genome();
+
+	/** true = spawné au lancement (adulte d'emblée) ; false = né par
+	 *  reproduction (démarre BÉBÉ et grandit, cf. § 10.1). Le cycle
+	 *  bébé→jeune→adulte ne concerne que les agneaux nés. */
+	public boolean isFounder = true;
+
+	/** Facteur de taille individuel héritable (§ 10.2), clampé [0.8, 1.2] :
+	 *  deux adultes du même stade n'ont pas la même taille. */
+	public double sizeFactor = 1.0;
+
+	/** Parent à suivre tant qu'on est bébé/jeune (§ 10.3). null pour un fondateur
+	 *  ou un orphelin. Le suivi cesse quand le parent meurt ou qu'on devient adulte. */
+	public Mouton parent;
+
+	/** Rayon (cases) dans lequel un agneau suit son parent (§ 10.3). */
+	private static final int FOLLOW_RADIUS = 8;
+
+	/** true si l'agneau a un parent vivant à portée à suivre (bébé/jeune only). */
+	private boolean shouldFollowParent() {
+		agents.ai.LifeStage s = currentStage();
+		if (s != agents.ai.LifeStage.BABY && s != agents.ai.LifeStage.JUVENILE) return false;
+		return parent != null && parent._alive
+				&& world.distance(parent.x, parent.y, x, y) <= FOLLOW_RADIUS;
+	}
+
+	/** Stade de vie courant (§ 10.1). Un fondateur saute l'enfance (ADULTE
+	 *  d'emblée, puis VIEUX en sénescence) ; un agneau parcourt tout le cycle. */
+	public agents.ai.LifeStage currentStage() {
+		agents.ai.LifeStage s = agents.ai.LifeStage.of(getAgeDays(), maxAgeDays);
+		if (isFounder && (s == agents.ai.LifeStage.BABY || s == agents.ai.LifeStage.JUVENILE)) {
+			return agents.ai.LifeStage.ADULT;
+		}
+		return s;
+	}
+
+	/** Échelle de croissance liée à l'âge (§ 10.2) : un fondateur est à pleine
+	 *  taille (1.0) ; un agneau né suit la courbe de Gompertz depuis ~0.40. */
+	public double growthScale() {
+		if (isFounder) return 1.0;
+		return agents.ai.LifeStage.gompertzGrowth(getAgeDays(), maxAgeDays);
+	}
+
+	/** Taille de rendu relative (§ 10.2) : trait individuel × croissance liée à
+	 *  l'âge × léger facteur de Force du génome. Multiplie l'échelle de base. */
+	public double displaySize() {
+		return sizeFactor * growthScale() * genome.strengthSizeFactor();
+	}
 
 	public Mouton( int __x, int __y, World __World )
 	{
@@ -296,12 +344,15 @@ public class Mouton extends Agent {
 		// santé (≥ seuil) et INVESTIT une part de son énergie dans l'agneau
 		// (énergie conservée, pas créée). L'agneau naît à la position du parent.
 		Mouton mate = findReproPartner();
-		// La proba de reproduction est modulée par la fertilité du génome (§ 4.1/§ 4.3) :
-		// FERTILE ×1.5, INFERTILE ×0.2 (cul-de-sac mou : rare mais non nul).
-		if(energie >= energieMAX * reproEnergyThreshold && mate != null
-				&& Math.random() < Prepro * genome.reproProbaFactor()) {
+		// Reproduction gardée par le STADE (§ 10.1) : bébé et jeune ne se
+		// reproduisent pas. La proba est modulée par la fertilité du génome
+		// (§ 4.1/§ 4.3) : FERTILE ×1.5, INFERTILE ×0.2 (cul-de-sac mou).
+		if(currentStage().canReproduce() && energie >= energieMAX * reproEnergyThreshold && mate != null
+				&& Math.random() < Prepro * genome.reproProbaFactor() * currentStage().fertilityFactor()) {
 			double invest = energieMAX * reproOffspringRatio;
 			Mouton prea=new Mouton(this.x, this.y, this._world);
+			prea.isFounder = false;      // né par reproduction → démarre BÉBÉ (§ 10.1)
+			prea.parent = this;          // suit son parent tant qu'il est jeune (§ 10.3)
 			prea.energie = invest;       // l'agneau hérite de l'énergie investie
 			// Héritage évolutif : l'agneau hérite des traits MOYENNÉS des deux
 			// parents, avec une légère mutation → variation individuelle et
@@ -309,6 +360,8 @@ public class Mouton extends Agent {
 			prea.vision  = mutateInt((this.vision + mate.vision) / 2);
 			prea.vcourse = mutateDouble((this.vcourse + mate.vcourse) / 2.0);
 			prea.vmarche = mutateDouble((this.vmarche + mate.vmarche) / 2.0);
+			// Taille héritable (§ 10.2) : moyenne des parents + mutation, clampée.
+			prea.sizeFactor = clampSize(mutateDouble((this.sizeFactor + mate.sizeFactor) / 2.0));
 			// Héritage du GÉNOME : axes hérités des deux parents (+ conflit→NEUTRE,
 			// mutation de type, saut de génération possible — cf. Genome.inherit § 4.4).
 			prea.genome = agents.ai.Genome.inherit(this.genome, mate.genome,
@@ -364,6 +417,14 @@ public class Mouton extends Agent {
 		return m.genome.get(agents.ai.Axis.FERTILITY) == agents.ai.Pole.NEGATIVE;
 	}
 
+	/** Bornes du facteur de taille individuel (§ 10.2). */
+	private static final double SIZE_FACTOR_MIN = 0.8;
+	private static final double SIZE_FACTOR_MAX = 1.2;
+
+	private static double clampSize(double s) {
+		return Math.max(SIZE_FACTOR_MIN, Math.min(SIZE_FACTOR_MAX, s));
+	}
+
 	private static int mutateInt(int base) {
 		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
 		return Math.max(1, (int) Math.round(base * f));
@@ -399,6 +460,9 @@ public class Mouton extends Agent {
 		if (p.predatorVisible()) return AgentState.FLEE_PREDATOR;
 		if (alertTtl > 0)        return AgentState.FLEE_PREDATOR;   // alerté par le troupeau
 		if (p.inWater)           return AgentState.SEEK_LAND;
+		// Suivi du parent (§ 10.3) : un agneau colle à son parent, priorité sur
+		// l'herbe / le troupeau / l'errance (mais après la survie ci-dessus).
+		if (shouldFollowParent()) return AgentState.FOLLOW_PARENT;
 		// La nuit, le troupeau se regroupe (sécurité du nombre) s'il voit des congénères.
 		if (world.getJour() == 0
 				&& agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons) >= 0)
@@ -414,6 +478,15 @@ public class Mouton extends Agent {
 		// par défaut, on remet les flags legacy à 0 ; chaque état réactive ce qu'il faut
 		fuite = 0; earthSearch = 0;
 		switch (s) {
+			case FOLLOW_PARENT:
+				// L'agneau marche vers son parent (§ 10.3) — la proximité déclenche
+				// aussi l'éducation (Phase F).
+				if (parent != null) {
+					int pdir = agents.ai.Perception.dirToCell(this, world, parent.x, parent.y);
+					if (pdir >= 0) _orient = pdir;
+				}
+				vitesse = vmarche;
+				return MoveConstraints.landBound();
 			case HERD:
 				// Regroupement nocturne : marche vers le centre de masse du troupeau.
 				int gdir = agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons);

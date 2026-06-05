@@ -127,4 +127,16 @@ class GenomeTest {
         g.set(Axis.LONGEVITY, Pole.NEGATIVE);
         assertEquals(0.6, g.longevityFactor(), 1e-9);
     }
+
+    /** Modificateur de taille lié à la Force (§ 4.1, § 10.2) : FORT ×1.1,
+     *  NEUTRE ×1.0, FAIBLE ×0.9. Effet « léger » sur la taille de rendu. */
+    @Test
+    void modificateurDeTailleSelonLaForce() {
+        Genome g = new Genome();
+        assertEquals(1.0, g.strengthSizeFactor(), 1e-9);
+        g.set(Axis.STRENGTH, Pole.POSITIVE);
+        assertEquals(1.1, g.strengthSizeFactor(), 1e-9);
+        g.set(Axis.STRENGTH, Pole.NEGATIVE);
+        assertEquals(0.9, g.strengthSizeFactor(), 1e-9);
+    }
 }

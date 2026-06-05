@@ -64,6 +64,16 @@ public final class Genome {
         }
     }
 
+    /** Léger facteur de taille lié à la Force (axe Force, § 4.1/§ 10.2) :
+     *  FORT ×1.1, NEUTRE ×1.0, FAIBLE ×0.9. */
+    public double strengthSizeFactor() {
+        switch (get(Axis.STRENGTH)) {
+            case POSITIVE: return 1.1;
+            case NEGATIVE: return 0.9;
+            default:       return 1.0;
+        }
+    }
+
     /**
      * Construit le génome d'un enfant à partir des deux parents (§ 4.4). Pour
      * chaque axe, l'enfant prend le pôle d'un des deux parents (tirage 50/50).

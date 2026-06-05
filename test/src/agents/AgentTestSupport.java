@@ -22,4 +22,24 @@ public final class AgentTestSupport {
         world.init(DX, DY, landscape);
         return world;
     }
+
+    /**
+     * Cherche une cellule de TERRE FERME (altitude ≥ 0) en spirale autour de
+     * ({@code sx}, {@code sy}) — le terrain Perlin n'étant pas déterministe, les
+     * tests qui exigent une cellule hors de l'eau passent par ici. Renvoie
+     * {x, y}. Lève une AssertionError si tout est immergé (improbable).
+     */
+    public static int[] findLandCell(WorldOfCells world, int sx, int sy) {
+        int w = world.getWidth(), h = world.getHeight();
+        for (int r = 0; r < Math.max(w, h); r++) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dy = -r; dy <= r; dy++) {
+                    int x = ((sx + dx) % w + w) % w;
+                    int y = ((sy + dy) % h + h) % h;
+                    if (world.getCellHeight(x, y) >= 0) return new int[]{x, y};
+                }
+            }
+        }
+        throw new AssertionError("aucune cellule de terre ferme trouvée");
+    }
 }
