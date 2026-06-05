@@ -37,6 +37,7 @@ public class Humain extends Agent {
 	@Override public String getCurrentBehavior() {
 		if (playerControlled) return "Piloté";
 		if (_fireState == 1)  return "En feu";
+		if (currentState == agents.ai.AgentState.FLEE_LAVA) return "Fuit lave";
 		if (currentState == agents.ai.AgentState.HOME) return "Rentre au foyer";
 		return currentState == agents.ai.AgentState.HERD ? "Garde le troupeau" : "Errance";
 	}
@@ -64,6 +65,7 @@ public class Humain extends Agent {
 	@Override
 	protected agents.ai.AgentState decideState(agents.ai.Percept p) {
 		if (isOnFire())          return agents.ai.AgentState.ON_FIRE;
+		if (p.lavaVisible())     return agents.ai.AgentState.FLEE_LAVA;  // L2 — la lave tue au contact
 		if (world.getJour() == 0) return agents.ai.AgentState.HOME;  // la nuit, rentre au foyer
 		if (p.preyVisible())     return agents.ai.AgentState.HERD;   // berger : rejoint le troupeau
 		return agents.ai.AgentState.WANDER;
@@ -74,6 +76,11 @@ public class Humain extends Agent {
 		if (s == agents.ai.AgentState.ON_FIRE) {
 			if (p.waterDir >= 0) _orient = p.waterDir;
 			return agents.ai.MoveConstraints.amphibious();
+		}
+		if (s == agents.ai.AgentState.FLEE_LAVA) {
+			// L2 — fuit à l'opposé de la lave la plus proche, à terre.
+			if (p.lavaDir >= 0) _orient = agents.ai.AgentState.opposite(p.lavaDir);
+			return agents.ai.MoveConstraints.landBound();
 		}
 		if (s == agents.ai.AgentState.HOME) {
 			// La nuit, l'Humain rallie le foyer (bergerie).

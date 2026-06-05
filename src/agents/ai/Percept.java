@@ -13,6 +13,8 @@ public final class Percept {
     public final int waterDir;    public final double waterDist;
     public final int landDir;     public final double landDist;
     public final int grassDir;    public final double grassDist;
+    /** Direction vers la coulée de LAVE la plus proche en vue (L2) ; -1 si aucune. */
+    public final int lavaDir;     public final double lavaDist;
     public final boolean fireAdjacent;
     public final boolean lavaAdjacent;
     public final boolean inWater;
@@ -26,6 +28,7 @@ public final class Percept {
                    int waterDir, double waterDist,
                    int landDir, double landDist,
                    int grassDir, double grassDist,
+                   int lavaDir, double lavaDist,
                    boolean fireAdjacent, boolean lavaAdjacent,
                    boolean inWater, boolean onLava,
                    boolean[] cardinalFree) {
@@ -34,6 +37,7 @@ public final class Percept {
         this.waterDir = waterDir;       this.waterDist = waterDist;
         this.landDir = landDir;         this.landDist = landDist;
         this.grassDir = grassDir;       this.grassDist = grassDist;
+        this.lavaDir = lavaDir;         this.lavaDist = lavaDist;
         this.fireAdjacent = fireAdjacent; this.lavaAdjacent = lavaAdjacent;
         this.inWater = inWater;         this.onLava = onLava;
         this.cardinalFree = Arrays.copyOf(cardinalFree, cardinalFree.length);
@@ -42,4 +46,6 @@ public final class Percept {
     public boolean predatorVisible() { return predatorDir >= 0; }
     public boolean preyVisible()     { return preyDir >= 0; }
     public boolean grassVisible()    { return grassDir >= 0; }
+    /** L2 — true si une coulée de lave est en vue (l'agent doit fuir à l'opposé). */
+    public boolean lavaVisible()     { return lavaDir >= 0; }
 }

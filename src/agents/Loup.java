@@ -123,6 +123,7 @@ public class Loup extends Agent {
 		if (m == 1)          return "Mange";
 		if (playerControlled) return "Piloté";
 		switch (currentState) {
+			case FLEE_LAVA: return "Fuit lave";
 			case FLEE_PREDATOR: return "Fuit berger";
 			case REST:      return "Repos";
 			case HUNT:      return "Chasse";
@@ -378,6 +379,7 @@ public class Loup extends Agent {
 	public AgentState decideState(Percept p) {
 		boolean enChasse = energie < energieD * HUNGER_RATIO || attaqueNuit == 1;
 		if (isOnFire())                       return AgentState.ON_FIRE;
+		if (p.lavaVisible())                  return AgentState.FLEE_LAVA;       // L2 — la lave tue au contact
 		if (p.predatorVisible())              return AgentState.FLEE_PREDATOR;  // fuit l'Humain (prime sur la faim)
 		if (enChasse && p.preyVisible())      return AgentState.HUNT;
 		if (p.inWater)                        return AgentState.SEEK_LAND;
@@ -391,6 +393,12 @@ public class Loup extends Agent {
 			case ON_FIRE:
 				// fuit vers l'eau si vue, sinon continue tout droit (pas de demi-tour)
 				if (p.waterDir >= 0) _orient = p.waterDir;
+				vitesse = vcourse;
+				return MoveConstraints.amphibious();
+			case FLEE_LAVA:
+				// L2 — fuit à l'opposé de la lave, au sprint. Le loup nage bien
+				// (amphibie) : il peut couper par l'eau pour s'éloigner.
+				if (p.lavaDir >= 0) _orient = AgentState.opposite(p.lavaDir);
 				vitesse = vcourse;
 				return MoveConstraints.amphibious();
 			case FLEE_PREDATOR:

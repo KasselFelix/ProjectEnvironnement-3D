@@ -169,6 +169,37 @@ class LoupTest {
     }
 
     /**
+     * L2 — Fuite active de la lave : un loup qui voit une coulée de lave dans sa
+     * vision adopte l'état FLEE_LAVA et s'oriente à l'opposé (la lave plein EST →
+     * fuite plein OUEST, cap 3), au-dessus de toute autre priorité hors feu.
+     */
+    @Test
+    void loupFuitLaLaveAVue() {
+        WorldOfCells world = buildWorld();
+        int cx = 25, cy = 25;
+        AgentTestSupport.flattenLandArea(world, cx, cy, 12);
+
+        Loup loup = new Loup(cx, cy, world);
+        loup.energie = 100;   // affamé : sans lave il chasserait/chercherait
+        world.loups.add(loup);
+        world.agents.add(loup);
+        world.uniqueDynamicObjects.add(loup);
+
+        // Coulée de lave plein EST, dans la vision (vision=10) : on empile une
+        // couche LAVA (state>0) → getLavaCAValue renverra >0 sur cette cellule.
+        int lx = (cx + 4) % world.getWidth();
+        world.pushLayer(lx, cy, objects.Material.LAVA, 1f, 1);
+
+        Percept p = agents.ai.Perception.sense(loup, world, world.humains, world.moutons);
+        assertTrue(p.lavaVisible(), "la lave doit être perçue dans la vision");
+        AgentState s = loup.decideState(p);
+        assertEquals(AgentState.FLEE_LAVA, s, "lave en vue → FLEE_LAVA (priorité haute)");
+        loup.applyState(s, p);
+        assertEquals(3, loup._orient,
+                "le loup fuit à l'opposé de la lave EST → cap OUEST (3), observé " + loup._orient);
+    }
+
+    /**
      * L1 — Isolement de meute : un loup seul est isolé ; un loup avec un
      * congénère proche ne l'est pas. Alimente l'émergence du caractère social.
      */

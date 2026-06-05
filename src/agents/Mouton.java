@@ -250,6 +250,7 @@ public class Mouton extends Agent {
 		if (_fireState == 1) return "Fuit feu";
 		if (m == 1)          return "Broute";
 		switch (currentState) {
+			case FLEE_LAVA:     return "Fuit lave";
 			case FLEE_PREDATOR: return "Fuit loup";
 			case SEEK_LAND:     return "Cherche terre";
 			case SEEK_FOOD:     return "Cherche herbe";
@@ -490,6 +491,7 @@ public class Mouton extends Agent {
 	 *  l'eau. Affamé = énergie sous 50% du max ET de l'herbe en vue. */
 	public AgentState decideState(Percept p) {
 		if (isOnFire())          return AgentState.ON_FIRE;
+		if (p.lavaVisible())     return AgentState.FLEE_LAVA;   // L2 — la lave tue au contact : priorité absolue
 		if (p.predatorVisible()) return AgentState.FLEE_PREDATOR;
 		if (alertTtl > 0)        return AgentState.FLEE_PREDATOR;   // alerté par le troupeau
 		if (p.inWater)           return AgentState.SEEK_LAND;
@@ -559,6 +561,14 @@ public class Mouton extends Agent {
 				if (p.waterDir >= 0) _orient = p.waterDir;
 				vitesse = vcourse;
 				return MoveConstraints.amphibious();
+			case FLEE_LAVA:
+				// L2 — fuit à l'opposé de la lave la plus proche, au sprint. Le
+				// mouton craint l'eau : il reste à terre (landBound) — il préfère
+				// risquer le détour plutôt que se noyer.
+				if (p.lavaDir >= 0) _orient = AgentState.opposite(p.lavaDir);
+				fuite = 1;                       // supprime le Broute pendant la fuite
+				vitesse = vcourse;
+				return MoveConstraints.landBound();
 			case FLEE_PREDATOR:
 				if (p.predatorVisible()) {
 					// Voit le loup : fuit à l'opposé (en évitant l'eau si possible),

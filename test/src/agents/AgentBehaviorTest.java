@@ -63,6 +63,43 @@ class AgentBehaviorTest {
     }
 
     // -----------------------------------------------------------------------
+    // Test 1b (L2) — mouton flees an approaching lava flow
+    // -----------------------------------------------------------------------
+
+    /**
+     * Place a Mouton at (cx,cy) with a LAVA cell two steps East. After one step
+     * the Mouton must enter FLEE_LAVA and face West (orient=3), opposite the lava.
+     * Lava avoidance outranks every behaviour except being on fire.
+     */
+    @Test
+    void moutonFuitLaLave() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 20, cy = 20;
+
+        // Flatten + clear forest around so the westward escape is open land.
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dy = -2; dy <= 2; dy++) {
+                world.setCellHeight(cx + dx, cy + dy, 1.0);
+                world.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+
+        // Lava flow two cells East (within vision).
+        world.pushLayer(cx + 2, cy, objects.Material.LAVA, 1f, 1);
+
+        Mouton m = new Mouton(cx, cy, world);
+        world.moutons.add(m);
+        world.agents.add(m);
+        world.uniqueDynamicObjects.add(m);
+
+        m.step();
+
+        assertEquals(AgentState.FLEE_LAVA, m.currentState,
+                "Mouton must enter FLEE_LAVA when a lava flow is in sight.");
+        assertEquals(3, m._orient,
+                "Mouton must face West (orient=3) to flee lava located East.");
+    }
+
+    // -----------------------------------------------------------------------
     // Test 2 — hungry Loup hunts an East-adjacent Mouton
     // -----------------------------------------------------------------------
 

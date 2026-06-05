@@ -458,9 +458,15 @@ Court terme (1-2h chacun) :
 
 Moyen terme :
 
-    * **Agents fuient activement la lave** (extension du firestate déjà
-      en place : détecter LAVA dans la vision et fuir en direction
-      opposée).
+    * [RÉALISÉ 2026-06-06, L2] **Agents fuient activement la lave**. Le balayage
+      de perception (`Perception.sense`) traque désormais la coulée de LAVE la
+      plus proche en vue → champs `Percept.lavaDir/lavaDist` + `lavaVisible()`.
+      Un nouvel état `AgentState.FLEE_LAVA`, de priorité maximale après ON_FIRE,
+      est choisi par `decideState` du Loup, du Mouton ET de l'Humain quand de la
+      lave est en vue ; en `applyState`, l'agent s'oriente à l'opposé
+      (`AgentState.opposite(lavaDir)`) et sprinte (le mouton reste à terre, le
+      loup nage). Libellé HUD « Fuit lave ». Tests : `LoupTest.loupFuitLaLaveAVue`,
+      `AgentBehaviorTest.moutonFuitLaLave`. 180 tests verts.
     * **Tremblement précurseur** avant les éruptions auto (`pErruption`) :
       screen shake léger 5-10 sec avant le trigger.
     * [RÉALISÉ 2026-06-05] **Reforestation accélérée sur cendres** : à la

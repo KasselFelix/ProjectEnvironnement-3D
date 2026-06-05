@@ -26,6 +26,7 @@ public final class Perception {
         int waterDir = -1;    double waterDist = vision + 1;
         int landDir = -1;     double landDist = vision + 1;
         int grassDir = -1;    double grassDist = vision + 1;
+        int lavaDir = -1;     double lavaDist = vision + 1;   // L2
 
         // Cibles mobiles : direction depuis le delta torique réel (correctif C1).
         if (predators != null) {
@@ -65,6 +66,11 @@ public final class Perception {
                     if (world.getGrassCAValue(i, j) == 1 && d < grassDist) {
                         grassDist = d; grassDir = dominantDir(ax, ay, i, j, w, h);
                     }
+                    // L2 — lave la plus proche en vue : alimente FLEE_LAVA (fuite
+                    // active à l'opposé). Même balayage d'anneaux → coût nul.
+                    if (world.getLavaCAValue(i, j) > 0 && d < lavaDist) {
+                        lavaDist = d; lavaDir = dominantDir(ax, ay, i, j, w, h);
+                    }
                 }
             }
         }
@@ -86,7 +92,7 @@ public final class Perception {
 
         return new Percept(predatorDir, predatorDist, preyDir, preyDist,
                 waterDir, waterDist, landDir, landDist, grassDir, grassDist,
-                fireAdj, lavaAdj, inWater, onLava, cardinalFree);
+                lavaDir, lavaDist, fireAdj, lavaAdj, inWater, onLava, cardinalFree);
     }
 
     /**
