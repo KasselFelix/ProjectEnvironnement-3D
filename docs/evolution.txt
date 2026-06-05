@@ -621,7 +621,7 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         sur une proba de copie. Tests : SemanticMemoryTest +1, MoutonSocialTest
         (3). 143 tests verts.
 
-    Phase G — Caractère (social émergent)
+    Phase G — Caractère (social émergent)          [RÉALISÉ 2026-06-05]
         Character (session, profil de comportement, satisfaction = besoins
         primaires modulés par le caractère, gain/conserver/perdre avec
         hystérésis), effet sur les états (HERD pour SOLITAIRE/GRÉGAIRE).
@@ -629,6 +629,17 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         un SOLITAIRE quitte HERD avec proba élevée ; satisfaction sociale d'un
         solitaire est HAUTE quand il est seul ; perte du trait si satisfaction
         ≤ S_LOSE sur une session ; hystérésis (pas de yo-yo).
+        FAIT : agents.ai.SocialTrait {NONE/SOLITARY/GREGARIOUS} ;
+        agents.ai.Character (observe(isolated,sat) ; endSession gain/conserver/
+        perdre : S_GAIN 0.6, S_LOSE 0.3, PROFILE_GAIN 0.5, KEEP_FLOOR 0.3 ;
+        hystérésis). Mouton : champ character, isIsolated (FLOCK_NEAR_RADIUS 6),
+        satisfaction = moy(faim, sécurité, social) avec social MODULÉ par le
+        caractère (solitaire satisfait seul) ; observe + endSession par session
+        (CHARACTER_SESSION_DAYS 2) en postTick ; un SOLITAIRE n'entre pas en HERD.
+        Simplification : SOLITAIRE évite HERD de façon DÉTERMINISTE (forme forte
+        de la « proba élevée »). Tests : CharacterTest (7), MoutonCharacterTest
+        (3). 153 tests verts. Helper test AgentTestSupport.flattenLandArea (zone
+        terre déterministe vs flake terrain Perlin).
 
     Phase H — UI (validation par screenshot, pas test unitaire)
         Fiche AgentInfoPanel enrichie (Genome, stade/taille, caractère, mind,

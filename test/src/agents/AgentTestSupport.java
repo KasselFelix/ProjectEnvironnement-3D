@@ -42,4 +42,20 @@ public final class AgentTestSupport {
         }
         throw new AssertionError("aucune cellule de terre ferme trouvée");
     }
+
+    /**
+     * Aplanit une zone disque en TERRE FERME (altitude 1.0, sans forêt ni herbe)
+     * autour de ({@code cx}, {@code cy}) — pour rendre déterministes les tests
+     * sensibles au terrain Perlin (regroupement nocturne, etc.).
+     */
+    public static void flattenLandArea(WorldOfCells world, int cx, int cy, int radius) {
+        int r2 = radius * radius;
+        for (int dx = -radius; dx <= radius; dx++)
+            for (int dy = -radius; dy <= radius; dy++)
+                if (dx * dx + dy * dy <= r2) {
+                    world.setCellHeight(cx + dx, cy + dy, 1.0);
+                    world.setForestCAValue(cx + dx, cy + dy, 0);
+                    world.setGrassCAValue(cx + dx, cy + dy, 0);
+                }
+    }
 }

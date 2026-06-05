@@ -145,6 +145,40 @@ public class Mouton extends Agent {
 	 *  Intelligence, entraîné par l'activité, dégénérant avec l'âge. */
 	public agents.ai.Mind mind = new agents.ai.Mind(agents.ai.Mind.BASE_SCORE);
 
+	/** Caractère social ÉMERGENT (§ 7) : développé par session selon le vécu et
+	 *  la satisfaction. Aucun à la naissance. */
+	public final agents.ai.Character character = new agents.ai.Character();
+
+	/** Durée d'une session de développement du caractère, en jours-jeu (§ 7.1). */
+	private static final double CHARACTER_SESSION_DAYS = 2.0;
+	/** Rayon (cases) en deçà duquel un congénère « rompt » l'isolement (§ 7.3). */
+	private static final int FLOCK_NEAR_RADIUS = 6;
+
+	/** true si aucun congénère vivant n'est à portée de troupeau (§ 7.3). */
+	public boolean isIsolated() {
+		for (Mouton o : world.moutons) {
+			if (o == this || !o._alive) continue;
+			if (world.distance(o.x, o.y, x, y) <= FLOCK_NEAR_RADIUS) return false;
+		}
+		return true;
+	}
+
+	/** Satisfaction globale ∈ [0, 1] (§ 7.3) : moyenne des besoins primaires
+	 *  (faim, sécurité, social). Le besoin SOCIAL est MODULÉ par le caractère :
+	 *  un solitaire est satisfait seul, un grégaire en groupe. */
+	public double satisfaction() {
+		double hunger = Math.max(0.0, Math.min(1.0, energie / energieMAX));
+		double safety = (isOnFire() || currentState == agents.ai.AgentState.FLEE_PREDATOR) ? 0.0 : 1.0;
+		boolean iso = isIsolated();
+		double social;
+		switch (character.social()) {
+			case SOLITARY:   social = iso ? 1.0 : 0.0; break;
+			case GREGARIOUS: social = iso ? 0.0 : 1.0; break;
+			default:         social = iso ? 0.4 : 0.6; break;   // léger biais grégaire naturel
+		}
+		return (hunger + safety + social) / 3.0;
+	}
+
 	/** (Ré)initialise l'esprit depuis le génome courant (à appeler après avoir
 	 *  fixé le génome — fondateur au spawn, agneau à la naissance). */
 	public void initMind() {
@@ -496,6 +530,14 @@ public class Mouton extends Agent {
 		// l'âge le dégrade (atténué par la longévité du génome).
 		double lifespan = maxAgeDays > 0 ? maxAgeDays : agents.ai.LifeStage.REFERENCE_LIFESPAN_DAYS;
 		mind.train(activityLevel(), getAgeDays() / lifespan, genome.longevityFactor());
+
+		// Développement du caractère (§ 7) : on observe le vécu du tick ; en fin
+		// de session (toutes les CHARACTER_SESSION_DAYS), on statue sur le trait.
+		character.observe(isIsolated(), satisfaction());
+		int sessionTicks = Math.max(1, (int) (CHARACTER_SESSION_DAYS * 2 * world.getDureeJour()));
+		if (world.getIteration() > 0 && world.getIteration() % sessionTicks == 0) {
+			character.endSession();
+		}
 	}
 
 	/** Rayon (cases) dans lequel un congénère vivant compte comme partenaire de
@@ -567,9 +609,11 @@ public class Mouton extends Agent {
 		// l'herbe / le troupeau / l'errance (mais après la survie ci-dessus).
 		if (shouldFollowParent()) return AgentState.FOLLOW_PARENT;
 		// La nuit : le troupeau se regroupe (sécurité du nombre) s'il voit des
-		// congénères ; sinon un mouton ISOLÉ qui connaît un lieu sûr y rentre (§ 9).
+		// congénères — SAUF un SOLITAIRE qui évite le troupeau (§ 7.2). Sinon, un
+		// mouton ISOLÉ qui connaît un lieu sûr y rentre (§ 9).
 		if (world.getJour() == 0) {
-			if (agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons) >= 0)
+			if (character.social() != agents.ai.SocialTrait.SOLITARY
+					&& agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons) >= 0)
 				return AgentState.HERD;
 			if (nearestSafePlace() != null)
 				return AgentState.HOME;
