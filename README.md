@@ -1,10 +1,13 @@
 # Projet Environnement 3D
 
-Simulation 3D d'un écosystème dynamique : un paysage généré par bruit de Perlin (ou chargé depuis une image), peuplé d'agents (loups, moutons, humains), avec plusieurs automates cellulaires qui font évoluer la forêt, l'herbe, la lave et la pierre, le tout sur un monde **torique** avec un cycle jour / nuit.
+Création et modélisation d'un écosystème simplifié dynamique 3D 
+Implémentant plusieurs mécanisme : automate cellulaire, 
+arbre de comportement, générateur d’altitude, modèle proie prédateur, 
+Perlin Noise, Simplex Noise, Systeme de Lindemayer, monde torique.
 
 ![Capture d'écran de la simulation](docs/screenshot.png)
 
-Projet académique réalisé dans le cadre de l'UE **LU2IN013** à Sorbonne Université. Voir [docs/presentation-projet.pdf](docs/presentation-projet.pdf) pour la présentation complète.
+Voir [docs/presentation-projet.pdf](docs/presentation-projet.pdf) pour la présentation du projet académique.
 
 ## Caractéristiques
 
@@ -29,7 +32,7 @@ JOGL est embarqué dans le repo (~50 Mo) parce que les versions modernes (2.3.2+
 
 ## Installation et lancement
 
-Trois manières d'utiliser le projet, au choix : ligne de commande (la plus simple, la plus portable), Eclipse, ou VS Code. Les trois fonctionnent sur Linux, macOS et Windows — les particularités par plateforme (display OpenGL, shell, séparateur de classpath) sont décrites plus bas, voir [Notes par plateforme](#notes-pour-linux-et-macos).
+Trois manières d'utiliser ce projet, au choix : ligne de commande (la plus simple, la plus portable), Eclipse, ou VS Code. Les trois fonctionnent sur Linux, macOS et Windows — les particularités par plateforme (display OpenGL, shell, séparateur de classpath) sont décrites plus bas, voir [Notes par plateforme](#notes-pour-linux-et-macos).
 
 ### Option 1 — Ligne de commande (recommandé)
 
@@ -56,7 +59,7 @@ Le projet contient `.classpath` et `.project` versionnés dans le repo, donc l'i
 3. **Lancer la simulation** : clic droit sur `src/applications/simpleworld/MyEcosystem.java` → **Run As → Java Application**. Eclipse crée automatiquement une Run Configuration ; les natives JOGL (Linux/Mac/Windows) sont chargées par GlueGen selon ton OS.
 4. **Lancer les tests** : lancer d'abord `./test-setup.sh` une fois dans un terminal pour télécharger le jar JUnit, puis clic droit sur `test/src/applications/simpleworld/LavaCATest.java` → **Run As → JUnit Test**.
 
-Si tu vois "Unbound classpath container" → ton JDK 17 n'est pas configuré dans Eclipse (étape 1). Si tu vois des accents cassés (`?` à la place de `é`, `à`…) → `Window → Preferences → General → Workspace → Text file encoding: UTF-8`.
+Si "Unbound classpath container" s'affiche → le JDK 17 n'est pas configuré dans Eclipse (étape 1). Si des accents cassés sont visible (`?` à la place de `é`, `à`…) → `Window → Preferences → General → Workspace → Text file encoding: UTF-8`.
 
 ### Option 3 — VS Code
 
@@ -121,11 +124,11 @@ javac -d bin -cp "JOGL\jar\*" $src.FullName
 java -cp "bin;JOGL\jar\*" applications.simpleworld.MyEcosystem
 ```
 
-Pour cmd la syntaxe diffère encore ; à éviter, choisi PowerShell ou Git Bash.
+Pour cmd la syntaxe diffère encore ; à éviter, choisir de preference PowerShell ou Git Bash.
 
 **Display** : aucune configuration nécessaire, OpenGL passe par le pilote GPU natif Windows. JOGL charge automatiquement `gluegen-rt-natives-windows-amd64.jar` et `jogl-all-natives-windows-amd64.jar`.
 
-**IDE** : Eclipse Windows et VS Code Windows fonctionnent normalement — ils utilisent leur propre toolchain Java sans dépendre des scripts `.sh`, donc Git Bash n'est même pas nécessaire si tu lances tout via l'IDE.
+**IDE** : Eclipse Windows et VS Code Windows fonctionnent normalement — ils utilisent leur propre toolchain Java sans dépendre des scripts `.sh`, Git Bash n'est pas nécessaire si le lancement est fait via l'IDE.
 
 ## Commandes disponibles
 
