@@ -561,11 +561,21 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         (strengthSizeFactor). 118 tests verts. RESTE : seed diversity fondateurs
         (§ 4.5) toujours en attente.
 
-    Phase C — Mémoire sémantique
+    Phase C — Mémoire sémantique                   [RÉALISÉ 2026-06-05]
         SemanticMemory (catégories, capacité variable, LFU + oubli lié à l'âge),
         branchement sur la décision (eau/danger/lieu sûr pour Mouton).
         Tests : ajout/oubli LFU, capacité décroît avec l'âge, l'errance vise un
         point d'eau mémorisé.
+        FAIT : agents.ai.MemoryKind {WATER/HUNTING/DANGER/SAFE_PLACE},
+        agents.ai.SemanticMemory (remember = dédup + bump usage ; oubli LFU à
+        capacité pleine ; nearest(kind, from, Distance injectée) ; usageOf ;
+        capacityFor(genome, age, lifespan) = BASE 8 + intelligence×3 + sagesse×2
+        − pénalité d'âge/longévité, plancher 2). Mouton : champ memory, mémorise
+        la zone de DANGER du loup le plus proche en fuite, l'évite en errance
+        (case devant), refreshMemoryCapacity par tick (capacité suit l'âge).
+        Branchement « errance vers point d'eau » adapté au mouton : il MÉMORISE
+        et ÉVITE le danger plutôt que de chercher l'eau (le mouton fuit l'eau).
+        Tests : SemanticMemoryTest (5), MoutonMemoryTest (3). 126 tests verts.
 
     Phase D — Mind (intelligence + entraînement)
         Mind (score poids, dégénérescence, gain par activité). Intelligence

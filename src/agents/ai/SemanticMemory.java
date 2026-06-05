@@ -1,0 +1,131 @@
+package agents.ai;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Mémoire sémantique d'un agent (cf. docs/evolution.txt § 5) : un ensemble de
+ * lieux connus par catégorie ({@link MemoryKind}), chacun portant un score
+ * d'utilisation. Capacité variable ; quand elle déborde, on oublie le souvenir
+ * le MOINS utilisé (politique LFU).
+ */
+public final class SemanticMemory {
+
+    /** Un lieu mémorisé : sa catégorie, sa position, son score d'utilisation. */
+    static final class Entry {
+        final MemoryKind kind;
+        final int x, y;
+        int usage;
+        Entry(MemoryKind kind, int x, int y) {
+            this.kind = kind; this.x = x; this.y = y; this.usage = 1;
+        }
+    }
+
+    /** Capacité par défaut (nombre de souvenirs) avant que le calcul lié au
+     *  génome/âge ne la fixe (§ 5.1). */
+    public static final int DEFAULT_CAPACITY = 8;
+
+    // Paramètres du calcul de capacité (§ 5.1).
+    private static final int CAP_BASE = 8;
+    private static final int CAP_INTELLIGENCE_BONUS = 3;  // par cran de l'axe Intelligence
+    private static final int CAP_WISDOM_BONUS = 2;        // par cran de l'axe Sagesse
+    private static final double CAP_AGE_PENALTY_MAX = 6.0; // perte max au grand âge
+    private static final int CAP_MIN = 2;
+
+    /**
+     * Capacité mémoire d'un agent (§ 5.1) :
+     * {@code BASE + intelligence + sagesse − pénalité d'âge}. La pénalité d'âge
+     * croît avec la fraction d'âge et est atténuée par l'axe Longévité (un
+     * agent à forte longévité dégénère plus lentement). Plancher à CAP_MIN.
+     */
+    public static int capacityFor(Genome genome, double ageDays, double lifespanDays) {
+        double lifespan = lifespanDays > 0 ? lifespanDays : LifeStage.REFERENCE_LIFESPAN_DAYS;
+        double ageFraction = Math.max(0.0, ageDays) / lifespan;
+        double agePenalty = Math.min(1.0, ageFraction) * CAP_AGE_PENALTY_MAX / genome.longevityFactor();
+
+        int cap = CAP_BASE
+                + genome.get(Axis.INTELLIGENCE).sign * CAP_INTELLIGENCE_BONUS
+                + genome.get(Axis.WISDOM).sign * CAP_WISDOM_BONUS
+                - (int) Math.round(agePenalty);
+        return Math.max(CAP_MIN, cap);
+    }
+
+    private final List<Entry> entries = new ArrayList<>();
+    private int capacity = DEFAULT_CAPACITY;
+
+    /** Fixe la capacité maximale ; si on déborde déjà, on oublie les moins
+     *  utilisés jusqu'à rentrer dans la nouvelle capacité. */
+    public void setCapacity(int capacity) {
+        this.capacity = Math.max(1, capacity);
+        while (entries.size() > this.capacity) forgetLeastUsed();
+    }
+
+    /**
+     * Mémorise un lieu. Si déjà connu, renforce son score d'usage (pas de
+     * doublon). Sinon l'ajoute, en évinçant le souvenir le moins utilisé si la
+     * capacité est atteinte (oubli LFU, § 5.2).
+     */
+    public void remember(MemoryKind kind, int x, int y) {
+        Entry existing = find(kind, x, y);
+        if (existing != null) {
+            existing.usage++;
+            return;
+        }
+        if (entries.size() >= capacity) forgetLeastUsed();
+        entries.add(new Entry(kind, x, y));
+    }
+
+    /** Nombre total de souvenirs. */
+    public int size() {
+        return entries.size();
+    }
+
+    /** true si ce lieu exact est mémorisé dans cette catégorie. */
+    public boolean contains(MemoryKind kind, int x, int y) {
+        return find(kind, x, y) != null;
+    }
+
+    /** Score d'usage d'un lieu (0 s'il n'est pas mémorisé). */
+    public int usageOf(MemoryKind kind, int x, int y) {
+        Entry e = find(kind, x, y);
+        return e == null ? 0 : e.usage;
+    }
+
+    /** Fonction de distance injectée (tore-aware côté agent via World.distance). */
+    public interface Distance {
+        double between(int x1, int y1, int x2, int y2);
+    }
+
+    /**
+     * Lieu mémorisé le PLUS PROCHE de ({@code fromX}, {@code fromY}) dans la
+     * catégorie donnée, ou null si aucun. Distance fournie par l'appelant (pour
+     * rester tore-aware sans dépendre de World).
+     */
+    public int[] nearest(MemoryKind kind, int fromX, int fromY, Distance dist) {
+        Entry best = null;
+        double bestD = Double.MAX_VALUE;
+        for (Entry e : entries) {
+            if (e.kind != kind) continue;
+            double d = dist.between(fromX, fromY, e.x, e.y);
+            if (d < bestD) { bestD = d; best = e; }
+        }
+        return best == null ? null : new int[]{best.x, best.y};
+    }
+
+    private Entry find(MemoryKind kind, int x, int y) {
+        for (Entry e : entries) {
+            if (e.kind == kind && e.x == x && e.y == y) return e;
+        }
+        return null;
+    }
+
+    /** Oublie le souvenir au plus faible score d'usage (LFU). */
+    private void forgetLeastUsed() {
+        if (entries.isEmpty()) return;
+        Entry least = entries.get(0);
+        for (Entry e : entries) {
+            if (e.usage < least.usage) least = e;
+        }
+        entries.remove(least);
+    }
+}

@@ -1,0 +1,88 @@
+package agents.ai;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Phase C du système d'évolution (cf. docs/evolution.txt § 5) : mémoire de
+ * CONNAISSANCES (points d'eau, zones de chasse/danger, lieux sûrs) à capacité
+ * variable, avec oubli LFU (least-frequently-used) lié à l'âge.
+ */
+class SemanticMemoryTest {
+
+    /** Retenir un lieu puis le restituer : il est mémorisé et compté. */
+    @Test
+    void retientEtRestitueUnLieu() {
+        SemanticMemory mem = new SemanticMemory();
+        mem.remember(MemoryKind.WATER, 5, 5);
+
+        assertEquals(1, mem.size());
+        assertTrue(mem.contains(MemoryKind.WATER, 5, 5));
+        assertFalse(mem.contains(MemoryKind.WATER, 9, 9));
+    }
+
+    /** Re-mémoriser le même lieu ne crée pas de doublon (il renforce l'usage). */
+    @Test
+    void memoriserLeMemeLieuNeDupliquePas() {
+        SemanticMemory mem = new SemanticMemory();
+        mem.remember(MemoryKind.WATER, 5, 5);
+        mem.remember(MemoryKind.WATER, 5, 5);
+        assertEquals(1, mem.size());
+        assertEquals(2, mem.usageOf(MemoryKind.WATER, 5, 5), "usage renforcé à chaque rappel");
+    }
+
+    /** Oubli LFU (§ 5.2) : à capacité pleine, l'arrivée d'un nouveau souvenir
+     *  évince le moins utilisé. */
+    @Test
+    void oublieLeMoinsUtiliseQuandPlein() {
+        SemanticMemory mem = new SemanticMemory();
+        mem.setCapacity(2);
+        mem.remember(MemoryKind.WATER, 1, 1);     // usage 1
+        mem.remember(MemoryKind.WATER, 2, 2);     // usage 1
+        mem.remember(MemoryKind.WATER, 1, 1);     // (1,1) usage 2 → (2,2) est le moins utilisé
+        mem.remember(MemoryKind.WATER, 3, 3);     // plein → évince (2,2)
+
+        assertEquals(2, mem.size());
+        assertTrue(mem.contains(MemoryKind.WATER, 1, 1), "le plus utilisé reste");
+        assertTrue(mem.contains(MemoryKind.WATER, 3, 3), "le nouveau entre");
+        assertFalse(mem.contains(MemoryKind.WATER, 2, 2), "le moins utilisé est oublié");
+    }
+
+    /** nearest() rend le lieu mémorisé le plus proche de la catégorie demandée,
+     *  selon une fonction de distance injectée ; null si la catégorie est vide. */
+    @Test
+    void trouveLeLieuMemoriseLePlusProche() {
+        SemanticMemory mem = new SemanticMemory();
+        SemanticMemory.Distance euclid =
+                (x1, y1, x2, y2) -> Math.hypot(x1 - x2, y1 - y2);
+
+        assertNull(mem.nearest(MemoryKind.WATER, 0, 0, euclid), "aucun souvenir → null");
+
+        mem.remember(MemoryKind.WATER, 5, 5);
+        mem.remember(MemoryKind.WATER, 10, 10);
+        mem.remember(MemoryKind.DANGER, 6, 6);     // autre catégorie : ignorée
+
+        int[] near = mem.nearest(MemoryKind.WATER, 6, 6, euclid);
+        assertArrayEquals(new int[]{5, 5}, near, "le point d'eau le plus proche de (6,6)");
+    }
+
+    /** Capacité variable (§ 5.1) : un intelligent retient plus qu'un neutre ; un
+     *  vieux retient moins qu'un jeune ; jamais sous un plancher. */
+    @Test
+    void capaciteVariableSelonGenomeEtAge() {
+        Genome neutre = new Genome();
+        Genome intelligent = new Genome();
+        intelligent.set(Axis.INTELLIGENCE, Pole.POSITIVE);
+
+        int capNeutre = SemanticMemory.capacityFor(neutre, 0.0, 100.0);
+        int capIntelligent = SemanticMemory.capacityFor(intelligent, 0.0, 100.0);
+        assertTrue(capIntelligent > capNeutre, "l'intelligent retient davantage");
+
+        int capJeune = SemanticMemory.capacityFor(neutre, 0.0, 100.0);
+        int capVieux = SemanticMemory.capacityFor(neutre, 90.0, 100.0);
+        assertTrue(capVieux < capJeune, "le vieux retient moins (dégénérescence § 5.2)");
+
+        assertTrue(SemanticMemory.capacityFor(neutre, 100000.0, 100.0) >= 2,
+                "la capacité ne descend jamais sous le plancher");
+    }
+}

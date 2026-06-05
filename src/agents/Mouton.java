@@ -133,6 +133,34 @@ public class Mouton extends Agent {
 	 *  ou un orphelin. Le suivi cesse quand le parent meurt ou qu'on devient adulte. */
 	public Mouton parent;
 
+	/** Mémoire sémantique (§ 5) : zones de danger connues, etc. Capacité réglée
+	 *  selon l'intelligence et l'âge (refreshMemoryCapacity). */
+	public final agents.ai.SemanticMemory memory = new agents.ai.SemanticMemory();
+
+	/** Recale la capacité de la mémoire sur le génome et l'âge courants (§ 5.1). */
+	public void refreshMemoryCapacity() {
+		memory.setCapacity(agents.ai.SemanticMemory.capacityFor(genome, getAgeDays(), maxAgeDays));
+	}
+
+	/** Mémorise comme DANGER la position du loup visible le plus proche (§ 5). */
+	private void recordNearestPredatorAsDanger() {
+		Loup nearest = null;
+		double bestD = Double.MAX_VALUE;
+		for (Loup l : world.loups) {
+			if (!l._alive) continue;
+			double d = world.distance(l.x, l.y, x, y);
+			if (d <= vision && d < bestD) { bestD = d; nearest = l; }
+		}
+		if (nearest != null) memory.remember(agents.ai.MemoryKind.DANGER, nearest.x, nearest.y);
+	}
+
+	/** true si la case droit devant (cap _orient) est une zone de danger mémorisée. */
+	private boolean dangerAhead() {
+		int ax = ((x + orientDx(_orient)) % world.getWidth() + world.getWidth()) % world.getWidth();
+		int ay = ((y + orientDy(_orient)) % world.getHeight() + world.getHeight()) % world.getHeight();
+		return memory.contains(agents.ai.MemoryKind.DANGER, ax, ay);
+	}
+
 	/** Rayon (cases) dans lequel un agneau suit son parent (§ 10.3). */
 	private static final int FOLLOW_RADIUS = 8;
 
@@ -218,6 +246,7 @@ public class Mouton extends Agent {
 	protected void resetTickFlags() {
 		fuite=0;
 		m=0;
+		refreshMemoryCapacity();             // la capacité mémoire suit l'âge (§ 5.1)
 		if (alertTtl > 0) alertTtl--;        // l'alarme s'estompe (en TOURS, pas en ticks)
 		if(world.getCellHeight(x, y)>=0)earthSearch=0;
 		if(world.getCellHeight(x, y)<0){this._fireState=0;}
@@ -507,10 +536,11 @@ public class Mouton extends Agent {
 				return MoveConstraints.amphibious();
 			case FLEE_PREDATOR:
 				if (p.predatorVisible()) {
-					// Voit le loup : fuit à l'opposé (en évitant l'eau si possible)
-					// ET donne l'alarme au troupeau proche.
+					// Voit le loup : fuit à l'opposé (en évitant l'eau si possible),
+					// donne l'alarme au troupeau proche ET mémorise la zone de danger.
 					_orient = chooseFleeOrient(p);
 					alertNeighbours();
+					recordNearestPredatorAsDanger();
 				} else if (alertDir >= 0) {
 					// Alerté sans voir le loup : fuit dans le cap du troupeau.
 					_orient = alertDir;
@@ -533,7 +563,11 @@ public class Mouton extends Agent {
 				return MoveConstraints.landBound();
 			case WANDER:
 			default:
-				if (aheadVisitedRecently()) {
+				if (dangerAhead()) {
+					// Mémoire sémantique (§ 5.3) : la case devant est une zone de
+					// danger connue → on tourne pour l'éviter.
+					_orient = (_orient + 1) % 4;
+				} else if (aheadVisitedRecently()) {
 					// Mémoire spatiale : la case devant a déjà été visitée → on
 					// tourne pour ne pas errer en boucle.
 					_orient = (_orient + 1) % 4;
