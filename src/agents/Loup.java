@@ -266,6 +266,9 @@ public class Loup extends Agent {
 		// rapide que le mouton dans l'eau comme sur terre.
 		if(world.getCellHeight(x,y)<0)vitesse=vitesse*swimFactor;
 
+		// L6 — grand froid (nuits d'hiver) : l'agent s'engourdit (no-op si > 5°C).
+		vitesse *= world.coldSpeedFactor();
+
 
 		// si dans la lave
 		if (_world.getLavaCAValue(x, y) > 0) {

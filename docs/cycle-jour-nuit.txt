@@ -255,11 +255,20 @@ PARAMS) pour `cycleTotalSec`, `dayFractionRatio`, `transitionJourSec`,
 
 --- Long terme ---
 
-    * Météo dynamique indépendante du cycle solaire (pluie, neige, brouillard)
-      avec interaction sur les CAs (la pluie ralentit le feu, la neige recouvre
-      la végétation).
-    * Variation de température affectant la solidification de la lave, la
-      vitesse des agents et la zone habitable de l'herbe.
+    * [RÉALISÉ 2026-06-06, L6] Météo dynamique : `World.updateWeather()` tire une
+      fois par jour-jeu un état PLUIE selon `Season.rainProbability` (automne le
+      plus humide, été le plus sec). `World.fireSpreadFactor()` = 0.2 sous la
+      pluie → la propagation du feu dans `ForestCA` (ignition spontanée ×0.2 ET
+      contagion de proche en proche gatée par cette proba) est nettement ralentie
+      par temps de pluie (la lave embrase toujours, chaleur directe). HUD : °C +
+      « pluie ». Tests `WorldWeatherTest`. RESTE (long terme) : neige/brouillard.
+    * [RÉALISÉ 2026-06-06, L6, volet température+vitesse] `World.getTemperature()`
+      (°C) dérivée de la base saisonnière (`Season.baseTemperatureC`) ± le swing
+      jour/nuit ± la pluie. `World.coldSpeedFactor()` ∈ [0.7, 1.0] (no-op > 5°C)
+      ralentit Loup et Mouton par grand froid (nuits d'hiver). Test
+      `grandFroidRalentitLesAgents`. RESTE : couplage température → solidification
+      de la lave et → zone habitable de l'herbe (la fertilité saisonnière L5
+      couvre déjà partiellement l'herbe l'hiver).
     * Orages occasionnels déclenchant des feux de forêt par la foudre (déjà
       partiellement modélisé via `pF` dans ForestCA, sans éclair visuel).
 

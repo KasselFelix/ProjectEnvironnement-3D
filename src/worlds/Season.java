@@ -9,18 +9,25 @@ package worlds;
  * jauni l'automne, terne l'hiver).
  */
 public enum Season {
-    SPRING(1.15, "Printemps"),
-    SUMMER(1.00, "Ete"),
-    AUTUMN(0.65, "Automne"),
-    WINTER(0.30, "Hiver");
+    SPRING(1.15, "Printemps", 0.30,  8.0),
+    SUMMER(1.00, "Ete",       0.10, 22.0),
+    AUTUMN(0.65, "Automne",   0.45, 10.0),
+    WINTER(0.30, "Hiver",     0.35, -2.0);
 
     /** Multiplicateur de fertilité appliqué aux CA de végétation. */
     public final double fertilityFactor;
     /** Libellé ASCII pour le HUD. */
     public final String label;
+    /** Probabilité qu'un jour de cette saison soit pluvieux (L6). */
+    public final double rainProbability;
+    /** Température de base de la saison en °C, à mi-journée (L6). Modulée par le
+     *  cycle jour/nuit et la pluie dans {@code World.getTemperature()}. */
+    public final double baseTemperatureC;
 
-    Season(double fertilityFactor, String label) {
+    Season(double fertilityFactor, String label, double rainProbability, double baseTemperatureC) {
         this.fertilityFactor = fertilityFactor;
         this.label = label;
+        this.rainProbability = rainProbability;
+        this.baseTemperatureC = baseTemperatureC;
     }
 }

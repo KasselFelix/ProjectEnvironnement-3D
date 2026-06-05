@@ -317,22 +317,26 @@ public class ForestCA extends CellularAutomataInteger {
 	    					}
 						}else{
 		    				// check if neighbors are burning (any fire sub-state)
-		    				if (
-		    						isTreeOnFire(this.getCellState( (i+_dx-1)%(_dx) , j )) ||
-		    						isTreeOnFire(this.getCellState( (i+_dx+1)%(_dx) , j )) ||
-		    						isTreeOnFire(this.getCellState( i , (j+_dy+1)%(_dy) )) ||
-		    						isTreeOnFire(this.getCellState( i , (j+_dy-1)%(_dy) )) ||
+		    				// L6 — la pluie ralentit la propagation : un voisin en feu
+		    				// n'embrase l'arbre qu'avec proba fireSpreadFactor (1.0 à sec).
+		    				// La lave adjacente, elle, embrase toujours (chaleur directe).
+		    				boolean lavaAdj =
 		    						world.getLavaCAValue( (i+_dx-1)%(_dx) , j ) != 0 ||
 		    						world.getLavaCAValue( (i+_dx+1)%(_dx) , j ) != 0 ||
 		    						world.getLavaCAValue( i , (j+_dy+1)%(_dy) ) != 0 ||
-		    						world.getLavaCAValue( i , (j+_dy-1)%(_dy) ) != 0
-		    					)
+		    						world.getLavaCAValue( i , (j+_dy-1)%(_dy) ) != 0;
+		    				boolean fireAdj =
+		    						isTreeOnFire(this.getCellState( (i+_dx-1)%(_dx) , j )) ||
+		    						isTreeOnFire(this.getCellState( (i+_dx+1)%(_dx) , j )) ||
+		    						isTreeOnFire(this.getCellState( i , (j+_dy+1)%(_dy) )) ||
+		    						isTreeOnFire(this.getCellState( i , (j+_dy-1)%(_dy) ));
+		    				if ( lavaAdj || (fireAdj && Math.random() < world.fireSpreadFactor()) )
 		    				{
 		    					this.setCellState(i,j, FIRE_FIRST);
 		    					NbArbreSaint-=1;
 		    				}
 		    				else
-		    					if ( Math.random() < pF ) // spontaneously take fire ?
+		    					if ( Math.random() < pF * world.fireSpreadFactor() ) // spontaneously take fire ?
 		    					{
 		    						this.setCellState(i,j, FIRE_FIRST);
 		    						NbArbreSaint-=1;

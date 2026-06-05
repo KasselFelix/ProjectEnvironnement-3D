@@ -399,6 +399,9 @@ public class Mouton extends Agent {
 		// n'est plus une échappatoire : le loup l'y rattrape.
 		if(world.getCellHeight(x,y)<0)vitesse=vitesse*swimFactor;
 
+		// L6 — grand froid (nuits d'hiver) : le mouton s'engourdit (no-op si > 5°C).
+		vitesse *= world.coldSpeedFactor();
+
 		//si dans la lave
 		if(_world.getLavaCAValue(x,y)>0) {
 			_alive=false;

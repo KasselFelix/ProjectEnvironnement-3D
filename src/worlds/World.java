@@ -157,6 +157,7 @@ public abstract class World {
     
     public void step()
     {
+    	updateWeather();        // L6 — météo du jour (pluie selon la saison)
     	stepCellularAutomata();
     	stepAgents();
     	before=jour;
@@ -218,6 +219,56 @@ public abstract class World {
 	/** Multiplicateur de fertilité saisonnier lu par les CA de végétation (L5). */
 	public double seasonalFertility() {
 		return currentSeason().fertilityFactor;
+	}
+
+	// ===== Météo & température (L6) =====
+	/** Amortissement de la propagation du feu sous la pluie (0.2 = 5× plus lent). */
+	private static final double RAIN_FIRE_DAMP = 0.2;
+	/** Écart de température jour↔nuit en °C (±). */
+	private static final double DAY_NIGHT_TEMP_SWING = 4.0;
+	/** Refroidissement supplémentaire quand il pleut, en °C. */
+	private static final double RAIN_TEMP_DROP = 3.0;
+
+	private boolean raining = false;
+	private int lastWeatherDay = -1;
+	private final java.util.Random weatherRng = new java.util.Random();
+
+	public boolean isRaining() { return raining; }
+	public void setRaining(boolean r) { this.raining = r; }
+
+	/** Tire la météo du jour (une fois par jour-jeu) selon la probabilité de
+	 *  pluie de la saison. Appelé au début de {@link #step()}. */
+	void updateWeather() {
+		int day = getCurrentDay();
+		if (day != lastWeatherDay) {
+			lastWeatherDay = day;
+			raining = weatherRng.nextDouble() < currentSeason().rainProbability;
+		}
+	}
+
+	/** Température approximative du monde en °C (L6) : base saisonnière modulée
+	 *  par le jour/nuit (jour plus chaud) et la pluie (plus frais). */
+	public double getTemperature() {
+		double t = currentSeason().baseTemperatureC;
+		t += (jour == 1) ? DAY_NIGHT_TEMP_SWING : -DAY_NIGHT_TEMP_SWING;
+		if (raining) t -= RAIN_TEMP_DROP;
+		return t;
+	}
+
+	/** Facteur multiplicatif de propagation/ignition du feu (L6) : 1.0 par temps
+	 *  sec, {@link #RAIN_FIRE_DAMP} sous la pluie. Lu par ForestCA. */
+	public double fireSpreadFactor() {
+		return raining ? RAIN_FIRE_DAMP : 1.0;
+	}
+
+	/** Facteur de vitesse lié au froid (L6) : 1.0 au-dessus de 5°C, descend
+	 *  linéairement jusqu'à 0.7 à -10°C (les agents s'engourdissent par grand
+	 *  froid). Borné [0.7, 1.0]. */
+	public double coldSpeedFactor() {
+		double t = getTemperature();
+		if (t >= 5.0) return 1.0;
+		double f = 1.0 - (5.0 - t) / 15.0 * 0.3;   // -10°C → 0.7
+		return Math.max(0.7, Math.min(1.0, f));
 	}
 
 	public int getBefore() {
