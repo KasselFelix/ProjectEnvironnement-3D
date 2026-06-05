@@ -112,6 +112,15 @@ public final class SemanticMemory {
         return best == null ? null : new int[]{best.x, best.y};
     }
 
+    /** Transmet TOUS les souvenirs de cette mémoire à {@code student} (§ 8 :
+     *  apprentissage social / éducation). L'élève les ajoute (sous contrainte de
+     *  sa propre capacité, oubli LFU). */
+    public void teach(SemanticMemory student) {
+        for (Entry e : entries) {
+            student.remember(e.kind, e.x, e.y);
+        }
+    }
+
     private Entry find(MemoryKind kind, int x, int y) {
         for (Entry e : entries) {
             if (e.kind == kind && e.x == x && e.y == y) return e;

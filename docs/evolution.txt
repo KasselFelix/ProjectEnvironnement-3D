@@ -607,11 +607,19 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         navigate perturbé). Tests : GenomeTest +1, PerceptionTest +1,
         MoutonHomingTest (4). 139 tests verts.
 
-    Phase F — Apprentissage social + éducation
+    Phase F — Apprentissage social + éducation     [RÉALISÉ 2026-06-05]
         Copie de souvenirs entre congénères ; transfert parent→enfant à
         proximité (couplé au « suivre son parent » Phase B).
         Tests : un mouton recopie un point d'eau vu chez un voisin ; un agneau
         près de sa mère acquiert ses souvenirs plus vite qu'un orphelin.
+        FAIT : SemanticMemory.teach(student) (transmet tous les souvenirs).
+        Mouton.learnFromNeighbours (recopie les congénères vivants ≤ SOCIAL_LEARN
+        _RADIUS 6, dans resetTickFlags) — le parent suivi est un voisin →
+        éducation émergente ; orphelin isolé n'apprend rien ; capacité mémoire
+        (intelligence) borne la rétention. Simplification : copie DÉTERMINISTE
+        (l'observation marche), l'intelligence joue sur la CAPACITÉ plutôt que
+        sur une proba de copie. Tests : SemanticMemoryTest +1, MoutonSocialTest
+        (3). 143 tests verts.
 
     Phase G — Caractère (social émergent)
         Character (session, profil de comportement, satisfaction = besoins

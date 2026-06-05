@@ -186,6 +186,24 @@ public class Mouton extends Agent {
 	/** Rayon (cases) d'apprentissage d'un point de repère (bergerie → lieu sûr). */
 	private static final int LEARN_LANDMARK_RADIUS = 3;
 
+	/** Rayon (cases) d'apprentissage social auprès d'un congénère (§ 8). */
+	private static final int SOCIAL_LEARN_RADIUS = 6;
+
+	/**
+	 * Apprentissage social & éducation (§ 8) : le mouton recopie les
+	 * connaissances sémantiques de ses congénères vivants à portée (le parent en
+	 * fait partie quand l'agneau le suit → éducation). Un mouton isolé n'apprend
+	 * rien. La capacité mémoire (liée à l'intelligence) borne ce qu'il retient.
+	 */
+	public void learnFromNeighbours() {
+		for (Mouton other : world.moutons) {
+			if (other == this || !other._alive) continue;
+			if (world.distance(other.x, other.y, x, y) <= SOCIAL_LEARN_RADIUS) {
+				other.memory.teach(this.memory);
+			}
+		}
+	}
+
 	/** Mémorise les repères proches comme lieux sûrs (§ 5 / § 9) : si le mouton
 	 *  est près de la bergerie, il l'enregistre comme SAFE_PLACE. */
 	public void learnNearbyLandmarks() {
@@ -296,6 +314,7 @@ public class Mouton extends Agent {
 		m=0;
 		refreshMemoryCapacity();             // la capacité mémoire suit l'âge (§ 5.1)
 		learnNearbyLandmarks();              // apprend la bergerie comme lieu sûr (§ 9)
+		learnFromNeighbours();               // apprend des congénères proches (§ 8)
 		if (alertTtl > 0) alertTtl--;        // l'alarme s'estompe (en TOURS, pas en ticks)
 		if(world.getCellHeight(x, y)>=0)earthSearch=0;
 		if(world.getCellHeight(x, y)<0){this._fireState=0;}

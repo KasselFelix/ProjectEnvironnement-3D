@@ -85,4 +85,21 @@ class SemanticMemoryTest {
         assertTrue(SemanticMemory.capacityFor(neutre, 100000.0, 100.0) >= 2,
                 "la capacité ne descend jamais sous le plancher");
     }
+
+    /** teach() transmet tous les souvenirs d'une mémoire à une autre (§ 8) :
+     *  l'élève acquiert ce que le maître connaît et qu'il ignorait. */
+    @Test
+    void enseignerTransmetLesConnaissances() {
+        SemanticMemory maitre = new SemanticMemory();
+        maitre.remember(MemoryKind.SAFE_PLACE, 7, 7);
+        maitre.remember(MemoryKind.DANGER, 3, 3);
+
+        SemanticMemory eleve = new SemanticMemory();
+        assertFalse(eleve.contains(MemoryKind.SAFE_PLACE, 7, 7));
+
+        maitre.teach(eleve);
+
+        assertTrue(eleve.contains(MemoryKind.SAFE_PLACE, 7, 7), "lieu sûr appris");
+        assertTrue(eleve.contains(MemoryKind.DANGER, 3, 3), "danger appris");
+    }
 }
