@@ -164,6 +164,8 @@ public class Loup extends Agent {
 
 		lastX=x;
 		lastY=y;
+
+		refreshMemoryCapacity();   // L1 — la capacité mémoire suit l'âge/intelligence (§ 5.1)
 	}
 
 	@Override
@@ -210,6 +212,10 @@ public class Loup extends Agent {
 					energie = Math.min(energieD, energie + energieD / 2);
 					m = 1;
 					vitesse = vpas;
+					// L1 — mémoire de chasse : la cellule où la prédation a réussi
+					// est mémorisée comme zone fertile (MemoryKind.HUNTING). Affamé
+					// et sans proie en vue, le loup y reviendra (huntHoming).
+					memory.remember(MemoryKind.HUNTING, x, y);
 					if (attaqueNuit == 1)attaqueNuit = 0;
 					// System.out.println("devore");
 					break;
@@ -285,6 +291,7 @@ public class Loup extends Agent {
 			// Héritage du génome (§ 4.4) + taille héritable (§ 10.2).
 			prea.genome = agents.ai.Genome.inherit(this.genome, mate.genome,
 					EVO_RNG, TYPE_MUTATION_RATE, GRANDPARENT_PROB);
+			prea.initMind();   // L1 — esprit démarré depuis le génome hérité (§ 6)
 			prea.sizeFactor = clampSize(mutateDouble((this.sizeFactor + mate.sizeFactor) / 2.0));
 			// Longévité : base parentale × facteur Longévité du petit, × malus
 			// si un parent est INFERTILE (§ 4.3 : enfants à courte vie).
@@ -314,6 +321,41 @@ public class Loup extends Agent {
 	@Override
 	protected void postTick() {
 		if ( world.getIteration() % 20 == 0 )if(_fireState==1)energie-=energieD/10;
+
+		// L1 — entraînement cérébral (§ 6.2) + émergence du caractère de meute (§ 7).
+		trainMindAndCharacter();
+	}
+
+	/** Rayon (cases) en deçà duquel un congénère « rompt » l'isolement de meute (§ 7.3). */
+	private static final int PACK_NEAR_RADIUS = 8;
+
+	/** L1 — true si aucun autre loup vivant n'est à portée de meute. Donne au
+	 *  Character de quoi faire émerger un trait GREGAIRE (loup de meute) ou
+	 *  SOLITAIRE (loup solitaire) selon la vie sociale réelle de l'agent. */
+	@Override
+	public boolean isIsolated() {
+		for (Loup o : world.loups) {
+			if (o == this || !o._alive) continue;
+			if (world.distance(o.x, o.y, x, y) <= PACK_NEAR_RADIUS) return false;
+		}
+		return true;
+	}
+
+	/** L1 — satisfaction ∈ [0,1] du loup (§ 7.3) : faim + sécurité + besoin
+	 *  social MODULÉ par le caractère (un solitaire est comblé seul, un loup de
+	 *  meute en groupe). Alimente l'émergence du caractère via trainMindAndCharacter. */
+	@Override
+	public double satisfaction() {
+		double hunger = Math.max(0.0, Math.min(1.0, energie / (double) energieD));
+		double safety = (isOnFire() || currentState == AgentState.FLEE_PREDATOR) ? 0.0 : 1.0;
+		boolean iso = isIsolated();
+		double socialNeed;
+		switch (character.social()) {
+			case SOLITARY:   socialNeed = iso ? 1.0 : 0.0; break;
+			case GREGARIOUS: socialNeed = iso ? 0.0 : 1.0; break;
+			default:         socialNeed = iso ? 0.4 : 0.6; break;   // léger biais meute
+		}
+		return (hunger + safety + socialNeed) / 3.0;
 	}
 
 	/** Rayon dans lequel un congénère vivant compte comme partenaire de repro. */
@@ -376,13 +418,49 @@ public class Loup extends Agent {
 				wantsToMove = false;
 				return MoveConstraints.landBound();
 			case SEARCH:
-				spiralSearch();
+				// L1 — d'abord retourner vers une zone de chasse mémorisée (homing) ;
+				// à défaut, balayage en spirale aveugle.
+				if (!huntHoming()) spiralSearch();
 				return MoveConstraints.landBound();
 			case WANDER:
 			default:
 				lazyWander();
 				return MoveConstraints.landBound();
 		}
+	}
+
+	/**
+	 * Homing vers la zone de chasse mémorisée la plus proche (§ 5, L1). Renvoie
+	 * true (et oriente le loup vers elle, au trot) si une zone HUNTING est connue
+	 * et que le loup n'y est pas déjà ; false sinon (→ retombe sur la spirale).
+	 * Une fois sur place, on laisse la spirale balayer les environs au cas où la
+	 * proie a bougé.
+	 */
+	private boolean huntHoming() {
+		int[] zone = memory.nearest(MemoryKind.HUNTING, x, y,
+				(a, b, c, d) -> world.distance(a, b, c, d));
+		if (zone == null) return false;
+		if (zone[0] == x && zone[1] == y) return false;   // déjà sur la zone → balayer
+		int dir = Perception.dirToCell(this, world, zone[0], zone[1]);
+		if (dir < 0) return false;
+		_orient = dir;
+		vitesse = vtrot;
+		return true;
+	}
+
+	/**
+	 * Cohésion de meute (§ 7, L1) : un loup au caractère NON solitaire qui voit
+	 * des congénères s'oriente (au pas) vers leur barycentre. Renvoie true s'il a
+	 * trouvé une meute à rallier ; false sinon (→ flânerie aléatoire). Un loup
+	 * SOLITAIRE ignore la meute.
+	 */
+	private boolean packCohesion() {
+		if (character.social() == SocialTrait.SOLITARY) return false;
+		int dir = Perception.dirToFlockCentroid(this, world, world.loups);
+		if (dir < 0) return false;
+		_orient = dir;
+		vitesse = vpas;
+		return true;
 	}
 
 	/**
@@ -411,6 +489,9 @@ public class Loup extends Agent {
 	private void lazyWander() {
 		mem.spiralStep = 0;
 		mem.spiralPeriod = 1;
+		// L1 — cohésion de meute : un loup repu NON solitaire dérive vers le
+		// barycentre des congénères visibles (la meute reste groupée hors chasse).
+		if (packCohesion()) return;
 		if (aheadVisitedRecently()) {
 			// Mémoire spatiale : la case devant a déjà été visitée → on tourne
 			// pour ne pas flâner en boucle.

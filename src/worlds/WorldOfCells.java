@@ -108,6 +108,8 @@ public class WorldOfCells extends World {
 			px=(int)(Math.random()*dxCA);
 			py=(int)(Math.random()*dyCA);
 			Humain humanA = new Humain(px,py,this);
+			humanA.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);  // L1
+			humanA.initMind();
 			humains.add(humanA);
 			agents.add(humanA);
 			uniqueDynamicObjects.add(humanA);
@@ -172,6 +174,9 @@ public class WorldOfCells extends World {
     		px = (int)(Math.random() * dxCA);
     		py = (int)(Math.random() * dyCA);
     		Humain h = new Humain(px, py, this);
+    		// L1 — diversité génétique initiale + esprit démarré depuis le génome.
+    		h.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);
+    		h.initMind();
     		humains.add(h);
     		agents.add(h);
     		uniqueDynamicObjects.add(h);
@@ -211,7 +216,9 @@ public class WorldOfCells extends World {
     	if (config == null) return;
     	// Diversité initiale : un fondateur (spawn) peut naître avec quelques axes
     	// non-neutres → amorce la sélection (§ 4.5). Pas sur les modifs live.
-    	if (resetDynamic) l.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);
+    	// Diversité initiale (§ 4.5) puis recalage de l'esprit sur le génome seedé
+    	// (L1 : un loup fondateur intelligent démarre réellement plus vif).
+    	if (resetDynamic) { l.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY); l.initMind(); }
     	l.vision     = config.loupVision;
     	l.energieD   = config.loupEnergieMax;
     	if (resetDynamic) l.energie = l.energieD;

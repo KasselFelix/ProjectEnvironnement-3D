@@ -101,5 +101,33 @@ public class Humain extends Agent {
 			if (world.getIteration() % 20 == 0) energie -= energieD / 10;
 			if (energie <= 0) _alive = false;
 		}
+
+		// L1 — socle cognitif commun : entraînement de l'esprit + émergence du
+		// caractère de berger (GREGAIRE quand il garde bien son troupeau).
+		trainMindAndCharacter();
+	}
+
+	/** Rayon (cases) dans lequel un mouton compte comme « troupeau gardé » (L1). */
+	private static final int FLOCK_GUARD_RADIUS = 8;
+
+	/** L1 — pour le berger, « être isolé » = ne pas avoir de troupeau à portée.
+	 *  Sa vie sociale est tournée vers ses moutons, pas vers d'autres humains :
+	 *  un berger qui garde son troupeau développe un caractère GREGAIRE. */
+	@Override
+	public boolean isIsolated() {
+		for (Mouton mt : world.moutons) {
+			if (!mt._alive) continue;
+			if (world.distance(mt.x, mt.y, x, y) <= FLOCK_GUARD_RADIUS) return false;
+		}
+		return true;
+	}
+
+	/** L1 — satisfaction ∈ [0,1] du berger : sécurité (pas en feu) + devoir
+	 *  accompli (troupeau à portée). Alimente l'émergence du caractère. */
+	@Override
+	public double satisfaction() {
+		double safety = isOnFire() ? 0.0 : 1.0;
+		double duty   = isIsolated() ? 0.0 : 1.0;
+		return (safety + duty) / 2.0;
 	}
 }

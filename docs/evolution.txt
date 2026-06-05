@@ -669,9 +669,25 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         `currentStage`, `growthScale`, `displaySize`, `clampSize`, `isInfertile`,
         `mutateInt/mutateDouble` et constantes EVO vivent désormais sur la base
         `Agent` (plus de duplication Mouton/Loup ; 163 tests verts inchangés).
-        (2) généraliser Mind /
-        SemanticMemory / Character au Loup (chasse mémorisée, meute) et à
-        l'Humain ; (3) Humain n'a pas de reproduction → génome non câblé pour
+        (2) [RÉALISÉ 2026-06-06, L1] Mind / SemanticMemory / Character
+        généralisés au Loup ET à l'Humain. Le socle cognitif (champs `memory`,
+        `mind`, `character`, `initMind`, `evolutionSummary`, `activityLevel`,
+        `refreshMemoryCapacity`, `stageLabel/socialLabel`, `trainMindAndCharacter`)
+        est hissé de Mouton vers `Agent` (L1a) ; `isIsolated()`/`satisfaction()`
+        deviennent surchargeables. LOUP (L1b/c) : mémorise la cellule d'une
+        prédation réussie en `MemoryKind.HUNTING` (`Loup.postMove`) et y revient
+        quand il est affamé sans proie en vue (`huntHoming` dans l'état SEARCH) ;
+        isolement/satisfaction de MEUTE (`PACK_NEAR_RADIUS=8`) → le caractère
+        GREGAIRE/SOLITAIRE émerge ; un loup repu non solitaire rallie le
+        barycentre de la meute (`packCohesion` dans `lazyWander`). HUMAIN :
+        le berger considère son TROUPEAU comme sa vie sociale (`isIsolated` =
+        aucun mouton à `FLOCK_GUARD_RADIUS`) → caractère de berger émergent ;
+        `trainMindAndCharacter` câblé en postTick, `initMind`+seedDiversity au
+        spawn. Fiche d'agent (`AgentInfoPanel`) : `evolutionSummary()` affiché
+        pour TOUTES les espèces (fiche Loup/Humain enrichie). Tests :
+        `LoupTest` (mémoire de chasse, homing, isolement, cohésion),
+        `HumainTest` (×3). 178 tests verts.
+        (3) Humain n'a pas de reproduction → génome non câblé pour
         l'instant (à faire quand l'Humain gagne un cycle de vie).
 
 

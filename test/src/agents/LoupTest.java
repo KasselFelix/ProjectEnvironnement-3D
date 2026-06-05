@@ -1,5 +1,8 @@
 package agents;
 
+import agents.ai.AgentState;
+import agents.ai.MemoryKind;
+import agents.ai.Percept;
 import landscapegenerator.PerlinNoiseLandscapeGenerator;
 import org.junit.jupiter.api.Test;
 import worlds.WorldOfCells;
@@ -97,6 +100,125 @@ class LoupTest {
                 "C3 : gain plafonné à energieD/2. Attendu energie ≤ "
                 + gainMaxAttendu + ", observé " + loup.energie
                 + " (probable restauration totale à energieD du code original).");
+    }
+
+    /**
+     * L1 — Mémoire de chasse (MemoryKind.HUNTING). Après une prédation réussie,
+     * le loup mémorise la cellule comme zone de chasse fertile : la prochaine
+     * fois qu'il sera affamé sans proie en vue, il pourra y retourner (homing,
+     * cf. loupRetourneVersSaZoneDeChasse).
+     */
+    @Test
+    void loupMemoriseSaZoneDeChasse() {
+        WorldOfCells world = buildWorld();
+        int cx = 10, cy = 10;
+        AgentTestSupport.flattenLandArea(world, cx, cy, 3);
+
+        Loup loup = new Loup(cx, cy, world);
+        loup.energie = 100;   // affamé (< energieD * HUNGER_RATIO)
+        world.loups.add(loup);
+        world.agents.add(loup);
+        world.uniqueDynamicObjects.add(loup);
+
+        int[][] positions = {
+                {cx, cy}, {cx, cy - 1}, {cx, cy + 1}, {cx - 1, cy}, {cx + 1, cy}
+        };
+        for (int[] pos : positions) {
+            Mouton mt = new Mouton(pos[0], pos[1], world);
+            world.moutons.add(mt);
+            world.agents.add(mt);
+            world.uniqueDynamicObjects.add(mt);
+        }
+
+        loup.step();
+
+        assertTrue(loup.memory.contains(MemoryKind.HUNTING, loup.x, loup.y),
+                "Après une prédation réussie, le loup mémorise sa position comme "
+                + "zone de chasse (HUNTING) en (" + loup.x + "," + loup.y + ").");
+    }
+
+    /**
+     * L1 — Retour vers la zone de chasse mémorisée. Un loup affamé qui ne voit
+     * aucune proie mais connaît une zone HUNTING s'oriente vers elle (homing)
+     * plutôt que de balayer en spirale aveugle.
+     */
+    @Test
+    void loupRetourneVersSaZoneDeChasse() {
+        WorldOfCells world = buildWorld();
+        int cx = 25, cy = 25;
+        AgentTestSupport.flattenLandArea(world, cx, cy, 12);
+
+        Loup loup = new Loup(cx, cy, world);
+        loup.energie = 100;   // affamé → state SEARCH si aucune proie visible
+        world.loups.add(loup);
+        world.agents.add(loup);
+        world.uniqueDynamicObjects.add(loup);
+
+        // Zone de chasse mémorisée plein EST (cap 1), à distance > vision.
+        int hx = (cx + loup.vision + 4) % world.getWidth(), hy = cy;
+        loup.memory.remember(MemoryKind.HUNTING, hx, hy);
+
+        // Aucun mouton dans le monde → pas de proie en vue.
+        Percept p = agents.ai.Perception.sense(loup, world, world.humains, world.moutons);
+        AgentState s = loup.decideState(p);
+        assertEquals(AgentState.SEARCH, s, "loup affamé sans proie visible → SEARCH");
+        loup.applyState(s, p);
+        assertEquals(1, loup._orient,
+                "le loup oriente vers la zone HUNTING mémorisée à l'EST (cap 1), "
+                + "observé cap " + loup._orient);
+    }
+
+    /**
+     * L1 — Isolement de meute : un loup seul est isolé ; un loup avec un
+     * congénère proche ne l'est pas. Alimente l'émergence du caractère social.
+     */
+    @Test
+    void loupIsolementDeMeute() {
+        WorldOfCells world = buildWorld();
+        Loup solo = new Loup(20, 20, world);
+        world.loups.add(solo);
+        world.agents.add(solo);
+        world.uniqueDynamicObjects.add(solo);
+        assertTrue(solo.isIsolated(), "un loup seul dans le monde est isolé");
+
+        Loup mate = new Loup(22, 20, world);   // à 2 cases (< PACK_NEAR_RADIUS)
+        world.loups.add(mate);
+        world.agents.add(mate);
+        world.uniqueDynamicObjects.add(mate);
+        assertFalse(solo.isIsolated(), "un loup avec un congénère proche n'est pas isolé");
+    }
+
+    /**
+     * L1 — Cohésion de meute : un loup repu (state WANDER) NON solitaire qui voit
+     * un congénère dérive vers lui (le barycentre de meute), au lieu de flâner au
+     * hasard. Le congénère est placé plein SUD pour un cap déterministe.
+     */
+    @Test
+    void loupRepuRejointLaMeute() {
+        WorldOfCells world = buildWorld();
+        int cx = 25, cy = 25;
+        AgentTestSupport.flattenLandArea(world, cx, cy, 12);
+
+        Loup loup = new Loup(cx, cy, world);
+        // Ni affamé (> HUNGER_RATIO×energieD) ni plein (< energieD) → state WANDER,
+        // qui déclenche lazyWander → packCohesion.
+        loup.energie = (int) (loup.energieD * 0.9);
+        world.loups.add(loup);
+        world.agents.add(loup);
+        world.uniqueDynamicObjects.add(loup);
+
+        Loup mate = new Loup(cx, cy + 4, world);   // plein SUD, dans la vision
+        world.loups.add(mate);
+        world.agents.add(mate);
+        world.uniqueDynamicObjects.add(mate);
+
+        Percept p = agents.ai.Perception.sense(loup, world, world.humains, world.moutons);
+        AgentState s = loup.decideState(p);
+        assertEquals(AgentState.WANDER, s, "loup repu sans proie ni danger → WANDER");
+        loup.applyState(s, p);
+        assertEquals(2, loup._orient,
+                "le loup repu (caractère non solitaire) s'oriente vers la meute au SUD "
+                + "(cap 2), observé cap " + loup._orient);
     }
 
     /**
