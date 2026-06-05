@@ -417,8 +417,13 @@ quand la lave solidifie elle enterre les cendres restantes.
       dispersion de graines). L'invariant d'altitude de GrassCA est désormais
       validé : le prédicat `GrassCA.canGrowGrass(x,y)` (bande [maxH/12, maxH×0.7],
       extrait de `init()`/`step()`) est testé par `GrassCATest`
-      (`herbeSeulementDansLaBandeDAltitude`, `pasDHerbeDansLEau`). RESTE : un test
-      du compteur de dispersion des cendres (tDispertion) de ForestCA.
+      (`herbeSeulementDansLaBandeDAltitude`, `pasDHerbeDansLEau`).
+      [RÉALISÉ 2026-06-06] Compteur de dispersion des cendres (tDispertion)
+      couvert par `ForestCATest.compteurDeDispersionDesCendres` : un arbre brûlé
+      (state BURNT+1) avance de +1/tick dans le cycle cendre invisible, atteint
+      BURNT+tDispertion après (t-1) ticks, puis se disperse au tick t (cellule
+      vide + `markAsh` → germination boostée). Voisinage immergé pour isoler le
+      compteur de toute germination parasite.
     * Documenter chaque constante avec son unité et son ordre de grandeur
       attendu (le code en a déjà certaines, mais pas toutes).
 

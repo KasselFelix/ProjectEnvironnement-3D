@@ -155,6 +155,50 @@ class ForestCATest {
     }
 
     @Test
+    void compteurDeDispersionDesCendres() {
+        WorldOfCells w = buildWorld();
+        int x = 25, y = 25;
+        w.forestCA.pA = 0.01;
+        int t = w.forestCA.getTDispertion();
+        assertTrue(t > 1, "tDispertion doit être > 1 pour que le cycle cendre soit observable");
+
+        // Cellule cible sur terre ; voisinage IMMERGÉ (height < 0) → aucune
+        // germination autour ne peut perturber le compteur ni la pression de
+        // graines pendant les t ticks d'observation.
+        w.setCellHeight(x, y, 1.0);
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++) {
+                if (dx == 0 && dy == 0) continue;
+                int cx = (x + dx + DX) % DX, cy = (y + dy + DY) % DY;
+                w.setCellHeight(cx, cy, -1.0);
+                w.forestCA.setCellState(cx, cy, 0);
+                w.forestCA.setGrowth(cx, cy, 0.0);
+            }
+
+        double pAvantCendre = w.forestCA.germinationProb(x, y);
+
+        // Démarre le cycle cendre juste après l'état BURNT (premier sub-state invisible).
+        w.forestCA.setCellState(x, y, ForestCA.BURNT + 1);
+
+        // Le cycle cendre avance de +1 par tick (déterministe, sans random) tant
+        // que BURNT < state < BURNT+tDispertion. Après (t-1) ticks il atteint
+        // exactement BURNT+tDispertion : pas encore dispersé.
+        for (int k = 0; k < t - 1; k++) w.forestCA.step();
+        assertEquals(ForestCA.BURNT + t, w.forestCA.getCellState(x, y),
+                "après " + (t - 1) + " ticks la cellule doit être au seuil de dispersion, pas encore vide");
+
+        // Le tick suivant déclenche la dispersion : la cellule redevient vide (0)
+        // ET le sol est enrichi par la cendre.
+        w.forestCA.step();
+        assertEquals(0, w.forestCA.getCellState(x, y),
+                "au tick tDispertion la cendre se disperse → cellule vide");
+        double pApresCendre = w.forestCA.germinationProb(x, y);
+        assertTrue(pApresCendre > pAvantCendre,
+                "la dispersion doit marquer le sol comme cendré (germination boostée : "
+                + pApresCendre + " > " + pAvantCendre + ")");
+    }
+
+    @Test
     void croissanceAugmenteEtPlafonne() {
         WorldOfCells w = buildWorld();
         int[] c = bestFertileCell(w);
