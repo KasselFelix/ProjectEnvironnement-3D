@@ -372,7 +372,7 @@ Dans PerlinNoiseLandscapeGenerator.java :
                          0.5 = décroissance forte (terrain lisse, dominé par
                                les basses fréquences)
 
-  Number_Of_Octaves      2 à 4 (aléatoire à l'init)
+  Number_Of_Octaves      3 (fixe depuis C6 ; auparavant 2 à 4 aléatoire)
                          Plus = plus de détail fin
                          Moins = plus lisse
 
@@ -402,8 +402,11 @@ Dans Landscape.java :
 7. POINTS À AMÉLIORER
 ================================================================================
 
-  - Le nombre d'octaves est random (2 à 4). On pourrait le forcer à une
-    valeur fixe (3 ?) pour un rendu plus prévisible.
+  - [RÉALISÉ 2026-06-06, C6] Le nombre d'octaves était random (2 à 4), ce qui
+    faisait varier le niveau de détail du relief d'un lancement à l'autre.
+    `Number_Of_Octaves` est désormais `static final = 3` → granularité du terrain
+    reproductible. Les graines de hash (rand, rand2, r1-r3) restent randomisées,
+    donc la POSITION des reliefs change encore par run, mais plus leur rugosité.
 
   - [RÉSOLU] LandscapeToolbox.scaleAndCenter utilisait `landscape.clone()`,
     un shallow copy trompeur sur un double[][] : les sous-tableaux étaient
