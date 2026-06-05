@@ -137,9 +137,34 @@ public class Mouton extends Agent {
 	 *  selon l'intelligence et l'âge (refreshMemoryCapacity). */
 	public final agents.ai.SemanticMemory memory = new agents.ai.SemanticMemory();
 
-	/** Recale la capacité de la mémoire sur le génome et l'âge courants (§ 5.1). */
+	/** Intelligence dynamique (§ 6) : score 0..1 démarrant depuis l'axe
+	 *  Intelligence, entraîné par l'activité, dégénérant avec l'âge. */
+	public agents.ai.Mind mind = new agents.ai.Mind(agents.ai.Mind.BASE_SCORE);
+
+	/** (Ré)initialise l'esprit depuis le génome courant (à appeler après avoir
+	 *  fixé le génome — fondateur au spawn, agneau à la naissance). */
+	public void initMind() {
+		mind = agents.ai.Mind.fromGenome(genome);
+	}
+
+	/** Niveau d'activité cognitive du tick (§ 6.2) : 1.0 pour les états de
+	 *  survie/décision (qui entraînent l'esprit), 0.0 pour le repos et l'errance. */
+	public double activityLevel() {
+		switch (currentState) {
+			case REST:
+			case WANDER:
+				return 0.0;
+			default:
+				return 1.0;
+		}
+	}
+
+	/** Recale la capacité de la mémoire sur le génome et l'âge courants (§ 5.1),
+	 *  modulée par l'aptitude mentale dynamique (§ 6 : un esprit vif gère plus de
+	 *  souvenirs, un esprit dégénéré en perd). */
 	public void refreshMemoryCapacity() {
-		memory.setCapacity(agents.ai.SemanticMemory.capacityFor(genome, getAgeDays(), maxAgeDays));
+		int base = agents.ai.SemanticMemory.capacityFor(genome, getAgeDays(), maxAgeDays);
+		memory.setCapacity((int) Math.round(base * mind.learningRate()));
 	}
 
 	/** Mémorise comme DANGER la position du loup visible le plus proche (§ 5). */
@@ -395,6 +420,7 @@ public class Mouton extends Agent {
 			// mutation de type, saut de génération possible — cf. Genome.inherit § 4.4).
 			prea.genome = agents.ai.Genome.inherit(this.genome, mate.genome,
 					EVO_RNG, TYPE_MUTATION_RATE, GRANDPARENT_PROB);
+			prea.initMind();             // esprit démarré depuis le génome hérité (§ 6)
 			// Longévité de l'agneau : base parentale × facteur de son propre axe
 			// Longévité (§ 4.1), puis malus si un parent est INFERTILE (§ 4.3 :
 			// enfants à courte espérance de vie).
@@ -422,6 +448,11 @@ public class Mouton extends Agent {
 	@Override
 	protected void postTick() {
 		if ( world.getIteration() % 20 == 0 )if(_fireState==1)energie-=energieMAX/10;
+
+		// Entraînement cérébral (§ 6.2) : l'activité du tick entretient l'esprit,
+		// l'âge le dégrade (atténué par la longévité du génome).
+		double lifespan = maxAgeDays > 0 ? maxAgeDays : agents.ai.LifeStage.REFERENCE_LIFESPAN_DAYS;
+		mind.train(activityLevel(), getAgeDays() / lifespan, genome.longevityFactor());
 	}
 
 	/** Rayon (cases) dans lequel un congénère vivant compte comme partenaire de

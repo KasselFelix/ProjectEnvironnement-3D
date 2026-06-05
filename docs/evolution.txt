@@ -577,11 +577,21 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         et ÉVITE le danger plutôt que de chercher l'eau (le mouton fuit l'eau).
         Tests : SemanticMemoryTest (5), MoutonMemoryTest (3). 126 tests verts.
 
-    Phase D — Mind (intelligence + entraînement)
+    Phase D — Mind (intelligence + entraînement)   [RÉALISÉ 2026-06-05]
         Mind (score poids, dégénérescence, gain par activité). Intelligence
         module la vitesse d'apprentissage (mémoire/social).
         Tests : un agent « actif » dégénère moins qu'un agent « inactif » à âge
         égal ; intelligence haute → apprentissage plus rapide.
+        FAIT : agents.ai.Mind (score 0..1, startScore depuis axe Intelligence
+        BASE 0.5 ± 0.2 ; train(activity, ageFraction, longevityFactor) :
+        +TRAIN_GAIN 0.02 × activité − DEGEN_BASE 0.03 × ageFrac / longévité,
+        borné [0,1] ; learningRate = 0.5 + score, centré 1.0). Mouton : champ
+        mind, initMind (fondateur + agneau depuis génome), activityLevel
+        (survie/décision 1.0, repos/errance 0.0), train en postTick,
+        refreshMemoryCapacity × learningRate (esprit vif → plus de mémoire).
+        Tests : MindTest (5), MoutonMindTest (2). 133 tests verts. mind.score
+        consommé : capacité mémoire ; sera lu aussi en Phase F (apprentissage
+        social) et Phase H (fiche UI).
 
     Phase E — Sens de l'orientation
         directionSens (cap vers cible hors-vue mémorisée), modulé par l'axe
