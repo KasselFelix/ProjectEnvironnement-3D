@@ -51,6 +51,12 @@ class LoupTest {
     void loupGainEnergieBornéEnMangeantMouton() {
         WorldOfCells world = buildWorld();
         int cx = 10, cy = 10;
+        // Terrain aplani autour du loup : sans cela, le bruit de Perlin peut
+        // rendre la case cardinale visée impassable → le fallback aléatoire de
+        // Locomotion.move envoie le loup sur une DIAGONALE non couverte par un
+        // mouton → aucune prédation → test flaky. Sur terre plate, le loup se
+        // déplace toujours sur une case cardinale (toutes occupées par un mouton).
+        AgentTestSupport.flattenLandArea(world, cx, cy, 3);
 
         Loup loup = new Loup(cx, cy, world);
         loup.energie = 100;
