@@ -1,0 +1,352 @@
+================================================================================
+SYSTÈME D'AGENTS (LOUP, MOUTON, HUMAIN) — Projet Environnement 3D
+================================================================================
+
+Ce document explique comment fonctionne la couche « agents » de la simulation :
+qui sont les Loups, Moutons et Humains, comment ils vivent, perçoivent leur
+environnement, mangent, se reproduisent et meurent. C'est cette couche qui
+donne sa vie à la simulation au-delà du décor fait par les automates
+cellulaires.
+
+
+================================================================================
+1. CONTEXTE
+================================================================================
+
+Le projet est un écosystème 3D. En-dessous, il y a un terrain (généré par
+bruit de Perlin ou chargé depuis une image PNG) et trois automates cellulaires
+qui font évoluer la végétation (forêt, herbe) et la lave. Au-dessus de tout
+ça vivent des « agents » : des entités mobiles qui se promènent sur la grille,
+chacune avec son rôle écologique :
+
+    * Le Loup est un prédateur. Il chasse les Moutons, vit en meute, et
+      change de comportement quand la nuit tombe (mode rôdeur).
+    * Le Mouton est une proie. Il broute l'herbe, fuit les Loups qu'il
+      détecte, et se déplace en groupe quand il le peut.
+    * L'Humain est présent mais reste pour l'instant simple — il occupe le
+      paysage sans comportement actif élaboré (potentiel pour devenir
+      chasseur, berger, ou intermédiaire entre les deux).
+
+Cette couche d'agents est ce qui transforme la simulation d'un « simulateur
+de paysage » en un véritable écosystème : sans elle, on aurait juste une
+forêt qui pousse et brûle en boucle. Avec les agents, on obtient des
+populations qui oscillent dans le temps, et c'est précisément l'objectif
+écologique du projet.
+
+
+================================================================================
+2. OBJECTIF
+================================================================================
+
+Le but principal de la couche d'agents est de produire une dynamique
+prédateur-proie observable, dite « Lotka-Volterra ». Concrètement, c'est le
+phénomène biologique classique :
+
+    Quand il y a beaucoup de Moutons → les Loups mangent à leur faim et se
+    multiplient → la population de Loups grimpe → ils chassent plus de
+    Moutons → la population de Moutons chute → les Loups manquent de
+    nourriture et meurent → la population de Loups chute → les Moutons
+    survivants se reproduisent à nouveau → cycle qui recommence.
+
+Cette dynamique est visible en temps réel dans le « graphe des populations »
+intégré à l'UI du jeu (touche `g` pour afficher). Les courbes loups et
+moutons oscillent en décalage de phase — c'est le signe que les règles
+implémentées dans le code produisent bien la dynamique attendue.
+
+Objectif secondaire : servir de base à des expérimentations futures
+(évolution des comportements, communication, apprentissage, etc.).
+
+
+================================================================================
+3. FONCTIONNEMENT
+================================================================================
+
+Chaque agent suit un cycle de vie simple sur quatre points :
+
+    1. NAISSANCE
+       L'agent apparaît à une position aléatoire sur le terrain (en évitant
+       la mer et la lave). Son énergie initiale est l'énergie maximale de
+       son espèce. Son « itération de naissance » est enregistrée pour
+       pouvoir calculer son âge plus tard.
+
+    2. PERCEPTION
+       À chaque tour de simulation, l'agent regarde autour de lui. La
+       portée de vision est de 10 cellules pour Loup, Mouton et Humain. Il
+       cherche des choses pertinentes : un prédateur à fuir, une proie à
+       chasser, de la nourriture à manger, ou des congénères pour se
+       grouper.
+
+    3. ACTION
+       En fonction de ce qu'il voit, l'agent décide d'un état (fuir, chasser,
+       chercher de la terre ferme, chercher de la nourriture, errer…) puis
+       l'exécute (orientation + vitesse + déplacement). La décision suit une
+       machine à états en couches — Perception → Décision → Locomotion — détaillée
+       dans le document arbres-de-comportement.txt.
+
+    4. CONSÉQUENCES
+       L'action consomme de l'énergie (déplacement = perte d'énergie).
+       L'agent peut mourir s'il n'a plus d'énergie (famine), s'il marche
+       dans la lave, ou s'il atteint un âge limite (désactivé par défaut,
+       voir maxAgeDays = -1).
+
+À chaque tour, la classe `WorldOfCells.stepAgents()` parcourt les trois
+listes d'agents (loups, moutons, humains), exécute la méthode `step()` de
+chacun, puis fait le ménage : les agents dont le drapeau `_alive` est passé
+à `false` sont retirés des listes.
+
+Particularité importante : le monde est **torique** — quand un agent sort à
+l'est de la carte, il réapparaît à l'ouest. Cette propriété est gérée par
+une méthode `distance()` qui calcule la plus petite distance possible en
+considérant les 9 images du tore, pour que les distances « visuelles »
+restent correctes même au bord de la carte.
+
+
+================================================================================
+4. IMPLÉMENTATION TECHNIQUE
+================================================================================
+
+--- 4.1 Architecture des classes ---
+
+La hiérarchie est :
+
+    objects.UniqueDynamicObject (classe abstraite, framework du cours)
+        └── agents.Agent (classe abstraite spécifique au projet)
+                ├── agents.Loup
+                ├── agents.Mouton
+                └── agents.Humain
+
+`Agent` fournit l'infrastructure commune (énergie, âge, calcul d'altitude
+unifié au-dessus du sol et des couches Layer, accesseurs de position). Son
+`step()` est un patron de méthode (« Template Method ») : il orchestre un cycle
+fixe — percevoir, décider d'un état, l'exécuter — et délègue les parties propres
+à chaque espèce à des hooks (`decideState`, `applyState`…). La machine à états
+elle-même vit dans le paquet `agents.ai` :
+
+    agents.ai.Perception / Percept   — un seul balayage du champ de vision → un
+                                       instantané (prédateur, proie, eau, terre,
+                                       herbe les plus proches, voisinage)
+    agents.ai.AgentState             — l'énumération des états (FUITE, CHASSE,
+                                       CHERCHE_TERRE, CHERCHE_NOURRITURE, ERRANCE…)
+    agents.ai.Locomotion             — déplacement d'une case sous contraintes
+    agents.ai.MoveConstraints        — terre seule / amphibie / piloté
+
+Chaque sous-classe (Loup, Mouton, Humain) ne fournit donc que SA table de
+priorités (`decideState`) et SA traduction état → intention (`applyState`).
+
+--- 4.2 Champs partagés (Agent.java) ---
+
+    src/agents/Agent.java    birthIteration  (final int) — itération à la naissance
+    src/agents/Agent.java    getAge()        — retourne it_courant - birthIteration
+    src/agents/Agent.java    getAgeDays()    — âge approximatif en jours (≈ age / (2 * dureeJour))
+    src/agents/Agent.java   computeAgentAltitude() — altitude unifiée (sol + pile Layer + clamp eau)
+    src/agents/Agent.java   setLastMove(int dx, int dy) — enregistre delta déplacement
+
+Le champ `birthIteration` est défini une seule fois au constructeur. Tous
+les calculs d'âge passent par là, sans compteur incrémental à maintenir
+(plus simple, moins d'erreurs).
+
+`computeAgentAltitude()` est important : il lit la hauteur native du sol
+puis y ajoute l'épaisseur des couches empilées (système Layer). Si l'agent
+est sur de la lave fraîche, il s'enfonce à moitié (cf. constante
+`AGENT_LAVA_DIVE_FRACTION`). S'il est sous le niveau de la mer, il plonge
+(altitude = -1). C'est ce qui fait que les agents marchent visuellement au
+sommet du tas de pierre/lave et non « dans » le terrain.
+
+--- 4.3 Loup (Loup.java) ---
+
+Champs clés : `energieD` (énergie max, réglée par `SimulationConfig.loupEnergieMax`),
+`vision = 10`, vitesses `vcourse / vtrot / vpas` (course / trot / pas),
+`swimFactor` (fraction de vitesse conservée dans l'eau), `maxAgeDays` (mort par
+vieillesse, ≤ 0 = immortel).
+
+Décision (par ordre de priorité) : le Loup a FAIM quand son énergie passe sous
+`HUNGER_RATIO = 70 %` de son maximum — OU quand c'est la nuit (`attaqueNuit`).
+Affamé et proie en vue → il CHASSE ; affamé sans proie → il fouille en SPIRALE ;
+dans l'eau → il regagne la TERRE ; repu de jour → il FLÂNE (déplacement économe).
+
+    * Chasse nocturne : la nuit, le Loup poursuit le troupeau même rassasié, ce
+      qui le DISPERSE (rôle écologique). Mais il ne chasse alors qu'au TROT
+      (`vtrot`, peu coûteux) : il effraie sans se vider. Affamé, il SPRINTE
+      (`vcourse`) pour rattraper et tuer.
+    * Consommation gâtée par la faim : manger un Mouton n'est possible que si le
+      Loup est sous 70 % d'énergie. Un loup repu qui rattrape un mouton ne le tue
+      donc PAS (pas de « surplus killing » : il en laisse pour la meute). Le gain
+      est plafonné à `energieD / 2` (et non une restauration à 100 %), ce qui
+      force le prédateur à chasser régulièrement et fait apparaître les vraies
+      oscillations Lotka-Volterra.
+    * Nage : dans l'eau, la vitesse est multipliée par `swimFactor` (0.6) — le
+      Loup nage bien, il reste plus rapide que le Mouton dans l'eau comme sur
+      terre.
+    * Reproduction conditionnée à l'énergie : il faut au moins 60 % du maximum ;
+      le parent INVESTIT 45 % de son énergie dans le petit (énergie conservée,
+      pas créée), qui naît à la position du parent. Le parent retombe alors sous
+      le seuil et doit se refaire une santé avant de se reproduire à nouveau.
+    * Mort : famine (`energie ≤ 0`), marche dans la lave, ou vieillesse si
+      `maxAgeDays > 0`.
+
+--- 4.4 Mouton (Mouton.java) ---
+
+Champs clés : `energieMAX` (réglé par `SimulationConfig.moutonEnergieMax`),
+`vision = 10`, vitesses `vcourse / vmarche`, `swimFactor` (nage).
+
+Décision (par ordre de priorité, la survie passe avant tout) : en feu → fuir vers
+l'eau ; prédateur en vue → FUIR ; dans l'eau → regagner la TERRE ferme ; affamé
+avec de l'herbe en vue → CHERCHER LA NOURRITURE ; sinon → ERRER.
+
+    * Broutage : sur une cellule d'herbe, et tant qu'il n'est pas en fuite, un
+      Mouton sous 75 % d'énergie broute (gain `energieMAX / 100`, la cellule
+      d'herbe disparaît).
+    * Recherche de nourriture : sous 50 % d'énergie, s'il voit de l'herbe, le
+      Mouton cesse d'errer au hasard et se dirige vers la touffe la plus proche.
+    * Fuite intelligente : il fuit à l'opposé du prédateur, mais ÉVITE de plonger
+      dans l'eau (mortelle pour lui) ou dans la forêt si une issue terrestre
+      existe ; il n'entre dans l'eau qu'en dernier recours, cerné.
+    * Nage : `swimFactor` = 0.25 — le Mouton nage très mal (laine gorgée d'eau,
+      panique). L'eau n'est donc PAS un refuge : un Loup l'y rattrape facilement.
+    * Reproduction conditionnée à l'énergie : seuil et coût BAS (proie
+      prolifique) — au moins 40 % du maximum, et le parent n'investit que 25 % de
+      son énergie dans l'agneau, qui naît à sa position. Ces seuils plus bas que
+      ceux du Loup permettent à la proie de se reproduire plus vite que le
+      prédateur (dynamique Lotka-Volterra).
+    * Mort : famine, ou présence de lave sur sa cellule (`getLavaCAValue > 0`) —
+      mort instantanée, sans souffrance progressive modélisée.
+
+--- 4.5 Humain (Humain.java) ---
+
+Champs clés : `energieD` (énergie max), `vision = 10`, vitesses
+`vcourse / vmarche / vpas`.
+
+L'Humain est un agent à part entière de la FSM, mais avec un répertoire encore
+minimal : il ERRE, et s'il prend feu il passe en `ON_FIRE` et fuit vers l'eau
+(amphibie le temps de s'éteindre). Il n'a pas encore de rôle écologique actif :
+les hooks de décision sont en place pour en faire un chasseur, un berger ou un
+agriculteur dans le futur.
+
+--- 4.6 Cleanup des morts (WorldOfCells.java) ---
+
+    src/worlds/WorldOfCells.java  stepAgents()
+        * cleanup TephraProjectile morts (animation atterrie)
+        * pruning Loup/Mouton/Humain où _alive == false
+        * step() de chaque agent
+        * tracking dernier mouvement (tore-aware)
+
+La boucle de pruning itère en sens inverse (i--) pour pouvoir retirer un
+élément sans déranger les indices restants.
+
+
+================================================================================
+5. TEST
+================================================================================
+
+Les comportements d'agents ne dépendent pas d'OpenGL — la méthode `step()`
+est purement logique. On peut donc écrire des tests JUnit 5 sans contexte
+graphique, ce qui est rapide et fiable.
+
+Cette couche est couverte par plusieurs tests JUnit déterministes :
+
+    test/src/agents/LoupTest.java            plafond énergétique (energieD/2),
+                                             mort par vieillesse
+    test/src/agents/AgentBehaviorTest.java   fuite (avec évitement de l'eau),
+                                             chasse, recherche de nourriture,
+                                             nage par espèce, reproduction
+                                             conditionnée à l'énergie (seuils
+                                             par espèce), chasse au trot vs
+                                             sprint, repu qui ne tue pas
+    test/src/agents/ai/                      Perception, Décision, Locomotion
+                                             (les trois couches de la FSM)
+
+Le pattern de test est uniforme et réutilisable :
+
+    1. Instancier un vrai WorldOfCells avec nbLoups = nbMoutons = nbHumains = 0
+    2. Générer un paysage Perlin 51×51 puis init(50, 50, …)
+    3. Ajouter manuellement les agents de test (placés à des positions
+       précises)
+    4. Appeler agent.step() une ou plusieurs fois
+    5. Vérifier les valeurs de champs (`energie`, `_alive`, position…)
+
+Lancer les tests :
+    ./test.sh
+
+Validation manuelle plus globale : lancer `./run.sh`, ouvrir le graphe des
+populations (touche `g`), et observer les oscillations Lotka-Volterra
+pendant quelques minutes. Si les courbes loups/moutons restent stables ou
+divergent, c'est le signe qu'un paramètre est mal calibré.
+
+
+================================================================================
+6. RÉSULTAT
+================================================================================
+
+Une fois la simulation lancée, on observe :
+
+    * Des agents distincts visuellement sur la carte : Loup et Mouton sont
+      rendus par des modèles 3D texturés (meshes GLB, cf. modeles-3d.txt),
+      l'Humain par une géométrie simple.
+    * Des Loups qui convergent vers les zones où ils détectent des Moutons et
+      les poursuivent ; affamés ils sprintent pour tuer, repus la nuit ils ne
+      font que disperser le troupeau au trot.
+    * Des Moutons qui broutent l'herbe (les cellules d'herbe disparaissent
+      autour d'eux), se dirigent vers l'herbe quand ils ont faim, et s'enfuient
+      à l'opposé d'un Loup — en contournant l'eau plutôt que de s'y noyer.
+    * Un comportement nocturne du Loup : quand la nuit tombe (cf.
+      cycle-jour-nuit.txt), `attaqueNuit` passe à 1 et le Loup chasse même
+      rassasié.
+    * Des morts visibles : un Loup affamé disparaît, un Mouton tombé dans la
+      lave ou noyé en mer aussi.
+
+Au niveau macro, le graphe des populations (touche `g`) montre les
+fameuses oscillations Lotka-Volterra : courbes loups et moutons qui
+montent et descendent en décalage de phase.
+
+L'utilisateur peut sélectionner un agent à la souris (clic gauche court)
+pour voir sa fiche détaillée (`AgentInfoPanel`) : énergie courante, état
+actuel, âge, orientation. Il peut aussi suivre cet agent à la caméra
+(touche `f`) pour observer son comportement à la première personne.
+
+
+================================================================================
+7. AMÉLIORATIONS FUTURES
+================================================================================
+
+Idées d'extensions classées par effort estimé.
+
+--- Court terme ---
+
+    * Implémenter le step() de l'Humain — au moins une logique de chasseur
+      (cible Loup) ou de berger (suit un Mouton). Le squelette est déjà là.
+    * Activer la mort par vieillesse (maxAgeDays > 0). Le champ existe,
+      `getAgeDays()` aussi, il suffit de l'utiliser dans la condition de
+      mort.
+    * Système de faim variable selon l'activité (chasser coûte plus que
+      marcher) pour rendre la dynamique plus riche.
+
+--- Moyen terme ---
+
+    * Reproduction sexuée (besoin de deux agents adjacents au lieu d'un
+      tirage probabiliste). Permet d'introduire des traits héritables.
+    * Communication simple entre agents (ex : un Mouton qui voit un Loup
+      « alerte » les Moutons voisins via un drapeau partagé).
+    * Mémoire spatiale : chaque agent garde la trace des cellules visitées
+      récemment (carte mentale petite) pour éviter d'errer en boucle.
+
+--- Long terme ---
+
+    * Héritage évolutif. Au lieu de constantes globales (`vision = 10`,
+      `vcourse = 13.5`), chaque agent porte ses propres valeurs, et les
+      enfants héritent + mutent légèrement des parents. La sélection
+      naturelle fait émerger les meilleures stratégies. Voir le skill
+      `alife` du projet pour des références (Axelrod, Sugarscape).
+    * Niveaux trophiques supplémentaires : herbivores plus petits qui ne
+      sont mangés que par moutons, super-prédateur qui mange les loups.
+      Permet de tester la stabilité de chaînes alimentaires à 3+ niveaux.
+    * Apprentissage par renforcement (au lieu d'arbre de comportement
+      hardcodé). Demande un changement important d'architecture mais
+      permettrait à l'écosystème de générer des stratégies non-anticipées.
+    * Différenciation génétique des Loups et Moutons (sous-espèces)
+      adaptées à différentes parties du terrain (montagne, plaine,
+      ressource locale).
+
+
+================================================================================
+FIN — agents.txt
+================================================================================

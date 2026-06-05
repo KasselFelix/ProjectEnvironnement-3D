@@ -1,0 +1,404 @@
+================================================================================
+INTERACTION CAMÉRA & PICKING D'AGENT — Projet Environnement 3D
+================================================================================
+
+Ce document décrit comment l'utilisateur contrôle la caméra dans la scène
+3D (trois modes distincts) et comment il peut sélectionner un agent au
+clic via le mécanisme de picking. C'est ce qui transforme la visualisation
+passive en une exploration interactive de la simulation.
+
+
+================================================================================
+1. CONTEXTE
+================================================================================
+
+Une simulation 3D sans contrôles caméra est vite frustrante : l'œil veut
+zoomer pour observer un détail, suivre un agent particulier, ou prendre
+de la hauteur pour voir l'ensemble du paysage. Sans picking, on ne peut
+pas non plus interroger un agent précis (« quel est l'état de ce loup
+là-bas ? »).
+
+Trois modes de caméra étaient nécessaires pour couvrir les usages :
+
+    * **Vue de dessus** (top-down) — pratique pour observer le déplacement
+      des fronts de feu et des coulées de lave à grande échelle.
+    * **3D libre** — vue à la première personne, l'utilisateur navigue à
+      sa guise dans le monde.
+    * **3D suivi d'agent** — la caméra reste centrée sur un agent
+      sélectionné, en orbite autour de lui à la 3e personne.
+
+Et le picking sert à passer de « je regarde la scène » à « je sélectionne
+cet agent en particulier » d'un simple clic, sans avoir à naviguer dans
+un menu textuel pour le retrouver.
+
+
+================================================================================
+2. OBJECTIF
+================================================================================
+
+Côté caméra :
+    * Trois modes utilisables (top-down, 3D libre, 3D suivi), accessibles
+      via des touches dédiées (`v` pour basculer top-down ↔ 3D libre,
+      `f` pour activer/désactiver le suivi sur l'agent sélectionné).
+    * Contrôles intuitifs et adaptés au mode (drag pour pan en top-down,
+      drag pour rotation FPS en 3D libre, drag pour orbiter en suivi).
+    * Zoom à la molette adapté au mode (échelle différente top-down vs
+      3D).
+    * Contrôles clavier pour les déplacements (flèches / ZQSD pour la
+      navigation, Space / Shift pour la hauteur de caméra).
+
+Côté picking :
+    * Cliquer sur un agent dans la scène 3D le sélectionne (clic court
+      seulement, pour distinguer du drag).
+    * Tolérance de 30 pixels pour ne pas exiger une précision millimétrique.
+    * Double-clic ou re-clic sur le même agent active la caméra-follow.
+
+Tout cela doit fonctionner indépendamment du focus du menu UI : si le
+menu est ouvert mais sans focus, les contrôles caméra sont actifs ; si
+le menu a le focus, c'est le menu qui reçoit les frappes.
+
+
+================================================================================
+3. FONCTIONNEMENT
+================================================================================
+
+--- 3.1 Les trois modes de caméra ---
+
+**Vue de dessus** (`VIEW_FROM_ABOVE = true`) :
+    * Le monde est vu d'en haut, comme une carte.
+    * Pas de notion d'angle de vue (`rotateX` et `cameraPitch` ignorés).
+    * Pan via drag souris (déplacement absolu N/S/E/O).
+    * Zoom via molette : règle un rayon de vue PROPRE à la vue de dessus
+      (`topDownViewCells`), DÉCOUPLÉ de la distance de vue 3D — zoomer ici
+      n'affecte pas la 3D. (2026-05-31)
+    * Cadrage AUTOMATIQUE : la distance caméra se calcule pour que la fenêtre de
+      rendu (le rayon ci-dessus) remplisse l'écran selon son ratio — fini les
+      bandes noires et les agents qui « flottent » hors de la zone dessinée. Une
+      marge évite de voir le bord du terrain au dézoom maximal.
+    * Projection téléobjectif (focale 0.04) pour parallax minimal.
+
+**3D libre** (`VIEW_FROM_ABOVE = false`, `cameraFollow = false`) :
+    * L'utilisateur contrôle yaw (`rotateX`) et pitch (`cameraPitch`) de la
+      caméra.
+    * Drag gauche → rotation FPS (yaw + pitch).
+    * Drag droit → pan style « grab the ground ».
+    * Molette → distance caméra (`cameraDistance3D`).
+    * Touches ZQSD (ou flèches) → déplacement relatif au yaw.
+    * Space → descend la caméra (held flag, applique chaque frame).
+    * Shift → monte la caméra (held flag).
+
+**3D suivi d'agent** (`cameraFollow = true`) :
+    * La caméra est centrée sur un agent sélectionné, à `ORBIT_FOCAL_Z_OFFSET`
+      (= 16 unités) au-dessus de lui pour une vue 3e personne.
+    * Drag gauche → orbite (yaw + pitch autour de l'agent).
+    * Molette → rayon d'orbite (`orbitRadius`).
+    * Le déplacement clavier (ZQSD/flèches) est désactivé (l'agent dicte
+      la position de la caméra).
+    * Drag droit → désactive `cameraFollow` puis pan (l'utilisateur
+      « lâche » l'agent).
+
+--- 3.1bis Plein écran, distance de vue et brouillard (2026-05-31) ---
+
+**Plein écran.** Le jeu démarre en plein écran exclusif (via `GraphicsDevice`,
+repli en fenêtre maximisée si non supporté). La touche **Échap** bascule plein
+écran ⇄ fenêtré ; en fenêtré la fenêtre fait les deux tiers de l'écran et est
+centrée. On quitte par la **croix de la fenêtre** (Échap ne quitte plus).
+
+**Distance de vue (fenêtre de rendu).** Pour alléger le rendu logiciel, les
+passes par case ne parcourent plus toute la carte mais une fenêtre `[centre ± R]`
+autour de la caméra (`graphics.ViewWindow`). En 3D, R = `viewDistanceCells`
+(slider « Distance de vue », défaut calé sur la portée du brouillard → aucune
+perte visible) ; la vue de dessus a son propre rayon (`topDownViewCells`). C'est
+purement graphique : la simulation tourne sur toute la carte (rien ne se fige
+hors écran).
+
+**Brouillard synchronisé.** En 3D, réduire la distance de vue rapproche d'autant
+le brouillard (jamais au-delà de sa portée par défaut), pour fondre proprement le
+bord de la zone rendue dans le ciel.
+
+--- 3.2 Le seuil clic vs drag ---
+
+Constante : `DRAG_THRESHOLD_PX = 5`.
+
+Au `mousePressed`, on enregistre la position de la pression. À chaque
+`mouseDragged`, on calcule la distance parcourue depuis cette position.
+Si elle dépasse 5 pixels, on est en mode « drag » (et la rotation /
+l'orbite / le pan s'appliquent). Sinon, au `mouseReleased`, on
+considère que c'était un clic court → on déclenche le picking.
+
+Ce seuil évite la confusion classique « j'ai cliqué pour sélectionner
+mais j'ai bougé d'un demi-pixel et j'ai déplacé la caméra ».
+
+--- 3.3 Le picking ---
+
+Quand l'utilisateur fait un clic court dans la scène 3D, le drapeau
+`pickRequested` passe à true. Au prochain frame de rendu, juste après
+le rendu 3D (les matrices `GL_PROJECTION` et `GL_MODELVIEW` sont
+encore valides), la méthode `doPicking()` est exécutée :
+
+    1. Lecture des matrices courantes via `glGetDoublev`.
+    2. Pour chaque agent vivant :
+        a. Récupération de sa position monde (x, y, altitude).
+        b. Projection en pixels écran via `GLU.gluProject(...)`.
+        c. Calcul de la distance (en pixels) entre la projection et
+           le point cliqué.
+    3. L'agent avec la distance minimale, **si** cette distance est
+       inférieure à 30 pixels, devient `selectedAgent`.
+    4. Si on re-clique sur le même agent, `cameraFollow` passe à true.
+
+C'est ce qu'on appelle du « picking par projection inverse » — simple,
+robuste, et qui marche même quand plusieurs agents se chevauchent
+visuellement (on prend le plus proche du clic).
+
+
+================================================================================
+4. IMPLÉMENTATION TECHNIQUE
+================================================================================
+
+--- 4.1 État caméra dans Landscape ---
+
+    src/graphics/Landscape.java    VIEW_FROM_ABOVE = true         vue de dessus active
+    src/graphics/Landscape.java   rotateX = 0.0f                 yaw caméra 3D libre
+    src/graphics/Landscape.java   cameraPitch = 0.0f             tilt vertical
+    src/graphics/Landscape.java   orbitYaw = 0.0f                yaw orbite suivi
+    src/graphics/Landscape.java   orbitPitch = 55.0f             pitch orbite par défaut
+    src/graphics/Landscape.java   orbitRadius = 50.0f            rayon orbite par défaut
+    src/graphics/Landscape.java   ORBIT_FOCAL_Z_OFFSET = 16.0f   offset cible orbite (au-dessus de l'agent)
+    src/graphics/Landscape.java   topDownZoom = -6250.0f         distance vue dessus
+    src/graphics/Landscape.java   cameraDistance3D = -130.0f     distance 3D libre
+    src/graphics/Landscape.java   translateZ = -44.0f            hauteur caméra
+    src/graphics/Landscape.java   selectedAgent : Agent | null   agent suivi/sélectionné
+    src/graphics/Landscape.java   cameraFollow : boolean         mode suivi actif
+
+--- 4.2 Bornes et sensibilités ---
+
+    src/graphics/Landscape.java   ORBIT_RADIUS_MIN = 3.0f
+    src/graphics/Landscape.java   ORBIT_RADIUS_MAX = 120.0f
+    src/graphics/Landscape.java   CAM_DIST_3D_MIN = -300.0f
+    src/graphics/Landscape.java   CAM_DIST_3D_MAX = -10.0f
+    src/graphics/Landscape.java   TOPDOWN_MIN = -15000.0f
+    src/graphics/Landscape.java   TOPDOWN_MAX = -1500.0f
+    src/graphics/Landscape.java   WHEEL_ORBIT_STEP = 2.0f
+    src/graphics/Landscape.java   WHEEL_3D_STEP = 6.0f
+    src/graphics/Landscape.java   WHEEL_TOPDOWN_STEP = 300.0f
+    src/graphics/Landscape.java   PAN_SENSITIVITY = 0.05f
+    src/graphics/Landscape.java   ROT_SENSITIVITY = 0.3f
+    src/graphics/Landscape.java   ORBIT_SENSITIVITY = 0.4f
+    src/graphics/Landscape.java   PAN_SENSITIVITY_3D = 0.08f      drag droit en 3D
+    src/graphics/Landscape.java   DRAG_THRESHOLD_PX = 5           seuil clic vs drag
+
+--- 4.3 État drag souris ---
+
+    src/graphics/Landscape.java   draggingLeft, draggingRight : boolean
+    src/graphics/Landscape.java   lastDragX, lastDragY : int    position drag courante
+    src/graphics/Landscape.java   pressX, pressY : int          position du clic initial
+    src/graphics/Landscape.java   dragExceededThreshold : boolean
+
+--- 4.4 État touches held ---
+
+    src/graphics/Landscape.java   keySpaceHeld : boolean        descend caméra
+    src/graphics/Landscape.java   keyShiftHeld : boolean        monte caméra
+    src/graphics/Landscape.java   CAMERA_Z_SPEED = 0.4f
+
+Les modificateurs (Shift) ne sont pas auto-repeat par le système de
+fenêtrage (NEWT), d'où la conversion en « flag held » qu'on applique chaque
+frame dans `display()` au lieu de réagir au seul événement keyPressed.
+
+--- 4.5 État picking ---
+
+    src/graphics/Landscape.java   pickRequested : boolean
+    src/graphics/Landscape.java   pickClickX, pickClickY : int
+    src/graphics/Landscape.java   pickGlu : GLU
+
+--- 4.6 doPicking() — le cœur du picking ---
+
+    src/graphics/Landscape.java  doPicking(GL2 gl)
+
+Étapes principales :
+    1. Lecture des matrices projection et modelview courantes :
+           gl.glGetDoublev(GL2.GL_PROJECTION_MATRIX, projMatrix, 0);
+           gl.glGetDoublev(GL2.GL_MODELVIEW_MATRIX, modelMatrix, 0);
+           gl.glGetIntegerv(GL2.GL_VIEWPORT, viewport, 0);
+    2. Pour chaque agent dans `world.loups`, `world.moutons`,
+       `world.humains` :
+           - Calcul de la position monde 3D
+           - Projection en pixels écran via GLU.gluProject(...)
+           - Inversion Y (OpenGL = bas-gauche, fenêtre = haut-gauche)
+           - Distance pixel au clic
+           - Si distance < TOLERANCE (30 px) et < distance min courante,
+             on garde cet agent comme candidat.
+    3. À la fin, si on a trouvé un candidat :
+           - Si c'est le même que précédemment → activer `cameraFollow`
+           - Sinon → nouveau selectedAgent, reset cameraFollow
+
+`doPicking()` est appelé depuis `display()` juste après le rendu 3D,
+avant le passage en ortho 2D pour l'UI — c'est le moment où les matrices
+reflètent encore la caméra 3D, indispensable pour `gluProject`.
+
+--- 4.7 Handlers souris ---
+
+    src/graphics/Landscape.java   (handlers MouseAdapter / MouseMotionListener)
+
+    mousePressed :
+        draggingLeft / draggingRight selon le bouton
+        pressX/Y = position du clic
+        dragExceededThreshold = false
+
+    mouseDragged :
+        Calcul de la distance depuis pressX/Y
+        Si > DRAG_THRESHOLD_PX → dragExceededThreshold = true
+        Si en mode drag :
+            * Top-down + LMB → pan absolu
+            * 3D libre + LMB → rotation FPS yaw + pitch
+            * 3D follow + LMB → orbite (orbitYaw + orbitPitch)
+            * 3D + RMB → pan « grab the ground »
+
+    mouseReleased :
+        Si !dragExceededThreshold et clic gauche :
+            * Si le clic est dans le panneau menu → focus menu
+            * Sinon → pickRequested = true (sera traité au prochain display)
+        Si en train de drag → fin du drag
+
+    mouseWheelMoved :
+        Selon le mode :
+            top-down → topDownZoom += WHEEL_TOPDOWN_STEP (signe selon
+                       sens molette)
+            3D libre → cameraDistance3D += WHEEL_3D_STEP
+            3D follow → orbitRadius += WHEEL_ORBIT_STEP
+        Toutes les valeurs sont clampées dans leurs bornes.
+
+--- 4.8 Handlers clavier ---
+
+    src/graphics/Landscape.java   (handler KeyAdapter)
+
+Touches principales :
+    `v`   bascule VIEW_FROM_ABOVE ↔ 3D libre
+    `f`   toggle cameraFollow (si selectedAgent != null)
+    `m`   ouvre / focalise / ferme InGameMenu
+    `g`   toggle PopulationGraph
+    `n`   bascule jour/nuit instantanée (`it += dureeJour`)
+    `r`   déclenche éruption volcanique
+    `o`   toggle affichage objets statiques
+    `l`   toggle lighting
+    `p`   toggle high-quality lighting
+    `1` / `2`  diminuer / augmenter amplitude altitudes
+    `F12` capture PNG (différée à la frame suivante)
+    `esc` bascule plein écran ⇄ fenêtré (quitter = croix de la fenêtre)
+
+Flèches ou ZQSD (AZERTY) :
+    En vue de dessus → déplacement absolu N/S/E/O
+    En 3D libre → déplacement relatif au yaw caméra
+    En 3D follow → no-op (l'agent dicte la position)
+
+Touches held (modificateurs sans auto-repeat NEWT) :
+    `space` → keySpaceHeld = true (descend caméra chaque frame)
+    `shift` → keyShiftHeld = true (monte caméra chaque frame)
+
+
+================================================================================
+5. TEST
+================================================================================
+
+Pas de test JUnit dédié — toute cette couche dépend d'OpenGL et de la
+boucle d'événements NEWT, ce qui rendrait les tests coûteux.
+
+Validation manuelle :
+
+    1. **Trois modes** : lancer la simulation, vérifier successivement
+       que les trois modes fonctionnent.
+       * Top-down (par défaut) : drag souris → pan, molette → zoom.
+       * Presser `v` pour passer en 3D libre : drag souris → rotation,
+         flèches → déplacement, Space/Shift → hauteur.
+       * Cliquer sur un agent puis presser `f` : passage en suivi,
+         drag souris → orbite.
+
+    2. **Picking** : cliquer sur un Loup avec un clic court (< 5 px).
+       L'AgentInfoPanel s'affiche en bas-gauche. Double-cliquer sur ce
+       même Loup → cameraFollow s'active.
+
+    3. **Discrimination clic vs drag** : cliquer en bougeant la souris
+       de plus de 5 pixels avant le release. Aucun agent ne doit être
+       sélectionné (la caméra a bougé à la place).
+
+    4. **Bornes du zoom** : essayer de zoomer au maximum / minimum. La
+       caméra doit être limitée par les constantes (par exemple
+       orbitRadius reste dans [3, 120]).
+
+    5. **Focus découplé** : ouvrir le menu (`m`), cliquer dans la scène
+       → le panneau reste visible mais perd le focus. Drag souris dans
+       la scène doit alors faire bouger la caméra (et non scroller la
+       liste des agents dans le panneau).
+
+    6. **Touches held** : maintenir Shift appuyé → la caméra monte
+       continûment. Relâcher → elle s'arrête. Pareil pour Space.
+
+
+================================================================================
+6. RÉSULTAT
+================================================================================
+
+L'utilisateur peut explorer la simulation de façon fluide et intuitive :
+
+    * Démarrer en vue de dessus pour avoir l'ensemble du paysage.
+    * Basculer en 3D libre avec `v` pour s'immerger dans la scène.
+    * Cliquer sur un loup intéressant pour voir sa fiche détaillée.
+    * Presser `f` pour le suivre à la 3e personne en orbite.
+    * Drag droit pour « lâcher » l'agent et reprendre le contrôle libre.
+    * Zoomer / dézoomer à la molette selon l'envie.
+
+Les contrôles sont cohérents (drag = bouger, molette = zoom, raccourcis
+clavier = actions ponctuelles), discriminés (clic court ≠ drag long), et
+ne gênent jamais l'UI (focus découplé).
+
+Le picking en particulier offre une expérience moderne : on clique sur
+ce qu'on voit, ça marche. Pas besoin de menu déroulant ni de saisie
+manuelle de l'index de l'agent.
+
+
+================================================================================
+7. AMÉLIORATIONS FUTURES
+================================================================================
+
+--- Court terme ---
+
+    * Tooltip de survol : passer la souris sur un agent (sans cliquer)
+      devrait afficher un mini-popup avec son nom et son énergie. Évite
+      d'avoir à cliquer pour identifier rapidement.
+    * Indicateur visuel de l'agent sélectionné : un cercle de couleur
+      au sol sous l'agent, ou un halo lumineux. Aujourd'hui seule la
+      fiche `AgentInfoPanel` rappelle qu'un agent est sélectionné.
+    * Sauvegarde de positions caméra favorites (touches 1-9 pour
+      définir / rappeler une vue, comme dans Blender).
+
+--- Moyen terme ---
+
+    * Caméra cinématique : prédéfinir des « paths » de caméra (séquence
+      de positions + orientations interpolées) et les jouer à la
+      demande. Utile pour des démos ou des présentations.
+    * Mini-carte (minimap) en bas-droite qui montre la position de la
+      caméra et des agents sur une vue de dessus stylisée. Cliquable
+      pour téléporter la caméra.
+    * Picking étendu aux objets statiques (arbres, monolithes,
+      bergerie) — pas seulement les agents. Permettrait par exemple de
+      « pose une éruption ici » au clic.
+
+--- Long terme ---
+
+    * Replay / rewind temporel. Garder l'état de la simulation en
+      mémoire (snapshots tous les N ticks) et permettre de revenir en
+      arrière dans le temps pour rejouer une scène. Combiné à un
+      enregistrement, on pourrait exporter des animations.
+    * Caméra orbitale autour d'un point fixe (pas seulement autour d'un
+      agent). Utile pour observer une éruption sous tous les angles.
+    * Vue first-person « cohabitant » : se mettre à la place d'un agent
+      (yeux du Loup), voir ce qu'il voit avec sa propre vision limitée
+      (10 cellules). Demande un repensé du rendu (frustum aligné avec
+      l'agent, occlusion par les obstacles, etc.).
+    * Stéréoscopie (VR / lunettes 3D). JOGL 2.0 supporte le rendu
+      stéréoscopique mais demanderait des ajustements de la caméra et
+      du contexte.
+
+
+================================================================================
+FIN — camera-picking.txt
+================================================================================

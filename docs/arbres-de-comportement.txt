@@ -1,0 +1,256 @@
+================================================================================
+DÉCISION DES AGENTS — MACHINE À ÉTATS EN COUCHES — Projet Environnement 3D
+================================================================================
+
+Ce document décrit comment les agents (Loup, Mouton, Humain) « décident » quoi
+faire à chaque tour de simulation. La décision repose sur une machine à états
+finis (FSM) organisée en trois couches — Perception, Décision, Locomotion —
+partagées par tous les agents, chaque espèce ne fournissant que sa table de
+priorités et sa traduction des états en intention de mouvement.
+
+
+================================================================================
+1. CONTEXTE
+================================================================================
+
+À chaque itération, la méthode `step()` de chaque agent est appelée. Elle doit
+choisir une action parmi plusieurs possibilités :
+
+    * Fuir un danger immédiat (feu, prédateur visible)
+    * Regagner la terre ferme quand on est dans l'eau
+    * Chercher de la nourriture (chasser pour le Loup, brouter pour le Mouton)
+    * Se reproduire si les conditions le permettent
+    * Errer / explorer si rien d'urgent
+
+Plutôt qu'une cascade de `if` désordonnée et fragile, le projet organise ces
+choix par PRIORITÉ DÉCROISSANTE (survie > nourriture > exploration) dans une
+machine à états. Le `step()` de la classe `Agent` est un patron de méthode
+(« Template Method ») : il fixe le déroulé commun et délègue les décisions
+propres à chaque espèce à des hooks. Toute la mécanique vit dans le paquet
+`agents.ai`.
+
+
+================================================================================
+2. OBJECTIF
+================================================================================
+
+Donner à chaque type d'agent un comportement distinct et observable, avec les
+priorités attendues :
+
+    Loup (prédateur) :
+        en feu > chasse (proie en vue, si faim ou nuit) > sortie de l'eau >
+        fouille en spirale (si faim) > flânerie économe
+
+    Mouton (proie) :
+        en feu > fuite prédateur > sortie de l'eau > recherche d'herbe
+        (si faim) > errance
+
+    Humain :
+        en feu > errance (répertoire encore minimal)
+
+L'objectif n'est pas une IA réaliste, mais un comportement reconnaissable à
+l'œil : un Loup qui converge vers une proie est visuellement différent d'un
+Mouton qui s'en éloigne en contournant l'eau. Objectif secondaire : pouvoir
+afficher l'état courant dans la fiche `AgentInfoPanel` via `getCurrentBehavior()`.
+
+
+================================================================================
+3. FONCTIONNEMENT
+================================================================================
+
+--- 3.1 La machine à états en couches ---
+
+Le `Agent.step()` exécute, à chaque tour de l'agent, un cycle fixe :
+
+    1. PERCEPTION — un seul balayage du champ de vision (`agents.ai.Perception`)
+       produit un instantané immuable (`agents.ai.Percept`) : direction et
+       distance du prédateur, de la proie, de l'eau, de la terre et de l'herbe
+       les plus proches, plus le voisinage immédiat (feu/lave adjacents, cases
+       cardinales libres). Un seul scan par tour, partagé par toute la décision.
+
+    2. DÉCISION — `decideState(percept)` (fourni par la sous-classe) renvoie un
+       `agents.ai.AgentState` (l'état choisi).
+
+    3. APPLICATION — `applyState(state, percept)` traduit l'état en INTENTION :
+       orientation (`_orient`), vitesse (`vitesse`) et contraintes de
+       déplacement (`MoveConstraints` : terre seule / amphibie / piloté).
+
+    4. LOCOMOTION — `agents.ai.Locomotion` tente d'avancer d'une case selon
+       l'orientation et les contraintes (gestion du tore + évitement).
+
+    5. POST-MOUVEMENT — effets propres à l'espèce (manger, prendre feu, mettre à
+       jour l'énergie, mourir, se reproduire).
+
+--- 3.2 La décision : une cascade de gardes priorisée ---
+
+`decideState` EST l'« arbre de comportement » du projet : une suite de gardes
+évaluées de la plus prioritaire à la moins prioritaire. La première qui se
+déclenche fixe l'état ; les suivantes sont ignorées. C'est lisible, déterministe
+et trivial à tester (la couche Décision est testée sans OpenGL).
+
+Exemple (Mouton), du plus prioritaire au moins prioritaire :
+
+    en feu ?                              → ON_FIRE
+    sinon prédateur en vue ?              → FLEE_PREDATOR
+    sinon dans l'eau ?                    → SEEK_LAND
+    sinon affamé ET herbe en vue ?        → SEEK_FOOD
+    sinon                                 → WANDER
+
+--- 3.3 Restitution lisible : getCurrentBehavior() ---
+
+Pour la fiche `AgentInfoPanel`, chaque sous-classe surcharge
+`getCurrentBehavior()` qui dérive une étiquette texte de l'état courant
+(`currentState`) et de quelques drapeaux (en feu, en train de brouter/manger,
+piloté). On lit la fiche dans le même ordre logique que la décision.
+
+
+================================================================================
+4. IMPLÉMENTATION TECHNIQUE
+================================================================================
+
+--- 4.1 Loup — decideState / applyState ---
+
+Priorités de `decideState` :
+
+    en feu                                → ON_FIRE   (fuit vers l'eau, amphibie)
+    a FAIM (< 70 %) ou NUIT, proie en vue → HUNT      (poursuit la proie)
+    dans l'eau                            → SEEK_LAND (regagne la terre)
+    a FAIM ou NUIT, sans proie            → SEARCH    (fouille en spirale)
+    repu, de jour                         → WANDER    (flânerie économe)
+
+Le Loup a faim sous `HUNGER_RATIO = 70 %` de son énergie max. La nuit, le
+drapeau `attaqueNuit` force la chasse même rassasié : il poursuit le troupeau
+pour le DISPERSER (rôle écologique), mais alors au TROT (`vtrot`, peu coûteux),
+pas au sprint. Affamé, il chasse au SPRINT (`vcourse`) pour rattraper et tuer.
+
+Post-mouvement : il ne CONSOMME un Mouton co-localisé que s'il est sous 70 %
+(un loup repu n'effraie que, pas de « surplus killing »), avec un gain plafonné
+à `energieD / 2`. Dans l'eau, sa vitesse est multipliée par `swimFactor` (0.6 :
+bon nageur). Reproduction conditionnée à l'énergie (≥ 60 %, investit 45 % dans
+le petit né à sa position). Mort par famine, lave ou vieillesse.
+
+--- 4.2 Mouton — decideState / applyState ---
+
+Priorités de `decideState` (la survie d'abord) :
+
+    en feu                                → ON_FIRE       (fuit vers l'eau)
+    prédateur en vue                      → FLEE_PREDATOR (fuit à l'opposé)
+    dans l'eau                            → SEEK_LAND     (regagne la terre)
+    affamé (< 50 %) ET herbe en vue       → SEEK_FOOD     (va vers l'herbe)
+    sinon                                 → WANDER        (errance)
+
+La FUITE est « intelligente » : le Mouton part à l'opposé du prédateur, mais
+ÉVITE de plonger dans l'eau (mortelle pour lui) ou dans la forêt tant qu'une
+issue terrestre libre existe ; il n'entre dans l'eau qu'en dernier recours,
+cerné. Dans l'eau, `swimFactor` = 0.25 (très mauvais nageur) : l'eau n'est donc
+pas un refuge, un Loup l'y rattrape.
+
+Post-mouvement : BROUTAGE sur une cellule d'herbe s'il est sous 75 % d'énergie
+et pas en fuite (gain `energieMAX / 100`, l'herbe est consommée). Reproduction à
+seuil et coût BAS (proie prolifique : ≥ 40 %, investit 25 % dans l'agneau né à
+sa position). Mort par famine ou lave.
+
+--- 4.3 Humain — FSM minimal ---
+
+L'Humain est un agent à part entière de la FSM, mais avec un répertoire réduit :
+`decideState` renvoie `ON_FIRE` s'il brûle (il fuit alors vers l'eau, amphibie,
+le temps de s'éteindre), sinon `WANDER`. Aucun rôle prédateur/proie pour
+l'instant — les hooks sont prêts pour en faire un chasseur ou un berger.
+
+--- 4.4 Seuils numériques de bascule ---
+
+Les énergies maximales sont réglables (`SimulationConfig`) ; les seuils ci-dessous
+sont des fractions de ces maxima.
+
+    Loup
+        faim (chasse + consommation)   energie < 70 % du max (HUNGER_RATIO)
+        gain au repas                  + min(energieD/2, energieD − energie)
+        vitesse de chasse              affamé → vcourse ; repu (nuit) → vtrot
+        nage                           vitesse × 0.6 (swimFactor)
+        chasse nocturne forcée         attaqueNuit (nuit, après le crépuscule)
+        reproduction                   ≥ 60 % du max, coût 45 % au parent
+
+    Mouton
+        broutage                       energie < 75 % du max ET pas en fuite
+        recherche d'herbe (SEEK_FOOD)  energie < 50 % du max ET herbe en vue
+        nage                           vitesse × 0.25 (swimFactor)
+        reproduction                   ≥ 40 % du max, coût 25 % au parent
+
+
+================================================================================
+5. TEST
+================================================================================
+
+La décision ne dépend pas d'OpenGL : les trois couches sont testées en JUnit
+sans contexte graphique.
+
+    test/src/agents/ai/PerceptionTest.java   — le balayage produit le bon Percept
+    test/src/agents/ai/DecisionTest.java      — decideState choisit le bon état
+    test/src/agents/ai/LocomotionTest.java    — déplacement sous contraintes
+    test/src/agents/AgentBehaviorTest.java    — scénarios bout-en-bout : fuite
+        avec évitement de l'eau, chasse, recherche de nourriture, nage par
+        espèce, reproduction par seuils d'espèce, chasse au trot vs sprint,
+        loup repu qui ne tue pas.
+
+Validation visuelle complémentaire in-game : cliquer un agent (clic gauche
+court) affiche sa fiche `AgentInfoPanel` ; on y lit le champ « État » (retour de
+`getCurrentBehavior()`) et on observe ses transitions. La touche `n` bascule
+jour/nuit pour vérifier le passage du Loup en chasse nocturne.
+
+
+================================================================================
+6. RÉSULTAT
+================================================================================
+
+Visuellement, on distingue clairement les trois espèces :
+
+    * Les Loups convergent vers les zones à Moutons et les poursuivent ;
+      affamés ils sprintent pour tuer, repus la nuit ils dispersent le troupeau
+      au trot sans le consommer.
+    * Les Moutons broutent (les cellules d'herbe s'éclaircissent autour d'eux),
+      se dirigent vers l'herbe quand ils ont faim, forment des groupes lâches et
+      se dispersent à l'approche d'un Loup — en contournant l'eau plutôt que de
+      s'y noyer.
+    * Les Humains errent et fuient le feu, sans rôle écologique actif encore.
+
+La fiche `AgentInfoPanel` + la caméra-follow (touche `f`) donnent une vue claire
+de la décision prise à chaque tour. Au niveau global, l'écosystème reste vivable
+(pas d'extinction systématique), signe d'une calibration raisonnable ; les
+déséquilibres se lisent sur le graphe Lotka-Volterra (touche `g`).
+
+
+================================================================================
+7. AMÉLIORATIONS FUTURES
+================================================================================
+
+--- Court terme ---
+
+    * Donner un rôle actif à l'Humain : « berger » (suit le centre de masse du
+      troupeau) ou « chasseur » (cible le Loup le plus proche). Les hooks de la
+      FSM sont déjà en place.
+    * État « repos » : à énergie maximale, l'agent s'arrête au lieu d'errer
+      (économie d'énergie).
+
+--- Moyen terme ---
+
+    * Utility AI : au lieu de gardes booléennes, chaque action reçoit un score
+      calculé sur les variables d'état, la décision étant l'argmax. Plus souple,
+      transitions plus fluides.
+    * Communication entre agents : un Mouton qui voit un Loup « alerte » ses
+      voisins (drapeau diffusé en anneau pendant quelques ticks).
+
+--- Long terme ---
+
+    * GOAP (Goal Oriented Action Planning) : un but courant + planification de
+      la séquence d'actions pour l'atteindre.
+    * Apprentissage par renforcement : l'agent apprend par essai-erreur à partir
+      d'une fonction de récompense (survie, énergie, descendance). Demande une
+      boucle d'apprentissage (Q-table ou réseau neuronal).
+    * Mémoire spatiale : trace des cellules visitées et des positions où l'agent
+      a vu proies ou dangers, pour planifier ses déplacements. Cf. littérature
+      ALife (Sugarscape, Epstein-Axtell).
+
+
+================================================================================
+FIN — arbres-de-comportement.txt
+================================================================================

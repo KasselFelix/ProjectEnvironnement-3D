@@ -1,0 +1,456 @@
+================================================================================
+AUTOMATES CELLULAIRES — Projet Environnement 3D
+================================================================================
+
+Ce document décrit les trois automates cellulaires (CA) du projet : forêt,
+herbe et lave. Ils font évoluer dynamiquement la « peau » du terrain — la
+végétation pousse, brûle, et la lave coule lors d'éruptions volcaniques. Le
+système Layer (couches empilées par cellule) complète la lave pour gérer
+la solidification en pierre, basalte, obsidienne ou granite selon le
+contexte.
+
+
+================================================================================
+1. CONTEXTE
+================================================================================
+
+Un automate cellulaire (CA) est un modèle de calcul classique : on a une
+grille où chaque cellule a un état, et à chaque pas de temps, l'état d'une
+cellule est mis à jour en fonction de son état actuel et de celui de ses
+voisines. Les règles sont locales mais les comportements globaux peuvent
+être très riches (cf. le « Jeu de la Vie » de Conway, qui a donné son nom
+au répertoire du projet).
+
+Dans notre simulation, les CAs sont l'élément le plus visuel après le
+terrain lui-même. Sans eux, on aurait un paysage statique habité par des
+agents. Avec eux :
+
+    * La forêt pousse, brûle, repousse — création de pulse de couleur
+      verte / rouge / noire visible à grande échelle.
+    * L'herbe couvre les plaines, est mangée par les Moutons, et brûle
+      par contagion avec les arbres en feu.
+    * Le volcanisme est dynamique — la lave jaillit du cratère, coule, et
+      durcit progressivement en formant des coulées de matériaux divers.
+
+C'est cette dynamique environnementale qui rend la simulation « vivante »
+même si on retire complètement les agents.
+
+
+================================================================================
+2. OBJECTIF
+================================================================================
+
+Chaque CA a son propre objectif :
+
+    ForestCA  →  faire pousser des arbres aléatoirement et leur faire
+                 brûler en chaîne quand un feu se déclare.
+    GrassCA   →  faire pousser de l'herbe sur les plaines de basse-altitude
+                 et la rendre inflammable par la forêt voisine.
+    LavaCA    →  simuler le cycle complet d'une éruption volcanique :
+                 jaillissement, propagation, projections de tephra,
+                 solidification.
+
+L'objectif commun est de produire des structures spatiales émergentes
+intéressantes (clusters d'arbres, fronts de feu, coulées organiques)
+plutôt que des grilles statiques uniformes.
+
+Un objectif transversal est la performance : les trois CAs travaillent sur
+des grilles de 200 × 200 cellules (par défaut). La simulation tourne à pas de
+temps fixe (`simulationHz`, 20 Hz par défaut) indépendamment du FPS de rendu :
+les CAs sont mis à jour à chaque pas de simulation. Le double-buffering
+(lecture sur l'ancien buffer, écriture sur le nouveau, puis swap) garantit une
+mise à jour cohérente.
+
+
+================================================================================
+3. FONCTIONNEMENT
+================================================================================
+
+--- 3.1 Cycle commun ---
+
+Chaque CA est défini par trois éléments :
+
+    1. Une grille d'états (un entier ou un double par cellule)
+    2. Un voisinage à consulter (typiquement les 4 ou 8 cellules adjacentes)
+    3. Des règles de transition qui calculent le nouvel état d'une cellule
+       à partir de son état actuel et de l'état de son voisinage
+
+Le « tour » d'un CA consiste à appliquer les règles à toutes les cellules
+de la grille en parallèle. Pour éviter qu'une mise à jour précoce
+influence une mise à jour tardive, on utilise un buffer secondaire :
+
+    pour chaque cellule (x, y) :
+        nouvelle_grille[x][y] = règle(ancienne_grille[x][y], voisins)
+    swap(ancienne_grille, nouvelle_grille)
+
+C'est ce qu'on appelle l'**update synchrone**. Dans notre projet, les
+trois CAs utilisent en fait une variante **asynchrone** : on parcourt les
+cellules dans un ordre aléatoire (`Collections.shuffle`) ce qui évite les
+biais visuels (lignes horizontales qui se propagent si on balaye dans
+l'ordre lexicographique).
+
+--- 3.2 ForestCA en bref ---
+
+États possibles par cellule :
+
+    0       →  vide
+    1       →  arbre vivant
+    2, 3, 4 →  arbre en feu (3 sub-states, ~2 sec chacun via probabilité)
+    5       →  arbre brûlé (visible noir, ~2 sec)
+    6..(5+tDispertion)  →  cendres en cours de dispersion (invisibles)
+
+Règles principales :
+    * Une cellule vide peut faire germer un arbre avec une probabilité pA
+      (très basse). Cette probabilité est réduite de 90 % si la cellule
+      a une couche STONE sur le dessus.
+    * Une cellule arbre prend feu si elle a un voisin en feu (n'importe
+      quel sub-state 2/3/4, via le helper `isTreeOnFire`) ou si elle est
+      adjacente à de la lave. Elle peut aussi prendre feu spontanément
+      (probabilité pF, encore plus basse — c'est la « foudre »).
+    * Un arbre en feu progresse dans les sub-states (2→3→4→5) avec une
+      probabilité par tick de `1 / (TREE_STATE_DURATION_SEC × simulationHz)`,
+      soit ~2 sec en moyenne par sub-state à 20 Hz. Cela étend la durée
+      visible totale (~8 sec) ET laisse à la coulée de lave le temps
+      d'atteindre l'arbre en feu et déclencher une projection.
+    * Si la lave atteint la cellule d'un arbre vivant ou en feu, on
+      déclenche `projectBurningTree` qui crée un `TreeProjectile` (cf.
+      `docs/eruption_volcanique.txt` § 3.6 pour les 3 cas : cratère,
+      aval, static).
+    * Une cellule brûlée (state 5) → cycle cendres (6..5+tDispertion)
+      avant retour à vide.
+
+    Croissance des arbres (ajout 2026-05-29) :
+    * En plus des états, ForestCA porte une grille `double[][] growth`
+      (g ∈ [0,1] : 0 = jeune pousse, 1 = adulte) et une fertilité
+      `fertility(x,y) = fAlt × fSoil × fComp` recalculée à la demande :
+        - fAlt : bosse lisse `1-((hN-0.5)/0.5)²`, optimum à mi-altitude,
+          0 au niveau de la mer et aux sommets ;
+        - fSoil : 1.0 sur terre, 0.3 (STONE_FERTILITY) sur pile minérale
+          (coulée refroidie) ;
+        - fComp : `1 - 0.6×(nbVoisinsArbres/8)` (compétition 8-connexe).
+    * Chaque tick, une cellule-arbre avance `g = min(1, g + (1/T)×F)` avec
+      `T = treeGrowthDays × cycleTotalSec × simulationHz`. Tout autre état
+      (feu, brûlé, vide, germination) remet g=0 : une repousse repart jeune.
+    * Init : forêt établie seedée `g = clamp(0.5 + 0.5×F + jitter)` (jitter
+      déterministe ±0.15 via hash) → arbres de tailles proches dans un même
+      groupe (même F) avec variation individuelle.
+    * Paramètre `treeGrowthDays` (défaut 10 jours-jeu, slider [1,100] dans
+      les deux menus). Le rendu (Tree.displayTreeAt) dérive la taille
+      `scale = base × (0.25 + 0.75×g) × (0.6 + 0.4×F)` + un yaw aléatoire
+      déterministe (coordonnées monde → stable au pan). Tests : ForestCATest.
+
+--- 3.3 GrassCA en bref ---
+
+Même structure que ForestCA, avec deux différences :
+
+    * Densité initiale plus élevée (55 % vs 10 % pour la forêt).
+    * Restriction d'altitude : l'herbe ne pousse qu'entre maxHauteur / 12
+      et maxHauteur * 0.7 (donc pas dans la mer, pas en altitude).
+    * L'herbe peut s'enflammer par contact avec un arbre en feu adjacent
+      (couplage entre les deux CAs).
+
+--- 3.4 LavaCA : le plus riche des trois ---
+
+LavaCA est conceptuellement différent : il ne maintient pas d'état dans
+une grille séparée. Les couches LAVA empilées vivent dans le système
+`World.cellStacks` (voir § 4.5), et LavaCA est l'orchestrateur du cycle
+d'éruption. Tout le système physique est bâti sur des lois physiques
+(équilibre hydrostatique P=ρgh, Stefan-Boltzmann pour l'émission,
+écoulement gravitaire visqueux).
+
+Cycle d'éruption en 6 étapes :
+
+    1. TRIGGER (touche `r` ou pErruption auto). Crée une instance
+       `Eruption` avec pression tirée dans `[powerMin, powerMax]` et
+       durée en ticks calculée depuis `eruptionDurationSec`.
+
+    2. SALVE DE TEPHRAS au déclenchement : BASALT (~8 × pressure) et
+       LAVA (~12 × pressure) projetés en arc balistique. Portée :
+       `eruptionRadius × √pressure` (sub-linéaire).
+
+    3. INJECTION AU CRATÈRE par tick (équilibre hydrostatique). Cap par
+       poids : `max_column_weight = pressure × 15 × radial`, où le poids
+       courant est `Σ(thickness × density)` sur la stack. Densités
+       normalisées : LAVA=1.0, OBSIDIAN=1.2, GRANITE=1.4, STONE=1.5,
+       BASALT=1.7. Un cône qui s'accumule à long terme limite naturellement
+       la hauteur des pics.
+
+    4. PROPAGATION GRAVITAIRE. Chaque cellule LAVA transfère son excès
+       d'altitude au voisin cardinal le plus bas, modulé par
+       `lavaViscosity × stateDamping`. La viscosité augmente avec le
+       refroidissement.
+
+    5. VIEILLISSEMENT + SOLIDIFICATION. Loi de refroidissement basée sur
+       l'épaisseur de la couche et les voisins chauds/froids. Modèle de
+       convection : tant qu'une cellule a du flux (entrant ou sortant),
+       elle ne refroidit pas. À `state >= solidifyEnd`, conversion en
+       matériau : OBSIDIAN si sous l'eau, GRANITE si altitude haute,
+       BASALT si proche cratère, STONE par défaut. Le `lineage` (signature
+       chromatique de l'éruption) est préservé.
+
+    6. DRAINAGE RÉSIDUEL après chute de pression (fin de l'éruption). La pile centrale
+       descend jusqu'à un anchor minimum (3 unités = lac persistant).
+
+LAC DE LAVE PERSISTANT : les couches dans le rayon `rCratere` du
+cratère sont marquées `persistent=true` → pas de solidification, drainage
+limité, fonte forcée des blocs posés au-dessus.
+
+FONTE DE PIERRE renforcée (3 règles physiques) :
+    * Top adjacent à LAVA + thickness < 1 bloc → fond toujours (croûte fine)
+    * Top non adjacent + isolation totale < 2 blocs → fond (chaleur traverse)
+    * Top adjacent + épais + 2+ voisins solides ÉPAIS → protégé (pont stable)
+
+ÉMISSION LUMINEUSE Stefan-Boltzmann (`LavaBlock`) : L = (T/T_max)⁴ ∈ [0, 1]
+avec T_max = 1473 K (1200°C), T_solid = 973 K (700°C). La lave brille
+de jour comme de nuit indépendamment de l'éclairage scène.
+
+Pour le détail complet du système d'éruption (cratère physique creusé,
+tephras, projection d'arbres, multi-éruptions, signature chromatique
+lineage, etc.), voir `docs/eruption_volcanique.txt`.
+
+
+================================================================================
+4. IMPLÉMENTATION TECHNIQUE
+================================================================================
+
+--- 4.1 Hiérarchie de classes ---
+
+    cellularautomata.CellularAutomata  (abstraite, framework du cours)
+        ├── CellularAutomataInteger    (états entiers)
+        ├── CellularAutomataDouble     (états réels, utilisé pour hauteur)
+        └── CellularAutomataColor      (états RGB packagés)
+
+    cellularautomata.ecosystem.ForestCA  (Integer + Color pour rendu)
+    cellularautomata.ecosystem.GrassCA   (idem)
+    cellularautomata.ecosystem.LavaCA    (orchestrateur d'éruption)
+    cellularautomata.ecosystem.Eruption  (POJO d'une éruption active)
+    cellularautomata.ecosystem.LavaSource (signature couleur partagée)
+
+Le double-buffering est géré dans la classe de base par la méthode
+`swapBuffer()`, appelée à la fin de chaque `step()`.
+
+--- 4.2 ForestCA — constantes et code ---
+
+    src/cellularautomata/ecosystem/ForestCA.java
+        darbre = 0.1                  densité initiale
+        pF = 0.00003                  proba feu spontané
+        pA = 0.000006                 proba pousse
+        tDispertion = 60              ticks avant fin de dispersion cendres
+        STONE_GROWTH_FACTOR = 0.1     réduction sur pierre
+        FIRE_FIRST = 2, FIRE_LAST = 4, BURNT = 5   states visibles
+        TREE_STATE_DURATION_SEC = 2.0f             durée moyenne d'un sub-state
+        stateAdvanceProbability()                  = 1 / (DURATION × simulationHz)
+        isTreeOnFire(state)                        helper public (utilisé par Loup,
+                                                                 GrassCA, etc.)
+
+Détails de step() :
+    1. `Collections.shuffle(world.list)` ordonne les cellules au hasard
+    2. Pour chaque cellule :
+        - germination si vide ET pas de lave ET height >= 0
+        - prend feu si voisin brûle (isTreeOnFire) ou lave adjacente
+        - sub-state feu progresse via probabilité (~2 sec moyens chacun)
+        - mise à jour de la couleur via `cellsColorValues.setCellState()`
+        - si lave directement sur la cellule → `projectBurningTree(i,j)` qui
+          crée un `TreeProjectile` (cf. eruption_volcanique.txt § 3.6)
+    3. `swapBuffer()` à la fin
+
+--- 4.3 GrassCA — constantes et code ---
+
+    src/cellularautomata/ecosystem/GrassCA.java
+        dherbe = 0.55         densité initiale
+        pF = 0.0000003        proba feu spontané (très bas)
+        pH = 0.000006         proba pousse
+        tDispertion = 20      idem ForestCA
+        init()                restriction altitude [maxH/12, maxH*0.7]
+        step()                idem ForestCA + couplage ForestCA via isTreeOnFire
+        Lave sur cellule herbe → state=0 (disparition directe, herbe trop fine
+                                          pour brûler visiblement sous la lave)
+
+--- 4.4 LavaCA — résumé ---
+
+LavaCA est trop riche pour tenir ici. Voir `docs/eruption_volcanique.txt`
+pour le détail complet : équilibre hydrostatique (P = ρgh), densités par
+matériau, refroidissement Stefan-Boltzmann avec convection, propagation
+gravitaire visqueuse, projection d'arbres en aval, etc.
+
+Points clés du fichier `src/cellularautomata/ecosystem/LavaCA.java` :
+
+    BASE_FLOW                     = 200.0    volume injecté/tick à pressure=1
+    PRESSURE_TO_MAX_COLUMN_WEIGHT = 15.0     cap hydrostatique
+    OVERFLOW_FRACTION_PER_TICK    = 0.5      cap absolu transfert/tick
+    SPREAD_FACTOR                 = 8.0      borne propagations gravitaires
+    RESIDUAL_FACTOR               = 3.0      hauteur lac résiduel post-éruption
+    SOLIDIFY_START_RATIO          = 0.6      seuil Phase 2 cooling visible
+    MIN_PROTECTIVE_THICKNESS      = STONE_BLOCK_HEIGHT (3.0)  fonte pierre
+    MIN_THERMAL_INSULATION        = 2 × STONE_BLOCK_HEIGHT    fonte multi-couches
+
+    rCratere = 5             rayon cratère
+    eruptionRadiusRaw = 5    rayon de référence éruption
+    R_VOLCAN_CAP = 25        cap absolu rayon
+    TEPHRA_COUNT_BASE = 8.0f, TEPHRA_THICKNESS_FACTOR = 0.3f, etc.
+
+    activeEruptions : List<Eruption>    multi-éruptions simultanées
+    isInActiveEruptionRadius(world, x, y)  helper public (utilisé par ForestCA)
+
+--- 4.5 Le système Layer (World.cellStacks) ---
+
+LavaCA n'écrit pas dans une grille interne d'états. Il manipule la pile
+de couches de chaque cellule du World :
+
+    src/worlds/World.java
+        cellStacks : Map<long, List<Layer>>  (clé = packed (x,y))
+        pushLayer(x, y, material, thickness, state)
+        pushLayer(x, y, material, thickness, state, lineage)   variant avec lineage
+        topLayer(x, y) → Layer | null
+        replaceTopLayer(x, y, material, state)
+        removeTopLayer(x, y) → Layer | null
+        getCellTopAltitude(x, y) → altitude monde du sommet
+        getStack(x, y) → List<Layer> (pour itération)
+
+Chaque `Layer` porte : `material` (enum STONE/OBSIDIAN/BASALT/GRANITE/LAVA),
+`thickness` (épaisseur monde), `state` (compteur de vieillissement LAVA),
+`persistent` (lac de lave cratère), et `lineage` (`LavaLineage` qui pointe
+vers la `LavaSource` de l'éruption d'origine pour la signature couleur).
+
+Le rendu itère sur `cellStacks` et appelle `StoneBlock.drawAt()` /
+`LavaBlock.drawAt()` pour chaque couche empilée.
+
+
+================================================================================
+5. TEST
+================================================================================
+
+Le seul CA aujourd'hui couvert par une suite JUnit est LavaCA, parce que
+c'est le plus complexe et celui où une régression visuelle serait la plus
+coûteuse à détecter à l'œil. ForestCA et GrassCA n'ont pas de test JUnit
+dédié (leur sortie est trop visuelle et trop dépendante de
+l'initialisation aléatoire pour des assertions ciblées).
+
+Tests existants pour LavaCA (test/src/cellularautomata/ecosystem/LavaCATest.java) :
+
+    1. tephraSpawnProjectilesAuDebutEruption
+       Vérifie que des TephraProjectile sont bien créés au déclenchement
+       d'une éruption.
+
+    2. tephraAtterritEtPoseBasalt
+       Vérifie qu'un projectile arrivé à destination dépose une couche
+       BASALT et passe son drapeau _alive à false.
+
+    3. pasDeTephraSansEruption
+       Vérifie qu'aucun projectile n'est créé en l'absence d'éruption.
+
+    4. laveAuCratereEstMarqueePersistante
+       Vérifie que la couche LAVA déposée au cratère a son drapeau
+       `persistent = true`.
+
+    5. laveHorsZonePersistanteNonMarquee
+       Vérifie que la couche LAVA hors du rayon persistant n'a pas le
+       drapeau.
+
+    6. laveMarqueePersistanteNeDurcitPas
+       Vérifie qu'une couche LAVA persistante reste LAVA même après
+       solidifyEnd ticks.
+
+    7. laveNonMarqueeDurcit
+       Vérifie qu'une couche LAVA non persistante se convertit bien en
+       matériau solide après solidifyEnd ticks.
+
+    8. pierreIsoleeFondDansLave
+       Vérifie qu'un bloc de pierre isolé tombé sur de la lave fond.
+
+    9. pierreAvecUnSeulVoisinFondQuandMeme
+       Vérifie que le seuil de protection est bien à 2 voisins (1 seul
+       voisin = fond quand même).
+
+Pour lancer la suite :
+    ./test.sh
+
+Validation visuelle des CAs « non testés » :
+    * ForestCA : observer pendant 30 secondes de simulation que la forêt
+      n'est pas figée (apparition / disparition de patches d'arbres).
+    * GrassCA : vérifier que l'herbe ne pousse pas en haute altitude ni
+      sous l'eau.
+    * Déclenchement feu : poser un bloc de lave à côté d'arbres
+      (éruption via `r`), observer la propagation en chaîne.
+
+
+================================================================================
+6. RÉSULTAT
+================================================================================
+
+À l'œil, on observe :
+
+    * Une couverture forestière qui évolue dans le temps — petits bosquets
+      qui apparaissent, fronts de feu qui balayent des zones entières,
+      patches de cendre noire qui se dispersent en quelques dizaines de
+      secondes de simulation.
+
+    * De l'herbe verte qui couvre les plaines de basse à moyenne altitude,
+      visible essentiellement aux endroits où il n'y a pas d'arbres.
+
+    * Des éruptions volcaniques saisissantes : tephra projeté en arcs
+      paraboliques (couleur orange chaude au départ, virant vers le gris
+      basalte à l'atterrissage), coulées qui se propagent sur 5 à
+      25 cellules selon la puissance, lac de lave persistant au sommet
+      du cratère, blocs de pierre isolés qui fondent dans la lave
+      fraîche.
+
+    * Des couleurs distinctes pour chaque matériau solidifié :
+            OBSIDIAN noir   (lave qui a refroidi sous l'eau)
+            BASALT gris-bleu (proche du cratère)
+            GRANITE rose    (haute altitude)
+            STONE gris      (par défaut)
+
+L'interaction des CAs entre eux est aussi visible : un arbre qui touche
+une coulée de lave prend feu, le feu se propage à la forêt voisine, et
+quand la lave solidifie elle enterre les cendres restantes.
+
+
+================================================================================
+7. AMÉLIORATIONS FUTURES
+================================================================================
+
+--- Court terme ---
+
+    * Test JUnit pour ForestCA et GrassCA. Au moins valider l'invariant
+      de la restriction d'altitude pour GrassCA, et le compteur de
+      dispersion des cendres pour ForestCA.
+    * Documenter chaque constante avec son unité et son ordre de grandeur
+      attendu (le code en a déjà certaines, mais pas toutes).
+
+--- Moyen terme ---
+
+    * Couplage CA renforcé : la fumée du feu (nouveau CA ou champ
+      d'opacité au-dessus de la forêt) devrait réduire la visibilité
+      des agents pendant quelques ticks. Et après le passage du feu,
+      la cendre devrait fertiliser le sol (augmenter localement pA de
+      ForestCA et pH de GrassCA pour quelques dizaines de ticks).
+    * Nouveau CA « eau qui s'écoule » : à chaque tick, l'eau s'écoule
+      vers la cellule voisine la plus basse. Permet de simuler les
+      rivières et le ruissellement quand la lave bloque un cours.
+    * CA neige sur les sommets : couche blanche qui s'accumule en
+      altitude > seuil, fond progressivement avec une température
+      saisonnière (voir cycle-jour-nuit.txt pour les saisons).
+
+--- Long terme ---
+
+    * CAs continus à la Lenia. Au lieu de quelques états discrets, chaque
+      cellule porte un réel ∈ [0, 1] et la règle de mise à jour est une
+      convolution avec un noyau de croissance. Visuellement très riche,
+      permet d'obtenir des structures « vivantes » spectaculaires (cf.
+      skill `alife`).
+    * GPU acceleration. Les CAs sur 200 × 200 cellules tournent bien en
+      CPU mais ne passent pas à l'échelle au-delà. Une implémentation
+      shader compute (ou même JOGL2 + GLSL) permettrait des grilles à
+      512² ou 1024².
+    * Couplage CA / agents bidirectionnel renforcé : les Moutons devraient
+      modifier visuellement la cellule d'herbe broutée (passer d'herbe
+      haute à herbe rase pendant quelques ticks avant repousse).
+    * Phénomènes météo dynamiques (CA pluie, CA vent qui dirige la
+      propagation du feu). Demanderait une restructuration de la stack CA,
+      mais offrirait une couche météorologique réaliste.
+
+
+================================================================================
+FIN — automates-cellulaires.txt
+================================================================================

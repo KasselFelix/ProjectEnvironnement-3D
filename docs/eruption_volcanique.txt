@@ -1,0 +1,488 @@
+================================================================================
+ÉRUPTION VOLCANIQUE — Projet Environnement 3D
+================================================================================
+
+Ce document décrit le système complet d'éruption volcanique : injection de
+lave au cratère, propagation gravitaire, refroidissement et solidification,
+projection de tephras (roche et lave), interaction avec la végétation et
+les agents, et rendu visuel (émission lumineuse, signature chromatique
+par éruption, blocs empilés via le système Layer).
+
+Le système est intentionnellement bâti sur des **lois physiques simples**
+(Stefan-Boltzmann, équilibre hydrostatique P = ρgh, écoulement gravitaire
+visqueux) plutôt que sur des valeurs ajustées arbitrairement. Chaque
+paramètre exposé via SimulationConfig a une unité physique claire (sec,
+densité normalisée, fraction de bloc, etc.) — l'ajustement utilisateur
+reste lisible.
+
+
+================================================================================
+1. CONTEXTE
+================================================================================
+
+Un volcan dans la simulation est une **source unique** placée à l'init du
+LavaCA, dans le top 10 % d'altitude du terrain. Le cratère est physiquement
+creusé dans la heightmap (3 blocs de profondeur par défaut) pour matérialiser
+un vrai creux où la lave s'accumule.
+
+LavaCA repose sur quatre piliers physiques :
+
+    * **Équilibre hydrostatique** : la pression d'éruption limite la
+      hauteur maximale qu'une colonne peut atteindre (P = ρgh).
+    * **Densités matériaux** : chaque matériau (LAVA, STONE, BASALT,
+      GRANITE, OBSIDIAN) a une densité normalisée qui intervient dans le
+      poids de colonne. Un cône de BASALT accumulé bloque progressivement
+      la sortie de magma.
+    * **Refroidissement Stefan-Boltzmann** : la lave émet de la lumière
+      proportionnellement à T⁴. Le rendu visuel reflète directement la
+      température (couleur + émission OpenGL).
+    * **Temps en secondes wall-clock** : tous les paramètres temporels
+      (`eruptionDurationSec`, `solidifyEndSec`, etc.) sont en secondes
+      réelles, convertis en ticks via `simulationHz` à la demande.
+
+
+================================================================================
+2. OBJECTIF
+================================================================================
+
+Le système d'éruption doit produire un visuel **crédible** d'un volcan
+actif :
+
+    * Pic de lave qui monte au déclenchement (vitesse rapide), atteint
+      une hauteur dépendant de la pression d'éruption, puis redescend
+      progressivement quand l'éruption se ferme.
+    * Coulée gravitaire qui s'étale en suivant la pente du terrain, avec
+      une signature visible (couleur orange vif) qui s'efface en
+      refroidissant (vers le rouge sombre puis noir/gris pour la pierre).
+    * Tephras (roche et lave) éjectés au déclenchement, suivant une
+      trajectoire balistique en arc, atterrissant à distance variable
+      autour du cratère.
+    * Interaction avec la végétation : les arbres pris dans la coulée
+      sont **emportés en aval** (projection visuelle d'un arbre couché
+      qui brûle), et les arbres dans le cratère sont **projetés en arc
+      explosif** comme des tephras.
+    * Interaction avec les agents : Loup/Mouton/Humain pris dans la lave
+      meurent, ceux à proximité d'une couche LAVA prennent feu.
+    * Lac de lave persistant au sommet du volcan, qui reste visible
+      indéfiniment (matérialise le « cœur chaud » du volcan).
+    * Cône qui s'accumule à long terme : éruptions successives → BASALT
+      déposé en couronne autour du cratère → géologie qui évolue.
+
+
+================================================================================
+3. FONCTIONNEMENT
+================================================================================
+
+--- 3.1 Cycle d'éruption ---
+
+Une éruption a un cycle bien défini en 6 étapes :
+
+    1. **Trigger**. Soit aléatoire (`pErruption` à chaque tick, désactivée
+       par défaut), soit clavier (touche `r`). Crée une nouvelle instance
+       `Eruption` avec une pression tirée dans `[powerMin, powerMax]` et
+       une durée en ticks calculée depuis `eruptionDurationSec`.
+
+    2. **Salve de tephras**. Au moment du trigger, on éjecte ~ `pressure × 8`
+       projectiles BASALT et ~ `pressure × 12` projectiles LAVA. Trajectoire
+       balistique (interpolation linéaire en X/Y + arc sinusoïdal en Z).
+       Portée : `eruptionRadius × √pressure` (sub-linéaire pour ne pas
+       exploser à pressure max).
+
+    3. **Injection au cratère** (tick par tick pendant que l'éruption est
+       ouverte). On pousse de la LAVA fraîche sur les cellules du cratère
+       selon un profil **radial linéaire** `(1 - d/r)`, avec un cap
+       hydrostatique par poids (cf. § 3.2).
+
+    4. **Propagation gravitaire**. Chaque cellule LAVA qui a un voisin
+       cardinal moins haut transfère une fraction de son excès d'altitude
+       (modulée par `lavaViscosity` et l'état de refroidissement). Cf. § 3.3.
+
+    5. **Vieillissement + solidification**. Chaque couche LAVA voit son
+       `state` augmenter avec un coefficient de refroidissement qui
+       dépend de la convection (cellule en flux = pas de refroidissement)
+       et de la proximité aux voisins chauds/froids. À `state >= solidifyEnd`,
+       la couche se transforme en STONE/BASALT/GRANITE/OBSIDIAN selon
+       l'altitude et la distance au cratère.
+
+    6. **Drainage résiduel**. Après la chute de pression (`ticksRemaining`
+       à 0, l'éruption est fermée), la pile centrale descend progressivement
+       jusqu'à un anchor minimum de 3 unités (lac de lave persistant).
+
+--- 3.2 Équilibre hydrostatique (cap d'injection) ---
+
+La loi physique P = ρ × g × h dit qu'une pression donnée ne peut soulever
+une colonne de poids supérieur à elle. On modélise cela :
+
+    max_column_weight = pressure × PRESSURE_TO_MAX_COLUMN_WEIGHT × radial
+    column_weight     = Σ (thickness × density)    sur toutes les couches
+    remaining_weight  = max_column_weight − column_weight
+    max_lava_to_inject = remaining_weight / LAVA.density
+
+Si le centre du cratère a déjà accumulé du BASALT (densité 1.7) en couronne,
+le poids dépasse vite la pression d'éruption → moins de LAVA injectée → pic
+plus bas. C'est pourquoi un volcan « vieux » avec un gros cône a besoin
+d'une pression plus forte pour faire un beau pic.
+
+Densités normalisées (LAVA = 1.0) :
+
+    LAVA      1.0    référence (fondue, riche en gaz)
+    OBSIDIAN  1.2    verre vitreux (sous-marin)
+    GRANITE   1.4    cristallisation lente, haute altitude
+    STONE     1.5    pierre standard
+    BASALT    1.7    cœur dense près du cratère
+
+--- 3.3 Écoulement gravitaire visqueux ---
+
+À chaque tick, pour chaque cellule LAVA :
+
+    1. Trouver le voisin cardinal le plus BAS (altitude top de stack).
+    2. Calculer `excessThickness = topAlt_courant − topAlt_voisin`.
+    3. Transférer `excessThickness × viscosité_effective` au voisin.
+
+La **viscosité effective** est `lavaViscosity × stateDamping`, où
+`stateDamping = 1 - state / solidifyEnd`. Une lave fraîche (state=1) coule
+rapidement ; une lave proche de la solidification (state=140) coule
+quasiment plus.
+
+Garde-fous :
+    * `transfer ≤ 0.5 × excessThickness` (anti-oscillation)
+    * `transfer ≤ 0.5 × STONE_BLOCK_HEIGHT` (cap absolu par tick, soit
+      `OVERFLOW_FRACTION_PER_TICK = 0.5`)
+    * Anti-CPU-burn : `maxProps = 80 + pressureSum × SPREAD_FACTOR × 50`
+
+--- 3.4 Refroidissement Stefan-Boltzmann + convection ---
+
+La luminosité d'un corps incandescent suit P = ε × σ × T⁴. Pour la lave :
+
+    T_max     = 1473 K (1200°C, lave fraîche en sortie de cratère)
+    T_solid   = 973 K  (700°C, point de solidification)
+    L(T)      = (T / T_max)⁴ ∈ [0, 1]    intensité d'émission normalisée
+
+Le `state` d'une couche LAVA suit une croissance dépendant de l'environnement :
+
+    coolingRate = thicknessFactor × neighborFactor
+
+    thicknessFactor  = STONE_BLOCK_HEIGHT / max(STONE_BLOCK_HEIGHT, thickness)
+                       (couche fine refroidit vite, couche épaisse lentement)
+    neighborFactor   = 1 + 0.15 × coldNeighbors − 0.20 × hotNeighbors
+                       (clampé [0.1, 2.5])
+
+**Modèle de convection** : tant qu'une cellule a un flux entrant OU sortant
+ce tick (flag `wasActiveThisTick`), `coolingRate = 0`. La lave qui bouge
+ne refroidit pas. Une fois l'éruption fermée, le flow s'arrête, et le
+refroidissement reprend.
+
+Solidification probabiliste selon (altitude, distance cratère, sous-marin) :
+
+    sous l'eau (cellHeight < 0)   →  OBSIDIAN
+    altitude > 0.6 × maxH         →  GRANITE croissant linéairement
+    distance < 0.3 × rayonEffectif →  BASALT override
+    autres cas                    →  STONE par défaut
+
+Une fois la couche solidifiée, sa **signature couleur** (lineage) est
+conservée pour teinter le minéral résultant : on peut visuellement distinguer
+les blocs issus de différentes éruptions.
+
+--- 3.5 Tephras (projectiles balistiques) ---
+
+Deux types coexistent (`TephraProjectile`) :
+
+    BASALT  →  roche solide, atterrit en posant une couche BASALT,
+               écrase la végétation (forest/grass = 0), tue agents.
+    LAVA    →  bombe fondue, atterrit en posant LAVA (avec lineage),
+               met agents en feu (`_fireState=1`), allume arbre vivant
+               (forest 1 → 2).
+
+Portée : `eruptionRadius × √pressure` (sub-linéaire pour ne pas exploser
+à pressure max). Trajectoire balistique : interpolation linéaire (X, Y) +
+arc parabolique en Z d'amplitude `apex` (= STONE_BLOCK_HEIGHT × pressure ×
+TEPHRA_APEX_FACTOR).
+
+--- 3.6 Projection / poussée d'arbres ---
+
+Quand la lave atteint une cellule arbre, ForestCA déclenche `projectBurningTree`
+qui crée un `TreeProjectile` (= arbre dynamique en vol). Trois cas :
+
+    Dans rayon cratère actif       →  projection EXPLOSIVE
+                                       (8-20 cellules, arc apex 25, 1.25 sec)
+    Voisin LAVA détecté dans stack →  poussée EN AVAL
+                                       (3-6 cellules dans la direction opposée
+                                        au voisin LAVA le plus haut, arc apex 15)
+    Aucun voisin LAVA              →  projectile STATIC sur place
+                                       (arbre debout qui brûle 3 sec, change
+                                        de couleur vert → orange → noir)
+
+Le `TreeProjectile` à l'atterrissage :
+    * Calcule l'inclinaison terrain via `getCellTopAltitude` de la cellule
+      cible et de la cellule « tête » (voisin dans direction du vol).
+    * Se cale au sommet de la stack (pz = altBase à l'atterrissage).
+    * Pendant la phase au sol, suit le top de stack à chaque tick → l'arbre
+      « flotte » au-dessus si la coulée continue de monter.
+    * Couleur feuillage évolue vert → orange → noir sur ~6 secondes de
+      combustion (les 3 sous-états de feu de ForestCA).
+
+--- 3.7 Lac persistant au cratère ---
+
+Une partie centrale du cratère (rayon `rCratere`, par défaut 5 cellules)
+a ses couches LAVA marquées `persistent=true`. Conséquences :
+
+    * Pas de solidification (clamp du state à `solidifyStartTicks` pour le rendu).
+    * Drainage résiduel garde un anchor minimum (3 unités).
+    * Pour la fonte de pierre par-dessus, persistant = pas de check de
+      pont (la pierre fond toujours, le lac est trop chaud pour un pont stable).
+
+--- 3.8 Système Layer (couches empilées) ---
+
+LavaCA ne maintient PAS sa propre grille d'états. Il utilise le système
+`World.cellStacks` (liste de `Layer` par cellule) du `worlds.World` partagé.
+Chaque `Layer` porte `{Material material, float thickness, int state,
+LavaLineage lineage, boolean persistent}`. Cf. `docs/automates-cellulaires.txt`
+section 4.5 et `World.pushLayer`/`replaceTopLayer`/`getStack`.
+
+
+================================================================================
+4. IMPLÉMENTATION TECHNIQUE
+================================================================================
+
+--- 4.1 Hiérarchie des classes ---
+
+    cellularautomata.ecosystem.LavaCA       orchestrateur d'éruption
+    cellularautomata.ecosystem.Eruption     une instance d'éruption active
+    cellularautomata.ecosystem.LavaSource   signature couleur partagée par
+                                            tous les blocs descendants
+    objects.LavaLineage                     (source, parentCell, generation)
+                                            transporté par chaque couche LAVA
+    objects.blocks.LavaBlock                rendu OpenGL des blocs LAVA
+    objects.blocks.StoneBlock               rendu OpenGL des blocs solides
+    objects.dynamic.TephraProjectile        projectile BASALT/LAVA
+    objects.dynamic.TreeProjectile          arbre éjecté par l'éruption
+
+Plus du côté forestier :
+
+    cellularautomata.ecosystem.ForestCA     détection LAVA + projection arbres
+    cellularautomata.ecosystem.GrassCA      détection LAVA + suppression herbe
+
+--- 4.2 Constantes physiques (LavaCA) ---
+
+    src/cellularautomata/ecosystem/LavaCA.java:
+        BASE_FLOW                     = 200.0    volume injecté/tick à pressure=1
+        PRESSURE_TO_MAX_COLUMN_WEIGHT = 15.0     facteur cap hydrostatique
+        OVERFLOW_FRACTION_PER_TICK    = 0.5      cap absolu transfert/tick
+        SPREAD_FACTOR                 = 8.0      borne propagations gravitaires
+        RESIDUAL_FACTOR               = 3.0      hauteur lac résiduel post-éruption
+        SOLIDIFY_START_RATIO          = 0.6      seuil Phase 2 cooling visible
+        COOLING_COLD_NEIGHBOR_WEIGHT  = 0.15
+        COOLING_HOT_NEIGHBOR_WEIGHT   = 0.20
+        MIN_PROTECTIVE_THICKNESS      = STONE_BLOCK_HEIGHT (3.0)
+        MIN_THERMAL_INSULATION        = 2 × STONE_BLOCK_HEIGHT (6.0)
+
+    src/objects/blocks/LavaBlock.java:
+        T_LAVA_MAX        = 1473.0 K  (1200°C, lave fraîche)
+        T_LAVA_SOLIDIFY   = 973.0  K  (700°C, point de solidification)
+
+    src/objects/Material.java (densités normalisées) :
+        LAVA      1.0
+        OBSIDIAN  1.2
+        GRANITE   1.4
+        STONE     1.5
+        BASALT    1.7
+
+--- 4.3 Paramètres utilisateur (SimulationConfig) ---
+
+    cycleTotalSec        240f     cycle 24h jeu en secondes réelles
+    dayFractionRatio     14/24    ratio jour/cycle (asymétrie 14h jour / 10h nuit)
+    simulationHz         20       fréquence simulation (Hz)
+    eruptionDurationSec  5.0f     durée pendant laquelle la pression reste active
+    solidifyEndSec       20.0f    durée totale Phase 1+2 d'une couche LAVA
+    lavaViscosity        2.0f     [1.0, 2.0] coefficient de viscosité fraîche
+    craterHoleDepth      3.0f     profondeur du trou cratère (× STONE_BLOCK_HEIGHT)
+    erruptionPowerMin    1.5f     borne basse du tirage pressure
+    erruptionPowerMax    5.0f     borne haute du tirage pressure
+    laveProbErruption    0.0      proba auto-éruption par tick (0 = manuel uniquement)
+
+--- 4.4 Cycle ForestCA face à la lave ---
+
+    États :
+        0       vide
+        1       arbre vivant
+        2,3,4   en feu (3 sub-states, ~2 sec chacun via probabilité)
+        5       brûlé (visible noir, ~2 sec)
+        6..65   cendres en dispersion (invisibles)
+
+    Durée d'un sub-state = `TREE_STATE_DURATION_SEC = 2.0f`, convertie en
+    probabilité d'avancer par tick via `1 / (TREE_STATE_DURATION_SEC × simulationHz)`.
+
+    À chaque tick, pour chaque cellule arbre :
+        si state==1 et LAVA dessous     → projectBurningTree (cratère/aval/static)
+        si isTreeOnFire(state) et LAVA  → projectBurningTree (même branches)
+        si voisin en feu/LAVA            → state = FIRE_FIRST (2)
+        sinon                            → cycle normal
+
+--- 4.5 Helper public ForestCA.isTreeOnFire ---
+
+Pour que `Loup`, `GrassCA`, et tout futur consommateur puisse détecter un
+arbre en feu sans dépendre du nombre de sub-states :
+
+    public static boolean isTreeOnFire(int state) {
+        return state >= FIRE_FIRST && state <= FIRE_LAST;
+    }
+
+--- 4.6 LavaCA.isInActiveEruptionRadius ---
+
+Helper statique public utilisé par ForestCA pour distinguer projection
+explosive (cratère) vs poussée en aval (coulée hors cratère) :
+
+    public static boolean isInActiveEruptionRadius(World world, int x, int y) {
+        if (lastInstance == null) return false;
+        int radius = lastInstance.rCratere;
+        for (Eruption e : activeEruptions) {
+            if (!e.isOpen()) continue;
+            if (world.distance(x, y, e.sourceX, e.sourceY) <= radius) return true;
+        }
+        return false;
+    }
+
+Couplage léger acceptable : ForestCA observe LavaCA (cohérent avec le
+pattern « chaque CA est autonome — il observe son environnement »).
+
+--- 4.7 Rendu LavaBlock (émission Stefan-Boltzmann) ---
+
+`LavaBlock.drawAt` ajoute une émission OpenGL via `glMaterialfv(GL_EMISSION)`
+pour que la lave brille de jour comme de nuit. L'intensité est calculée
+par `computeEmissionLevel` selon la phase (state) :
+
+    persistent       T ≈ 0.95 × T_LAVA_MAX, L ≈ 0.81
+    state ≤ start    T = T_LAVA_MAX,        L = 1.00 (pleinement émissif)
+    start < state ≤ end  T interp décroissante, L = (T/T_max)⁴
+    state > end      T = T_LAVA_SOLIDIFY,   L ≈ 0.19 (= pas de rendu LavaBlock,
+                                                       devient un mineral)
+
+Le couleur de base (R, G, B) suit la phase aussi (cf. § 3.4 LavaBlock dans
+`docs/automates-cellulaires.txt`).
+
+
+================================================================================
+5. TEST
+================================================================================
+
+Les tests unitaires se trouvent dans `test/src/cellularautomata/ecosystem/`.
+Tests existants couvrant le système :
+
+    LavaCATest.craterTrouCreuse                        cratère physique creusé à init
+    LavaCATest.lacPersistantSurviveALongueDuree        lac de lave reste visible
+    LavaCATest.tephraJamaisDansZonePersistante         pas de BASALT dans le lac
+    LavaCATest.pierreSurLavePersistanteFondMemeAvecVoisins  fonte forcée si persistent
+    LavaCATest.obsidienneAuDessusLavePersistanteResiste OBSIDIAN ne fond pas
+    LavaCATest.pontProtegeContreLaFonte                2 voisins épais protègent
+    LavaCATest.pierreAvecUnSeulVoisinFondQuandMeme     1 voisin insuffisant
+    LavaCATest.obsidienneNeFondPas                     OBSIDIAN immune
+    LavaCATest.laveHorsZonePersistanteNonMarquee       persistent uniquement au cratère
+    LavaCATest.pileBornee                              cap hydrostatique respecté
+
+Lancer :
+    cd ProjectEnvironnement-3D
+    ./test.sh
+
+Visuellement, les tests qualitatifs principaux :
+
+    1. Touche `r` dans une zone boisée → arbres projetés du cratère en
+       arc explosif (8-20 cellules de portée).
+    2. Coulée qui traverse la forêt → arbres bordant la coulée poussés
+       de 3-6 cellules en aval, atterrissent couchés en feu.
+    3. Arbres dans la zone d'impact mais sans voisin LAVA (tephra LAVA
+       isolé) → projectile static debout qui brûle ~3 sec puis disparaît.
+    4. Arbres pas atteints par la lave mais voisins en feu → cycle normal,
+       prennent feu (orange) puis brûlent visiblement ~2 sec par sub-state
+       (= 6 sec en feu + 2 sec brûlés = ~8 sec total visible).
+
+Touche `F12` pour screenshot, dump de stacks via `'/'` (cf. raccourcis HUD).
+
+
+================================================================================
+6. RÉSULTAT
+================================================================================
+
+Comportements émergents observables :
+
+    * Cône volcanique qui se forme à long terme par dépôts successifs de
+      BASALT autour du cratère. Visible après 5-10 éruptions consécutives.
+    * Coulées qui suivent les pentes naturelles du terrain Perlin → pas
+      de coulée parfaitement circulaire, elles s'orientent vers les
+      vallées.
+    * Tunnels de lave invisibles : la surface peut être STONE solidifiée
+      mais la LAVA encore active en dessous. Conséquence visible : un
+      arbre touché par cette coulée « cachée » se fait emporter par la
+      direction du flux invisible (via la recherche dans la stack).
+    * Lac de lave persistant au sommet → repère visuel central qui
+      identifie clairement où est le volcan.
+    * Multi-éruptions : on peut spammer `r` pour créer plusieurs éruptions
+      simultanées. Chacune a sa propre signature couleur (lineage) qui
+      teinte légèrement les blocs résultants.
+    * Émission lumineuse réaliste : la lave brille de jour comme de
+      nuit. La couleur ne change pas avec l'éclairage de la scène (les
+      composantes ambient/diffuse sont mises à zéro pour le bloc LAVA,
+      seule l'émission compte).
+    * Volcanisme adaptatif : un volcan vieux (cône épais) résiste aux
+      éruptions faibles (cap hydrostatique du poids accumulé). Une
+      éruption puissante (pressure max) le repoussera plus haut.
+
+Ce qui DIFFÉRENCIE notre système d'une « animation de lave » classique :
+
+    * Tous les paramètres sont physiquement motivés. Aucune valeur magique
+      tirée pour « faire joli ».
+    * Le rendu reflète la physique (Stefan-Boltzmann → émission directe).
+    * Les éruptions ont une identité chromatique unique (lineage) qui se
+      propage dans tous les blocs descendants, même solidifiés.
+    * Les unités sont en SI quand possible (K pour température, sec pour
+      durées). Les utilisateurs peuvent ajuster avec une intuition physique.
+
+
+================================================================================
+7. AMÉLIORATIONS FUTURES
+================================================================================
+
+Court terme (1-2h chacun) :
+
+    * **Fumée grise** au-dessus de la lave fraîche (particules ou cylindre
+      semi-transparent qui montent et s'estompent en altitude).
+    * **Lueur d'éruption** : GL_LIGHT2 placée au cratère pendant
+      l'éruption, qui éclaire dynamiquement le ciel et le terrain. Effet
+      spectaculaire surtout en cycle nuit.
+    * **Vapeur d'eau** quand la lave touche une cellule sous-marine
+      (cellH < 0) — nuage blanc qui monte. OBSIDIAN existe déjà comme
+      résultat physique, la vapeur ajouterait la signature visuelle.
+    * **Plume de fumée verticale** visible depuis loin pendant l'éruption
+      (cylindre vertical au-dessus du cratère).
+    * **Compteur de dommages dans le HUD** : arbres brûlés, agents
+      morts, volume de lave émis par éruption.
+
+Moyen terme :
+
+    * **Agents fuient activement la lave** (extension du firestate déjà
+      en place : détecter LAVA dans la vision et fuir en direction
+      opposée).
+    * **Tremblement précurseur** avant les éruptions auto (`pErruption`) :
+      screen shake léger 5-10 sec avant le trigger.
+    * **Reforestation accélérée sur cendres** : sol fertile (`pA` × 3
+      sur cellules ayant eu une couche cendre récemment dispersée).
+    * **Bombes de lave rebondissantes** : tephras LAVA qui rebondissent
+      une fois avant de se poser.
+
+Long terme :
+
+    * **Système de « santé volcanique »** : le volcan accumule de la
+      pression entre éruptions ; plus d'éruptions = plus de magma
+      disponible = coulées plus volumineuses. Mécanique de jeu basée
+      sur des cycles longs (heures de jeu).
+    * **Éruption pyroclastique** : nuage chaud descendant qui tue tout
+      sur son passage, différent de la coulée gravitaire (plus rapide,
+      plus mortel).
+    * **Plusieurs cheminées** dans un même volcan (multi-source d'éruption
+      synchronisées avec décalages).
+    * **Érosion long terme** : pluie + temps qui ronge les bords des
+      cônes solidifiés, fait retourner BASALT/STONE vers la terre.
+
+
+================================================================================
+FIN — eruption_volcanique.txt
+================================================================================

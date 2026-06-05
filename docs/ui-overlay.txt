@@ -1,0 +1,413 @@
+================================================================================
+COUCHE UI OVERLAY — Projet Environnement 3D
+================================================================================
+
+Ce document décrit la couche d'interface utilisateur (UI) du projet : tous
+les éléments qui s'affichent par-dessus la scène 3D — menus, HUD, fiche
+agent, graphe des populations. C'est la couche qui transforme la
+simulation en une expérience interactive et lisible.
+
+
+================================================================================
+1. CONTEXTE
+================================================================================
+
+À l'origine, le framework « World Of Cells » utilisé comme base n'a aucune
+interface utilisateur. On voit une scène 3D, on a quelques raccourcis
+clavier hardcodés (touches `v`, `o`, `r`…), et c'est tout. Pour lire les
+données du jeu (combien de Loups vivants ? quelle est l'itération ?
+combien de FPS ?) il faut aller chercher dans la console ou le code.
+
+L'ajout de la couche UI a deux motivations principales :
+
+    * **Lisibilité** : exposer en temps réel les informations clés de la
+      simulation (compteurs d'agents, FPS, heure, agent sélectionné).
+    * **Configurabilité** : permettre à l'utilisateur de paramétrer la
+      simulation au lancement (populations, taille du monde, paramètres
+      des CAs) et de l'ajuster à chaud sans redémarrer.
+
+Le tout sans dépendre d'un toolkit externe (Swing, AWT, JavaFX), pour
+rester dans la philosophie « pure JOGL » du projet et garder un seul
+contexte graphique.
+
+
+================================================================================
+2. OBJECTIF
+================================================================================
+
+La couche UI doit fournir, dans l'ordre de priorité d'utilisation :
+
+    1. Un menu de lancement (`LaunchMenu`) qui s'affiche au démarrage et
+       laisse l'utilisateur configurer tous les paramètres avant
+       d'appuyer sur Start. Bloque le `world.step()` tant que pas validé.
+
+    2. Un HUD permanent en haut d'écran (`Hud`) qui affiche les
+       statistiques globales : itération courante, jour/nuit, compteurs
+       d'agents, FPS.
+
+    3. Un menu in-game accessible à tout moment (touche `m`,
+       `InGameMenu`) qui ouvre un panneau latéral droit avec trois
+       onglets, dans l'ordre AGENTS (liste cliquable des agents vivants,
+       onglet par défaut), RACCOURCIS (rappel des raccourcis clavier) et
+       PARAMS (paramètres modifiables à chaud, volontairement en dernier
+       pour éviter une modification involontaire).
+
+    4. Une fiche détaillée de l'agent sélectionné (`AgentInfoPanel`)
+       affichée en bas-gauche dès qu'on clique sur un agent dans la
+       scène 3D.
+
+    5. Un graphe Lotka-Volterra des populations dans le temps
+       (`PopulationGraph`) accessible via la touche `g`.
+
+Tout cela doit s'afficher proprement par-dessus la scène 3D, avec un
+focus clavier découplé (cliquer dans le menu = on tape dans le menu ;
+cliquer dans la scène = on contrôle la caméra).
+
+
+================================================================================
+3. FONCTIONNEMENT
+================================================================================
+
+--- 3.1 Le pattern « ortho 2D au-dessus de la 3D » ---
+
+Tous les éléments UI sont dessinés en projection orthographique 2D,
+après le rendu de la scène 3D. Le pattern type est :
+
+    rendre la scène 3D (perspective, lighting, depth test)
+    désactiver depth test et lighting
+    passer en projection ortho 2D (taille viewport)
+    dessiner les éléments UI (quads colorés, textes GLUT bitmap)
+    repasser en projection 3D pour la frame suivante
+
+C'est encapsulé dans `UiRenderer.begin2D()` / `UiRenderer.end2D()` —
+toutes les classes UI commencent par `begin2D()`, font leurs `drawQuad`/
+`drawText`/`drawBorder`, et terminent par `end2D()`.
+
+--- 3.2 La config centrale : SimulationConfig ---
+
+Tous les paramètres modifiables de la simulation vivent dans un POJO
+unique :
+
+    src/ui/SimulationConfig.java
+
+Champs publics représentatifs :
+    nbLoups, nbMoutons, nbHumains        populations initiales
+    loupEnergieMax, moutonEnergieMax     paramètres biologiques
+    forestDensite, herbeDensite          paramètres CA
+    laveProbErruption                    paramètre LavaCA
+    cycleTotalSec, dayFractionRatio      paramètres cycle jour/nuit
+    awaitingStart                        drapeau : true = menu de
+                                         lancement ouvert (gating
+                                         world.step())
+    ...
+
+Le `LaunchMenu` lit/écrit ces champs avant le démarrage. L'`InGameMenu`
+en modifie certains à chaud en cours de simulation. Le `WorldOfCells`
+les lit lors de son `init()` et de son `applyLiveConfig()`.
+
+--- 3.3 Le gating awaitingStart ---
+
+Tant que `config.awaitingStart == true`, le `world.step()` est gelé et
+l'overlay du `LaunchMenu` est opaque (la scène 3D n'est même pas
+dessinée). C'est ce qui crée la « scène d'accueil » au démarrage.
+
+L'utilisateur appuie sur Entrée dans le `LaunchMenu` → `awaitingStart`
+passe à false → `world.step()` reprend → la simulation démarre. Dans la foulée,
+l'`InGameMenu` s'ouvre automatiquement sur l'onglet RACCOURCIS
+(`InGameMenu.openOnTab`) pour présenter les commandes au joueur (2026-05-31).
+
+--- 3.4 Le focus clavier découplé ---
+
+Le menu in-game (`InGameMenu`) introduit un mécanisme important : le
+focus clavier est découplé de l'ouverture du panneau.
+
+    isOpen()        contrôle le rendu du panneau (visible ou non)
+    menuFocused     contrôle qui reçoit les frappes clavier
+
+Cas d'usage :
+    * `m` → ouvre le menu ET donne le focus (panneau opaque, raccourcis
+      du jeu désactivés)
+    * Clic dans la scène 3D hors panneau → panneau reste ouvert mais
+      perd le focus (devient semi-transparent, raccourcis du jeu
+      redeviennent actifs)
+    * Clic dans le panneau → reprend le focus
+
+Ça permet à l'utilisateur de garder le panneau visible en arrière-plan
+(pour observer les compteurs d'agents) tout en pilotant la caméra.
+
+--- 3.5 Le picking d'agent ---
+
+Cliquer dans la scène 3D (clic court, déplacement < 5 px pour éviter de
+confondre avec un drag) lance une opération de « picking » :
+
+    1. La position 3D de chaque agent est projetée en pixels écran
+       (via `gluProject`).
+    2. L'agent dont la projection est la plus proche du clic, dans une
+       tolérance de 30 pixels, devient l'agent sélectionné.
+    3. La fiche `AgentInfoPanel` s'affiche pour cet agent.
+    4. Cliquer sur le même agent une seconde fois active la caméra-follow
+       (équivalent à la touche `f`).
+
+
+================================================================================
+4. IMPLÉMENTATION TECHNIQUE
+================================================================================
+
+--- 4.1 Le package ui ---
+
+    src/ui/
+        UiRenderer.java          helpers de rendu 2D
+        SimulationConfig.java    POJO de configuration
+        Hud.java                 bandeau permanent
+        LaunchMenu.java          menu de démarrage (modal)
+        InGameMenu.java          panneau latéral 3-onglets
+        AgentInfoPanel.java      fiche agent sélectionné
+        PopulationGraph.java     graphe populations dans le temps
+
+--- 4.2 UiRenderer ---
+
+    src/ui/UiRenderer.java
+
+Méthodes utilitaires statiques utilisées par tous les autres composants
+UI :
+
+    begin2D(GL2 gl, int vw, int vh)
+        Pousse les matrices projection et modelview, passe en ortho
+        2D (0..vw, 0..vh), désactive depth test et lighting.
+    end2D(GL2 gl)
+        Restaure tout.
+    drawQuad(GL2 gl, x, y, w, h, r, g, b, a)
+        Rectangle plein, couleur RGBA.
+    drawBorder(GL2 gl, x, y, w, h, r, g, b)
+        Liseré (4 lignes) autour d'un rectangle.
+    drawText(GL2 gl, x, y, text, r, g, b)
+        Texte GLUT bitmap Helvetica 12. ASCII uniquement (les caractères
+        Unicode comme `←→↑↓É` s'affichent en `/` ou se taisent).
+
+--- 4.3 Hud ---
+
+    src/ui/Hud.java  draw()
+    src/ui/Hud.java  getHeight() → 24
+
+Bandeau de 24 pixels de hauteur en haut d'écran. Reçoit en paramètres :
+
+    GL2 gl, UiRenderer ui, int vw, int vh, World world,
+    String dayLabel, String gameTime, int fps
+
+Affiche :
+    Iter:N  |  JOUR 12h34  |  Loups:5 Moutons:42 Humains:1  |  FPS:60
+
+--- 4.4 LaunchMenu ---
+
+Modal plein écran au démarrage. Tous les paramètres modifiables avec
+valeurs par défaut prérenseignées. Navigation :
+
+    ↑ ↓     ligne suivante / précédente
+    ← →     incrémente / décrémente la valeur courante
+    Entrée  démarrer (passe `awaitingStart` à false, appelle
+            `world.respawnAgents()`, puis ouvre l'InGameMenu sur RACCOURCIS)
+
+Tant que `config.awaitingStart == true`, le menu est opaque et bloque
+toute interaction avec la scène 3D.
+
+Parmi les paramètres figure « Distance de vue » (`viewDistanceCells`) : le rayon
+de la fenêtre de rendu en cases, réglable au lancement comme en jeu (cf.
+camera-picking.txt, §3.1bis).
+
+--- 4.5 InGameMenu ---
+
+Panneau latéral droit, largeur fixe `PANEL_WIDTH = 260` px, ouvert par
+la touche `m`. Trois onglets :
+
+    PARAMS       paramètres modifiables à chaud (← → pour ajuster), dont
+                 « Distance de vue » (rayon de la fenêtre de rendu)
+    AGENTS       liste des agents vivants (↑ ↓ pour naviguer, Entrée
+                 ou double-clic pour suivre)
+    RACCOURCIS   rappel de toutes les touches disponibles ; ouvert
+                 automatiquement au démarrage de la simulation
+
+Sur PARAMS, chaque modification appelle `WorldOfCells.applyLiveConfig()`
+pour propager le changement aux agents existants **sans réinitialiser
+leur état dynamique** (énergie, vitesse, position).
+
+État de la touche `m` (3 états) :
+    fermé              → m ouvre + focus
+    ouvert sans focus  → m re-focalise (sans fermer)
+    ouvert avec focus  → m ferme
+
+Helper :
+    src/ui/InGameMenu.containsScreenPoint(...)
+        Encapsule la géométrie du panneau (rectangle à droite du
+        viewport, sous le HUD). Utilisé par Landscape pour décider si
+        un clic est « dans le panneau » ou « dans la scène ».
+
+--- 4.6 AgentInfoPanel ---
+
+    src/ui/AgentInfoPanel.java   draw()
+    src/ui/AgentInfoPanel.java   drawEnergyBar()
+
+Fiche détaillée 230 × 132 px en bas-gauche quand un agent est sélectionné.
+Affiche :
+    * Titre : « Loup #5 » / « Mouton #12 »
+    * Énergie courante (barre colorée verte > 50 %, jaune > 20 %, rouge
+      sinon)
+    * Position (x, y)
+    * État courant (issu de `Agent.getCurrentBehavior()` — cf. doc
+      arbres-de-comportement.txt)
+    * Âge en jours
+    * Orientation cardinale
+    * Indicateur « Suivi caméra ON/OFF »
+
+--- 4.7 PopulationGraph ---
+
+Graphe Lotka-Volterra en haut-gauche, accessible via la touche `g`.
+
+    Buffer circulaire de 600 échantillons.
+    Sample tous les 10 ticks → couvre 6000 ticks ≈ 300 secondes (5 min) de
+    simulation à 20 Hz.
+    Trois courbes :
+        rouge → loups
+        blanc → moutons
+        bleu  → humains
+
+L'état (visible / caché) est conservé pendant toute la vie de la fenêtre,
+indépendamment des autres éléments UI. Le graphe étant en haut-gauche et le
+menu in-game à droite, il reste visible même menu ouvert.
+
+--- 4.8 Intégration côté Landscape ---
+
+    src/graphics/Landscape.java  champs UI
+        ui, hud, config, launchMenu, inGameMenu, selectedAgent,
+        selectedAgentIndex, cameraFollow, agentInfoPanel,
+        populationGraph, showPopulationGraph, menuFocused, pickRequested
+
+    src/graphics/Landscape.java  rendu overlay
+        Si awaitingStart : afficher LaunchMenu (modal)
+        Sinon : afficher InGameMenu (si ouvert), AgentInfoPanel (si
+                agent sélectionné), PopulationGraph (si toggle ON),
+                Hud (toujours)
+
+    src/graphics/Landscape.java  gestion clic
+        Si InGameMenu.containsScreenPoint(...) && clic gauche :
+            menuFocused = true
+        sinon (clic dans la scène) :
+            menuFocused = false
+            si clic court < 5 px : pickRequested = true (picking 3D)
+
+
+================================================================================
+5. TEST
+================================================================================
+
+Aucun test JUnit n'est dédié à la couche UI : tous ces composants
+dépendent d'un contexte OpenGL actif (pour `glBegin/glEnd`, pour les
+textes GLUT bitmap) ce qui rendrait les tests fragiles et coûteux à
+maintenir (mock GL).
+
+La validation se fait par inspection visuelle in-game :
+
+    1. **Démarrage** : `./run.sh`. Le `LaunchMenu` doit s'afficher
+       opaque. Modifier quelques valeurs avec ← →. Appuyer sur Entrée.
+       Vérifier que la simulation démarre avec les valeurs choisies.
+
+    2. **HUD** : pendant la simulation, vérifier que le HUD se met à
+       jour à chaque frame (compteurs d'agents qui changent, heure qui
+       avance, FPS qui s'affiche).
+
+    3. **InGameMenu** : appuyer sur `m`. Le panneau s'ouvre. Naviguer
+       les 3 onglets avec Tab. Sur PARAMS, modifier un paramètre avec
+       ← → et observer que l'effet se voit immédiatement dans la
+       simulation (sans freeze ni reset).
+
+    4. **Focus découplé** : ouvrir le menu (`m`). Cliquer dans la scène
+       3D. Observer que le panneau passe à α 0.55 (semi-transparent).
+       Appuyer sur une flèche → la caméra bouge (raccourcis du jeu
+       actifs). Appuyer sur `m` → re-focalise le menu.
+
+    5. **Picking** : cliquer sur un agent en clic court (< 5 px de
+       déplacement). L'AgentInfoPanel doit s'afficher en bas-gauche.
+       Double-cliquer sur cet agent → caméra-follow s'active.
+
+    6. **Graphe** : appuyer sur `g`. Le graphe doit s'afficher en
+       haut-gauche avec les 3 courbes. Attendre quelques minutes et
+       observer les oscillations Lotka-Volterra.
+
+
+================================================================================
+6. RÉSULTAT
+================================================================================
+
+L'utilisateur dispose d'une interface complète qui rend la simulation
+utilisable :
+
+    * **Avant simulation** : un menu de lancement clair, plein écran,
+      qui propose tous les paramètres avec leurs valeurs par défaut.
+      L'utilisateur peut tout ajuster à la souris ou au clavier.
+
+    * **Pendant la simulation** : un HUD discret en haut donne
+      l'essentiel (iter, jour/nuit, populations, FPS). Le menu in-game
+      latéral (sur `m`) permet de tout ajuster à chaud. La fiche agent
+      (au clic) donne le détail comportemental. Le graphe (sur `g`)
+      affiche les dynamiques de population.
+
+    * **Ergonomie** : focus clavier découplé, navigation au clavier
+      (flèches / Tab / Entrée) ET à la souris (clic / drag / molette),
+      panneau semi-transparent quand pas focus → pas d'obstruction de
+      la vue 3D.
+
+Le tout est dessiné en pur OpenGL fixed-function, sans dépendance Swing
+ou JavaFX — un seul contexte graphique, pas de fenêtres flottantes.
+
+
+================================================================================
+7. AMÉLIORATIONS FUTURES
+================================================================================
+
+--- Court terme ---
+
+    * Sauvegarde / chargement de configurations (presets). Aujourd'hui
+      l'utilisateur doit re-saisir ses valeurs à chaque lancement. Un
+      bouton « Save preset » qui dump la config en JSON sur disque + un
+      menu « Load preset » améliorerait beaucoup l'usage répété.
+    * Export du graphe Lotka-Volterra en PNG ou CSV pour l'analyse a
+      posteriori (rapport scientifique, présentation). Format CSV
+      facile : un fichier texte avec colonnes itération, loups,
+      moutons, humains.
+    * Tooltips sur les paramètres du PARAMS : passer la souris sur une
+      ligne devrait afficher une bulle d'aide expliquant l'effet du
+      paramètre.
+
+--- Moyen terme ---
+
+    * Support Unicode pour les textes (accents français, flèches `←→`).
+      Aujourd'hui le rendu GLUT bitmap est ASCII-only ; il faudrait
+      passer à des textures texte (bitmap font ou TrueType via JOGL
+      texture loaders) pour avoir les accents proprement.
+    * Internationalisation : tous les textes UI sont en français hardcodés.
+      Extraire en fichiers de propriétés (`messages_fr.properties`,
+      `messages_en.properties`) pour permettre l'anglais.
+    * Accessibilité : option « contraste élevé » qui change tous les
+      noirs en blancs et vice versa, ainsi qu'une option « grand
+      texte » qui multiplie par 2 la taille de la police.
+
+--- Long terme ---
+
+    * Passage à un toolkit immédiate-mode comme NanoVG ou Dear ImGui
+      (port Java existe). Ça apporterait une meilleure base
+      (widgets riches, sliders, dropdowns natifs) au prix d'une
+      dépendance externe.
+    * Mode replay : enregistrer la simulation tour par tour et la
+      rejouer en arrière. Nécessite de sérialiser tout l'état du World
+      à chaque frame (lourd) — pourrait être limité à des « snapshots »
+      tous les N ticks.
+    * Système de notifications transitoires (« 12 moutons sont morts
+      dans l'éruption ! ») qui apparaissent quelques secondes en
+      haut-droite puis disparaissent. Améliore la lisibilité des
+      événements ponctuels.
+    * Customisation de l'UI au-delà des paramètres (déplacer le HUD,
+      cacher/afficher des onglets, choisir une palette de couleurs).
+
+
+================================================================================
+FIN — ui-overlay.txt
+================================================================================

@@ -27,6 +27,9 @@ abstract public class UniqueObject // UniqueObject are object defined with parti
 		coordinate[1] = this.y;
 		return coordinate;
 	}
+
+	public int getX() { return x; }
+	public int getY() { return y; }
 	
 	abstract public void displayUniqueObject(World myWorld, GL2 gl, int offsetCA_x, int offsetCA_y, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight );
 

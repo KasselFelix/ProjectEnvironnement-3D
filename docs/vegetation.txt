@@ -1,0 +1,423 @@
+================================================================================
+GESTION DE LA VÉGÉTATION (FORÊT & HERBE) — Projet Environnement 3D
+================================================================================
+
+Ce document décrit la couche de végétation de la simulation : la forêt
+(ForestCA) et l'herbe (GrassCA), deux automates cellulaires qui font vivre la
+« peau » végétale du terrain. La végétation pousse, grandit, se densifie,
+prend feu, se propage, brûle et repousse. Elle nourrit les Moutons, sert de
+combustible aux incendies, et possède une dynamique de croissance individuelle
+des arbres dépendante de l'environnement.
+
+Ce rapport est volontairement plus détaillé que la section « en bref » du
+document `automates-cellulaires.txt`, qui présente les trois CA (forêt, herbe,
+lave) ensemble. Ici on se concentre sur les deux CA végétaux. La lave est
+traitée dans `eruption_volcanique.txt`, les animaux dans `agents.txt`, et le
+rendu 3D des arbres dans `modeles-3d.txt`.
+
+
+================================================================================
+1. CONTEXTE
+================================================================================
+
+La simulation est un écosystème 3D bâti en couches. Tout en bas, un terrain
+(bruit de Perlin ou image PNG) fournit un champ de hauteurs. Par-dessus, des
+automates cellulaires (CA) font évoluer dynamiquement l'état de chaque cellule
+du tore. Deux de ces automates gèrent la végétation :
+
+    * ForestCA — la forêt : des arbres qui germent, grandissent, vieillissent,
+      brûlent et se transforment en cendres avant de laisser la place à une
+      repousse.
+    * GrassCA — l'herbe : un tapis végétal bas, plus dense et plus volatil que
+      la forêt, cantonné à une bande d'altitude « habitable » (ni les berges
+      noyées, ni les sommets).
+
+Ces deux CA partagent la même base technique (un automate cellulaire entier,
+8-connexe sur un tore) mais représentent deux strates écologiques distinctes.
+La végétation n'est pas un décor figé : c'est un système dynamique qui interagit
+avec le terrain (altitude, sol minéral), avec la lave (un incendie ou une coulée
+détruit la végétation) et avec les agents (les Moutons broutent l'herbe).
+
+Principe directeur du projet : chaque CA est AUTONOME. Il observe son propre
+environnement (sa grille d'états, les hauteurs, les valeurs des CA voisins) et
+décide seul de son évolution. Il n'existe pas de « chef d'orchestre » centralisé
+qui dicterait les interactions ; la richesse émerge de la lecture mutuelle des
+grilles (l'herbe lit l'état de la forêt et de la lave pour savoir si elle prend
+feu, etc.).
+
+
+================================================================================
+2. OBJECTIF
+================================================================================
+
+La couche de végétation poursuit quatre objectifs :
+
+    1. Donner une « peau » vivante au terrain — des motifs spatiaux crédibles :
+       bosquets, clairières, fronts de feu, reconquête lente de la pierre.
+    2. Nourrir la chaîne trophique — l'herbe est la ressource de base des
+       Moutons (proies), qui sont eux-mêmes la ressource des Loups. Sans
+       végétation, pas de dynamique prédateur-proie.
+    3. Servir de combustible — la végétation propage le feu (forêt → forêt,
+       forêt → herbe, lave → végétation), ce qui crée des événements
+       spectaculaires et un couplage fort avec le volcanisme.
+    4. Simuler une vraie croissance — chaque arbre possède une taille
+       individuelle qui évolue dans le temps en fonction de son environnement
+       (altitude, sol, voisinage). La forêt est une population d'individus à
+       des stades de maturité variés, et non un ensemble de sapins identiques.
+
+Le quatrième objectif fait l'objet d'une section technique dédiée (§ 4.3).
+
+
+================================================================================
+3. FONCTIONNEMENT
+================================================================================
+
+--- 3.1 La forêt (ForestCA) : cycle de vie d'un arbre ---
+
+Chaque cellule de forêt porte un état entier :
+
+    0           = vide
+    1           = arbre vivant
+    2, 3, 4     = arbre en feu (trois sous-états pour étendre la durée visible)
+    5           = arbre brûlé (noir)
+    6 .. 5+60   = cendres en dispersion (retour progressif vers vide)
+
+Le cycle de vie typique :
+
+    vide ──(germination, proba pA)──▶ arbre vivant
+    arbre vivant ──(grandit chaque tick, cf. § 3.3)──▶ arbre adulte
+    arbre vivant ──(feu spontané pF, ou voisin en feu)──▶ en feu (2→3→4)
+    en feu ──▶ brûlé (5) ──▶ cendres (6..) ──▶ vide ──▶ (repousse possible)
+
+La germination est plus difficile sur un sol minéral (pile de pierre laissée
+par une coulée de lave refroidie) : la probabilité y est multipliée par 0,1.
+La forêt finit par reconquérir la pierre, mais lentement — comportement
+réaliste d'une recolonisation végétale sur roche nue.
+
+La propagation du feu est le moteur des « fronts d'incendie » : un arbre
+s'enflamme si un de ses voisins est en feu, et la combustion dure plusieurs
+secondes (sous-états 2-3-4) avant de laisser un arbre brûlé puis des cendres.
+
+--- 3.2 L'herbe (GrassCA) : un tapis bas, dense et volatil ---
+
+Même squelette d'états, plus compact :
+
+    0           = vide
+    1           = herbe
+    2           = herbe en feu
+    3           = herbe brûlée
+    4 .. 3+20   = cendres en dispersion
+
+Trois différences notables avec la forêt :
+
+    * Densité initiale élevée : 55 % des cellules habitables (contre 10 % pour
+      la forêt). L'herbe couvre le sol, la forêt le ponctue.
+    * Bande d'altitude : l'herbe ne pousse qu'entre maxHeight/12 (au-dessus des
+      berges) et maxHeight×0,7 (en-dessous des sommets rocheux). C'est la zone
+      « tempérée » du relief. La forêt, elle, peut pousser partout au-dessus de
+      l'eau.
+    * Combustion instantanée : l'herbe est si fine qu'une coulée de lave qui
+      arrive directement sur sa cellule la consume immédiatement (pas de phase
+      de feu visible), alors qu'un arbre, plus gros, brûle pendant plusieurs
+      secondes.
+
+--- 3.3 La croissance des arbres : une taille qui dépend de l'environnement ---
+
+C'est l'apport de mai 2026. Au-delà de son état (vivant/feu/brûlé), chaque
+cellule-arbre porte une variable de croissance continue g ∈ [0, 1] :
+
+    g = 0  →  jeune pousse
+    g = 1  →  arbre adulte (pour le potentiel de cette cellule)
+
+Cette croissance est pilotée par une FERTILITÉ locale F ∈ [0, 1], produit de
+trois facteurs indépendants :
+
+    * Altitude — une « bosse » lisse : la fertilité est maximale à mi-hauteur
+      du relief et tombe à zéro au niveau de la mer comme au sommet. Formule :
+      F_alt = 1 - ((h_normalisé - 0,5) / 0,5)², bornée à zéro.
+    * Sol — 1,0 sur la terre native, 0,3 sur la pierre (coulée refroidie). La
+      roche est un mauvais substrat.
+    * Compétition — F_comp = 1 - 0,6 × (nombre_de_voisins_arbres / 8). Une
+      cellule entourée d'arbres voit sa fertilité chuter : c'est la lutte pour
+      la lumière et les nutriments. Voisinage 8-connexe.
+
+    F = F_altitude × F_sol × F_compétition
+
+À chaque tick, un arbre vivant progresse :
+
+    g ← min(1, g + (1 / ticksToAdult) × F)
+
+Deux conséquences importantes :
+
+    * Un arbre en bonne terre, à mi-altitude, isolé, pousse VITE et atteint une
+      GRANDE taille adulte. Un arbre en altitude, sur pierre, ou dans un bosquet
+      dense pousse LENTEMENT et plafonne PLUS PETIT.
+    * Comme l'altitude et le sol sont des champs spatialement lisses, des
+      cellules voisines partagent une fertilité proche : les arbres d'un même
+      bosquet se ressemblent en taille — exactement l'effet « groupe homogène »
+      recherché. (C'est pourquoi on n'a PAS utilisé une séquence de Halton, qui
+      au contraire décorrèle volontairement les valeurs voisines.)
+
+À l'initialisation, la forêt n'est pas entièrement jeune : chaque arbre établi
+démarre à g = 0,5 + 0,5×F + un léger bruit déterministe (±0,15). On obtient
+donc d'emblée une forêt mature mais variée, homogène par zone.
+
+Enfin, dès qu'une cellule quitte l'état « arbre vivant » (feu, calcination,
+germination ce tick), sa croissance est remise à zéro : une repousse après
+incendie repart toujours en jeune pousse, puis regrandit.
+
+--- 3.4 Interactions inter-CA (couplage autonome) ---
+
+La végétation lit en permanence l'état de ses voisins et des autres CA :
+
+    * Forêt ↔ herbe : un feu d'herbe peut enflammer une cellule de forêt
+      voisine et inversement (la flamme traverse les strates).
+    * Lave → végétation : une coulée de lave adjacente enflamme la végétation ;
+      une coulée directement sur la cellule la détruit. La forêt en feu peut
+      même être « projetée » par la lave (cf. TreeProjectile, documenté dans
+      `eruption_volcanique.txt`).
+    * Sol minéral → végétation : la pierre laissée par la lave refroidie réduit
+      la germination (×0,1) et la fertilité des arbres (×0,3).
+    * Herbe → Moutons : les agents broutent l'herbe (cf. `agents.txt`).
+
+
+================================================================================
+4. IMPLÉMENTATION TECHNIQUE
+================================================================================
+
+--- 4.1 Hiérarchie de classes ---
+
+    cellularautomata/
+    ├── CellularAutomata          (abstrait : taille, double-buffering optionnel)
+    ├── CellularAutomataInteger   (grille d'entiers)
+    └── ecosystem/
+        ├── ForestCA              (forêt)   extends CellularAutomataInteger
+        ├── GrassCA               (herbe)   extends CellularAutomataInteger
+        └── LavaCA                (lave)
+
+Les deux CA végétaux sont construits avec le drapeau de buffering à `false` :
+la mise à jour se fait en place (lecture/écriture sur la même grille), dans un
+ordre aléatoire à chaque tick (`Collections.shuffle(world.list)`) pour éviter
+les biais directionnels d'un balayage régulier. Ils lisent les hauteurs depuis
+le `cellsHeightValuesCA` du monde et interrogent `world` pour les valeurs des
+autres CA (`getLavaCAValue`, `getStoneCAValue`, `getForestCAValue`).
+
+--- 4.2 ForestCA — champs et constantes ---
+
+    Champs réglables (depuis SimulationConfig) :
+      darbre = 0.10      densité initiale d'arbres
+      pA     = 0.000006  proba de germination par tick et par case
+      pF     = 0.00003   proba de feu spontané par tick et par arbre
+
+    Constantes internes :
+      FIRE_FIRST=2, FIRE_LAST=4, BURNT=5    bornes des états de feu/brûlé
+      TREE_STATE_DURATION_SEC = 2.0         durée moyenne d'un sous-état de feu
+      tDispertion = 60                      durée du cycle de cendres
+      STONE_GROWTH_FACTOR = 0.1             pénalité de germination sur pierre
+
+La probabilité d'avancer d'un sous-état de feu est calculée dynamiquement :
+1 / (TREE_STATE_DURATION_SEC × simulationHz). Ainsi la durée RÉELLE d'un
+incendie (≈ 8 secondes au total) reste constante quelle que soit la fréquence
+de simulation.
+
+--- 4.3 ForestCA — croissance : grille et fonctions ---
+
+    Champs ajoutés :
+      treeGrowthDays = 10.0            durée (jours-jeu) pour atteindre l'adulte
+      STONE_FERTILITY = 0.3            fertilité du sol minéral
+      COMP_K = 0.6                     force de la pénalité de compétition
+      double[][] growth                grille de croissance (g par cellule)
+
+    Méthodes :
+      fertility(x, y)   → F ∈ [0,1], produit altitude × sol × compétition.
+                          Recalculée à la demande (jamais stockée), car le
+                          facteur compétition dépend d'un voisinage qui change
+                          quand la forêt pousse ou brûle.
+      grownValue(x, y)  → valeur de g après un tick, bornée à 1 (fonction pure).
+      getGrowth/setGrowth(x, y[, v])  → accès à la grille.
+      ticksToAdult()    → treeGrowthDays × cycleTotalSec × simulationHz.
+                          Défaut : 10 × 240 × 20 = 48 000 ticks ≈ 40 min réelles.
+
+Intégration dans le cycle :
+    * init()  — après le semis des arbres, une seconde passe initialise la
+      croissance (forêt mature mais variée).
+    * step()  — juste après la décision du nouvel état, on avance g si la
+      cellule est un arbre vivant, sinon on remet g à 0.
+
+--- 4.4 Rendu des arbres (Tree.displayTreeAt) ---
+
+Chaque cellule-arbre est rendue par un mesh GLB (sapin texturé `arbre.glb`,
+~500 triangles, chargé par le loader maison `GLBModel`). La taille et
+l'orientation finales combinent croissance et fertilité :
+
+    maxMult     = 0.6 + 0.4 × F                         (plafond selon fertilité)
+    currentMult = (0.25 + 0.75 × g) × maxMult           (une pousse = 25% adulte)
+    scale       = |lenX| × 5.5 × currentMult            (5.5 = TREE_SCALE_FACTOR)
+    yaw         = 360 × hash(x_monde, y_monde, sel)     (rotation déterministe)
+
+Le yaw est calculé en coordonnées MONDE : un arbre garde donc la même
+orientation même quand la caméra se déplace (pas de scintillement). La
+croissance g et la fertilité F sont lues côté rendu via les accesseurs
+`WorldOfCells.getTreeGrowth(x,y)` / `getTreeFertility(x,y)`, qui délèguent à
+ForestCA — il n'existe ainsi qu'UNE seule définition de la formule de
+fertilité, partagée entre la simulation et le rendu.
+
+--- 4.5 Marqueur de forêt : teinte du sol ---
+
+Le marqueur de forêt TEINTE DIRECTEMENT LE SOL, dans la passe de terrain, via
+`WorldOfCells.applyForestTint` :
+
+    * Pour chaque sommet du terrain, on mélange dans sa couleur la couleur d'état
+      des cases-forêt qui le touchent (`ForestCA.getStateColor`), pondérée par la
+      COUVERTURE (nombre de cases-forêt parmi les 4 → bord doux, plus rond qu'un
+      carré) et, pour un arbre vivant, par sa CROISSANCE (jeune pousse = teinte
+      faible).
+    * Couleurs d'état : brun terreux (vivant — évoque l'ombre / le sol au pied),
+      orange en dégradé déterministe selon le sous-état de combustion (feu), noir
+      (brûlé), estompé vers le terrain (cendres).
+    * Avantages : la tache épouse le relief, reste toujours visible, s'éteint
+      naturellement la nuit (elle passe par l'éclairage directionnel du terrain)
+      et ne coûte AUCUNE géométrie en plus.
+
+--- 4.6 Couleur du sol : transitions par sommet, sans fondu eau/sable ---
+
+La couleur du sol est émise PAR SOMMET (`WorldOfCells.getVertexTerrainColor`)
+et l'ombrage lisse d'OpenGL (GL_SMOOTH) dégrade sur le quad. Règle : un sommet
+qui touche au moins une case de TERRE n'est coloré QUE par les cases de terre
+(sable légèrement dominant sur le vert) → la fondue ne joue qu'entre sable et
+herbe/montagne, JAMAIS entre l'eau et le sable (sinon le bleu baverait sur la
+plage, irréaliste). Un sommet entièrement immergé prend une couleur de fond marin.
+Le rendu de l'eau lui-même (nappe colorée par profondeur, opacité croissante avec
+la profondeur, côte en coupe diagonale, surface qui masque les objets immergés)
+est décrit dans generation-terrain.txt. C'est cette séparation qui justifie que
+ForestCA cesse de peindre le sol : la teinte de forêt est appliquée à part (§ 4.5).
+
+--- 4.5 GrassCA — champs et spécificités ---
+
+    Champs réglables (depuis SimulationConfig) :
+      dherbe = 0.55      densité initiale d'herbe
+      pH     = 0.000006  proba de germination par tick et par case
+      pF     = 0.0000003 proba de feu spontané (10× plus faible que la forêt)
+
+    Constantes :
+      tDispertion = 20                 cycle de cendres (plus court que la forêt)
+      STONE_GROWTH_FACTOR = 0.1        pénalité de germination sur pierre
+
+    Bande d'altitude (germination ET semis initial) :
+      maxEverHeight/12  ≤  hauteur  ≤  maxEverHeight × 0.7
+
+La détection d'incendie de l'herbe est un bon exemple de couplage inter-CA :
+une cellule d'herbe s'enflamme si un voisin cardinal est de l'herbe en feu, OU
+de la lave, OU un arbre en feu (`ForestCA.isTreeOnFire(...)`). C'est la même
+grille de monde lue à travers trois automates. L'herbe vivante est matérialisée
+par des objets 3D `Grass` instanciés sur les cellules à l'état 1.
+
+--- 4.6 Paramètres de configuration et interface ---
+
+Tous les paramètres végétaux vivent dans `SimulationConfig` et sont exposés à
+l'utilisateur :
+
+    forestDensite, forestProbApparition, forestProbFeu, treeGrowthDays
+    herbeDensite,  herbeProbApparition,  herbeProbFeu
+
+`treeGrowthDays` (défaut 10, plage [1, 100]) dispose d'un curseur dans le menu
+de lancement (« Croissance arbre (j) ») ET dans le menu in-game (onglet PARAMS,
+« Croissance arbre »). Modifié en cours de partie, il change la vitesse de
+croissance sans réinitialiser la forêt : la valeur est propagée à ForestCA par
+`WorldOfCells.applyConfigToCAs()`.
+
+
+================================================================================
+5. TEST
+================================================================================
+
+La croissance des arbres est couverte par des tests unitaires JUnit 5
+(`test/src/cellularautomata/ecosystem/ForestCATest.java`). Le patron de test
+instancie un vrai `WorldOfCells` (zéro agent) sur un paysage Perlin 50×50, puis
+appelle directement les méthodes de `world.forestCA` — `Agent.step()` et les CA
+ne touchant pas à OpenGL, les tests tournent sans contexte graphique.
+
+Trois cas valident le cœur du modèle :
+
+    * fertilitePlusBasseSurPierre — poser une pile de pierre sur une cellule
+      fertile fait BAISSER sa fertilité (facteur sol).
+    * fertilitePlusBasseQuandDense — entourer une cellule d'arbres fait BAISSER
+      sa fertilité (facteur compétition).
+    * croissanceAugmenteEtPlafonne — depuis g=0 la croissance progresse
+      strictement ; depuis g=1 elle reste bornée à 1.
+
+Lancement : `./build.sh` (compilation javac propre) PUIS `./test.sh`. Au dernier
+relevé, la suite complète passe à 43/43 tests verts, sans régression sur les
+tests existants (lave, loup).
+
+Remarque pratique : toujours lancer `./build.sh` avant `./test.sh`. Le script de
+test réutilise le dossier `bin/` s'il n'est pas vide ; or un IDE Eclipse peut y
+laisser des classes compilées avec erreurs qui font échouer les tests à tort.
+
+
+================================================================================
+6. RÉSULTAT
+================================================================================
+
+À l'exécution, la couche de végétation produit les comportements attendus :
+
+    * Motifs spatiaux — l'herbe couvre une large bande de relief tempéré, la
+      forêt forme des bosquets épars. Les clairières et les groupes denses sont
+      visibles à l'œil.
+    * Croissance observable — en réglant treeGrowthDays bas (ex. 2) au
+      lancement, on voit les jeunes pousses grandir vers leur taille adulte au
+      fil de la simulation. Les groupes d'arbres voisins ont des tailles
+      proches (même fertilité), avec une légère variété individuelle et des
+      orientations toutes différentes.
+    * Gradient environnemental — les arbres en altitude et sur les coulées
+      refroidies restent plus petits et poussent plus lentement que ceux des
+      zones fertiles ; les bosquets denses sont plus petits que les arbres
+      isolés.
+    * Incendies — les fronts de feu se propagent de proche en proche, sautent
+      de l'herbe à la forêt, et un volcan peut embraser toute une pente. Après
+      le passage du feu, les cendres se dispersent puis la végétation repousse,
+      les arbres repartant en jeunes pousses.
+
+Ces résultats confirment que les règles locales et autonomes des deux CA
+suffisent à produire une dynamique végétale crédible et couplée au reste de
+l'écosystème.
+
+
+================================================================================
+7. AMÉLIORATIONS FUTURES
+================================================================================
+
+--- Court terme ---
+
+    * Stades visuels distincts — au-delà de l'échelle continue, basculer le
+      mesh GLB (pousse → arbuste → arbre adulte) à des seuils de g pour un rendu
+      encore plus lisible.
+    * Brunissement de l'herbe broutée — un Mouton qui broute devrait faire
+      passer la cellule d'herbe haute à herbe rase pendant quelques ticks avant
+      repousse (couplage agent → CA aujourd'hui absent visuellement).
+
+--- Moyen terme ---
+
+    * Dispersion de graines — un arbre adulte (g proche de 1) augmente la proba
+      de germination dans son voisinage, créant une vraie propagation de la
+      forêt plutôt qu'une germination uniforme.
+    * Saisonnalité — coupler la fertilité au cycle jour/nuit ou à une saison
+      lente (croissance ralentie « l'hiver »).
+    * Fertilité enrichie — intégrer la proximité de l'eau (berges plus fertiles)
+      ou l'humidité comme quatrième facteur.
+
+--- Long terme ---
+
+    * Diversité d'espèces — plusieurs essences d'arbres avec des préférences
+      d'altitude/sol différentes, en compétition pour l'espace.
+    * Persistance évolutive — sauvegarder la grille de croissance pour reprendre
+      une simulation, et envisager une sélection (les arbres les mieux adaptés
+      à leur zone laissent plus de descendants).
+    * Passage GPU — les CA tournent bien en CPU sur des grilles ~200² mais ne
+      passent pas à l'échelle ; une implémentation shader permettrait 512² ou
+      1024² et une végétation beaucoup plus fine.
+
+
+================================================================================
+FIN — vegetation.txt
+================================================================================

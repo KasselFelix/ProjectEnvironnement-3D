@@ -1,0 +1,267 @@
+================================================================================
+MODÈLES 3D — CHARGEMENT GLB — Projet Environnement 3D
+================================================================================
+
+Ce document explique comment les modèles 3D (Loup, Mouton, arbre) sont chargés
+depuis le disque et rendus dans la scène OpenGL : le format de fichier utilisé
+(GLB / glTF binaire), le loader maison qui le parse, la compilation en display
+list, la gestion des matériaux (texture ou couleur plate) et de l'éclairage
+jour/nuit, ainsi que la convention d'export Blender à respecter pour tout
+nouveau mesh.
+
+
+================================================================================
+1. CONTEXTE
+================================================================================
+
+Les agents (Loup, Mouton) et la végétation (arbres) ne sont pas des cubes : ce
+sont de vrais meshes 3D modélisés hors du projet puis chargés en runtime. Le
+format retenu est le **GLB** (glTF 2.0 binaire) : un unique fichier qui embarque
+à la fois la description de la scène (JSON) et les données binaires (géométrie,
+textures).
+
+Le chargement est assuré par un loader maison, sans aucune dépendance externe :
+
+    src/loader/GLBModel.java   — parser glTF binaire + compilation OpenGL
+    src/loader/MiniJson.java   — parser JSON minimal (le chunk JSON du GLB)
+
+Ce choix « fait maison » est imposé par une contrainte du projet : on reste sur
+les 8 jars de JOGL 2.0-b66 (voir le README / CLAUDE.md pour la raison — la
+version b66 est figée car les versions récentes plantent sur WSLg/Mesa). On ne
+peut donc pas ajouter une bibliothèque de chargement 3D (Assimp, jgltf…). Le
+loader est en pur Java + JOGL.
+
+Deux familles de meshes coexistent :
+
+    * Meshes TEXTURÉS (Mouton, Loup) : issus d'une pipeline image-to-3D
+      (modddif / Hunyuan3D), ils portent une texture PNG embarquée dans le GLB
+      et la référencent via `baseColorTexture` (PBR metallic-roughness).
+    * Meshes à COULEURS PLATES (arbre) : pas de texture, chaque primitive porte
+      une couleur unie via `baseColorFactor` (un matériau pour le tronc, un
+      pour le feuillage).
+
+
+================================================================================
+2. OBJECTIF
+================================================================================
+
+Le loader doit :
+
+    * CHARGER un fichier `.glb` : positions, normales, coordonnées de texture
+      (UV) et indices de triangles, plus les matériaux (texture ou couleur).
+    * RENDRE le mesh efficacement, éclairé par la lumière directionnelle de la
+      scène (le soleil), et qui s'assombrit naturellement la nuit.
+    * Être ROBUSTE aux meshes issus d'image-to-3D, dont les normales sont
+      parfois localement incohérentes (faces qui apparaîtraient noires).
+    * Le tout SANS bibliothèque externe (contrainte JOGL b66).
+
+
+================================================================================
+3. FONCTIONNEMENT
+================================================================================
+
+--- 3.1 Pipeline global ---
+
+Pour chaque type de modèle, le cycle est :
+
+    1. CHARGEMENT (une fois) : `initModel(gl)` construit un `GLBModel`. Le
+       constructeur parse le fichier ET compile une display list OpenGL.
+         src/agents/Mouton.java       new GLBModel("models/Mouton_chibi.glb", …, 0.32f)
+         src/agents/Loup.java         new GLBModel("models/Loup_chibi.glb",  …, 0.32f)
+         src/objects/vegetation/Tree.java  new GLBModel("models/arbre.glb", …, 0.0f)
+
+    2. RENDU (chaque frame) : un helper `displayXAt(...)` positionne le mesh
+       (translation au sol, rotation Z selon la direction, mise à l'échelle)
+       puis appelle `opengldraw(gl, emissionScale)`.
+
+Le rendu des modèles se fait HORS d'un `glBegin/glEnd` (le `glCallList` de la
+display list ouvre lui-même ses `glBegin`). Un frustum culling par agent
+(`Landscape.isAgentOnScreen`) évite de dessiner les modèles hors écran.
+
+--- 3.2 Pourquoi une display list ? ---
+
+La géométrie d'un mesh est figée (pas d'animation de sommets). On la compile
+donc UNE fois en display list dans le constructeur ; ensuite chaque frame se
+contente d'un `glCallList`, qui rejoue la liste pré-compilée côté pilote — bien
+plus rapide que ré-émettre tous les triangles à la main, et sans re-parser le
+fichier. Sur OpenGL fixe (la pipeline utilisée ici), c'est le mécanisme de
+batch le plus simple et le plus efficace.
+
+--- 3.3 Les modèles actuels ---
+
+    models/Mouton_chibi.glb   mouton stylisé « chibi », texturé (~10 000 faces)
+    models/Loup_chibi.glb     loup stylisé, texturé (~1 000 faces)
+    models/arbre.glb          sapin low-poly, couleurs plates (~500 faces)
+
+Tous les `.glb` sont chargés relativement au répertoire courant ; les scripts
+`run.sh` se placent à la racine du projet, d'où le chemin `models/<nom>.glb`.
+
+
+================================================================================
+4. IMPLÉMENTATION TECHNIQUE
+================================================================================
+
+--- 4.1 Le format GLB en bref ---
+
+Un fichier GLB est un glTF 2.0 « binaire » : un en-tête (magic `glTF`, version,
+taille totale) suivi de deux chunks :
+
+    * chunk JSON : décrit la scène — `meshes`, `primitives`, `accessors`,
+      `bufferViews`, `materials`, `textures`, `images`. C'est un index : chaque
+      attribut (POSITION, NORMAL…) pointe vers un `accessor`, qui pointe vers un
+      `bufferView`, qui désigne une tranche du chunk BIN.
+    * chunk BIN : les données binaires brutes — sommets, normales, UV, indices,
+      et éventuellement le PNG de texture embarqué.
+
+--- 4.2 GLBModel — parsing ---
+
+    src/loader/GLBModel.java   constructeur GLBModel(path, centerit, gl, emissionLevel)
+
+Le constructeur :
+
+    1. Lit l'en-tête, isole le chunk JSON (parsé par `MiniJson`) et le chunk BIN
+       (copié dans un tableau indexé à partir de 0, car les `byteOffset` glTF
+       sont relatifs au début de la BIN).
+    2. Pour chaque primitive du premier mesh, décode via les accessors :
+         - POSITION   (vec3, obligatoire)
+         - NORMAL     (vec3, optionnel)
+         - TEXCOORD_0 (vec2, optionnel — UV)
+         - indices    (entiers U8 / U16 / U32, les trois largeurs sont gérées)
+    3. Résout le matériau de la primitive : `baseColorTexture` en priorité
+       (texture PNG embarquée, décodée en `Texture` JOGL via `AWTTextureIO`
+       avec mipmaps), sinon `baseColorFactor` (une couleur RGBA plate).
+    4. Calcule la bounding box globale (`toppoint`, `bottompoint`, `leftpoint`…)
+       sur toutes les primitives. L'option `centerit` recentre le mesh sur
+       l'origine (non utilisée pour les agents, dont l'origine est déjà calée
+       par l'export Blender — voir 4.5).
+
+Le loader gère donc PLUSIEURS primitives par mesh (ex. tronc + feuillage de
+l'arbre, ou corps + détails du mouton), chacune avec son propre matériau.
+
+--- 4.3 Compilation de la display list (les points délicats) ---
+
+La géométrie est compilée en display list (`glNewList` … `glEndList`). Trois
+réglages OpenGL sont indispensables ici :
+
+    * CULLING. La scène globale active `glCullFace(GL_FRONT)` (adapté au winding
+      du terrain). Or les GLB ont le winding standard glTF (faces avant en CCW =
+      GL_FRONT) : avec le culling FRONT global, on verrait l'INTÉRIEUR de la
+      coquille du modèle. Le loader bascule donc en `glCullFace(GL_BACK)` le
+      temps du modèle, puis RESTAURE `GL_FRONT` en fin de liste.
+
+    * ÉCLAIRAGE TWO-SIDED. `GL_LIGHT_MODEL_TWO_SIDE = 1` rend les deux faces de
+      chaque triangle éclairées. C'est une robustesse essentielle pour les
+      meshes image-to-3D, dont certaines normales sont localement retournées :
+      sans cela, les faces à `N·L < 0` apparaîtraient noires. Restauré après.
+
+    * COLOR_MATERIAL + GL_MODULATE. La couleur émise (la texture liée, ou le
+      `baseColorFactor` via `glColor`) MODULE l'éclairage, au lieu de le
+      remplacer. Les UV sont émises sans flip vertical (`AWTTextureIO` charge la
+      ligne 0 en haut, ce qui correspond à la convention glTF V=0 en haut).
+
+--- 4.4 Émission lumineuse modulée jour/nuit ---
+
+L'émission de base (paramètre `emissionLevel` du constructeur) n'est PAS posée
+dans la display list, mais appliquée à chaque frame dans `opengldraw`, pour
+pouvoir la moduler selon l'heure :
+
+    src/loader/GLBModel.java  opengldraw(GL2 gl, float emissionScale)
+        GL_EMISSION = emissionLevel × emissionScale   (avant le glCallList)
+        … glCallList(objectList) …
+        GL_EMISSION = 0                                (restauré après)
+
+    * `emissionLevel` vaut 0.32 pour les meshes clairs (Mouton, Loup) — un
+      léger auto-éclairage qui évite qu'ils paraissent gris/sales sous lumière
+      faible — et 0.0 pour l'arbre.
+    * Les agents passent `emissionScale = 1 − nightFactor`. Ainsi l'agent
+      cesse de « briller » la nuit : sans cette modulation, il resterait
+      auto-éclairé alors que toute la scène est sombre, ce qui le ferait
+      ressortir de façon irréaliste.
+
+--- 4.5 Convention d'export Blender (à respecter pour tout nouveau mesh d'agent) ---
+
+Le code Java de placement suppose une convention stricte, garantie au moment de
+l'export Blender :
+
+    * Z up         — pieds/sabots en Z bas, dos/sommet en Z haut.
+    * −Y = face    — l'avant (museau) pointe vers Y négatif.
+    * Origine au centre des pieds — le mesh repose exactement sur Z = 0.
+    * Bounding box normalisée à ~1 unité.
+    * Export en glTF binaire (`.glb`), option **export_yup = False** (sinon
+      Blender permute Y et Z et casse la convention Z-up attendue).
+
+Sous ces conditions, le code de rendu ne fait QUE : translater le mesh au sol,
+le tourner autour de Z selon sa direction de marche, et le mettre à l'échelle.
+Aucun échange d'axe (« axis-swap ») n'est nécessaire côté Java — toute
+correction d'orientation se fait à l'export, jamais dans le code.
+
+--- 4.6 Placement et orientation au rendu ---
+
+    * Agents (`Mouton.displayMoutonAt`, `Loup.displayLoupAt`) : `glTranslatef`
+      à la position cellule + altitude (le sommet de la pile Layer, via
+      `computeAgentAltitude`), `glRotatef` autour de Z d'un angle dérivé de la
+      direction du dernier déplacement (`atan2`), puis `glScalef` proportionnel
+      à la taille d'une cellule. Le rendu reçoit `dayFactor` comme
+      `emissionScale` (cf. 4.4).
+    * Arbres (`Tree.displayTreeAt`) : l'échelle dépend de la CROISSANCE de
+      l'arbre et de la FERTILITÉ de la case (voir `vegetation.txt`), avec un
+      yaw aléatoire mais déterministe calculé en coordonnées MONDE (donc stable
+      quand la caméra se déplace). `emissionLevel` = 0.
+
+
+================================================================================
+5. TEST
+================================================================================
+
+Le loader dépend d'un contexte OpenGL (création de display list, upload de
+texture), il n'a donc pas de test unitaire isolé. La vérification se fait en
+exécutant `./run.sh` et en observant que les moutons, loups et arbres sont
+correctement texturés, orientés (face dans le sens de la marche) et éclairés.
+
+À chaque chargement, `GLBModel` journalise en console un récapitulatif utile au
+diagnostic :
+
+    [GLBModel] models/Mouton_chibi.glb : N prim(s), T triangles, V vertices, bbox …
+
+Un nombre de triangles aberrant, une bbox dégénérée ou un message d'erreur de
+parsing y sont immédiatement visibles.
+
+
+================================================================================
+6. RÉSULTAT
+================================================================================
+
+Moutons et loups apparaissent texturés, les arbres colorés (tronc brun,
+feuillage vert), tous éclairés par le soleil directionnel et s'assombrissant la
+nuit avec le reste de la scène. La géométrie est compilée une fois par type de
+modèle puis rejouée via display list, et le frustum culling par agent limite le
+coût aux modèles réellement visibles à l'écran.
+
+
+================================================================================
+7. AMÉLIORATIONS FUTURES
+================================================================================
+
+--- Court / moyen terme ---
+
+    * Instanciation : partager la display list entre tous les agents d'une même
+      espèce est déjà le cas (un `GLBModel` statique par classe) ; un vrai
+      instancing GPU réduirait encore le coût avec de grandes populations.
+    * Niveau de détail (LOD) : charger un mesh basse densité pour les agents
+      lointains, le mesh détaillé de près.
+    * Animation : un GLB peut porter un squelette (`skin`) et des animations.
+      Le loader ne gère aujourd'hui que des meshes statiques ; ajouter le
+      skinning permettrait des cycles de marche.
+
+--- Long terme ---
+
+    * Migration vers OpenGL moderne (VBO/VAO + shaders) en remplacement des
+      display lists et de la pipeline fixe. Cette évolution est couplée à un
+      changement de version de JOGL et doit être validée sur le serveur
+      d'affichage cible (cf. la contrainte JOGL b66 / WSLg documentée dans le
+      README).
+
+
+================================================================================
+FIN — modeles-3d.txt
+================================================================================

@@ -1,0 +1,45 @@
+{
+  // Configuration pour l'Extension Pack for Java (Red Hat / Microsoft).
+  // Le projet n'a ni Maven ni Gradle ; on l'utilise en "Unmanaged Folder" mode.
+
+  // Où sont les sources Java (prod + tests JUnit 5)
+  "java.project.sourcePaths": ["src", "test/src"],
+
+  // Où compiler (cohérent avec build.sh)
+  "java.project.outputPath": "bin",
+
+  // Jars du classpath — wildcard, l'extension expand elle-même.
+  // test/lib/*.jar apporte junit-platform-console-standalone qui embarque
+  // JUnit Jupiter (annotations @Test, @AfterEach, Assertions). Faut avoir
+  // lancé `./test-setup.sh` une fois pour que le jar existe.
+  "java.project.referencedLibraries": [
+    "JOGL/jar/*.jar",
+    "test/lib/*.jar"
+  ],
+
+  // On ignore le dossier archive/ (vieux code pédagogique, ne doit pas
+  // polluer l'autocomplétion ni le panneau Problems)
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/.metadata/**",
+    "**/archive/**"
+  ],
+
+  // Niveau de compilation : on est sur JDK 17.
+  // Le `path` est crucial — sans lui, l'extension ne trouve pas le JDK
+  // et signale "java.lang.Object cannot be resolved" partout.
+  "java.configuration.runtimes": [
+    {
+      "name": "JavaSE-17",
+      "path": "/usr/lib/jvm/java-17-openjdk-amd64",
+      "default": true
+    }
+  ],
+
+  // Chemin du JDK qui fait tourner le Language Server lui-même
+  "java.jdt.ls.java.home": "/usr/lib/jvm/java-17-openjdk-amd64",
+
+  // Désactive l'import automatique de pom.xml (on n'a pas Maven)
+  "java.import.maven.enabled": false,
+  "java.import.gradle.enabled": false
+}

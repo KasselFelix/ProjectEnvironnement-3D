@@ -1,0 +1,418 @@
+================================================================================
+GÉNÉRATION DE TERRAIN — Projet Environnement 3D
+================================================================================
+
+Ce document explique comment le terrain (la heightmap, c'est-à-dire la grille
+d'altitudes) est généré dans le projet, comment il est consommé par le rendu,
+et comment on a résolu le problème de continuité aux jointures du monde
+torique.
+
+
+================================================================================
+1. VUE D'ENSEMBLE — D'OÙ VIENT LE TERRAIN, OÙ VA-T-IL ?
+================================================================================
+
+Au démarrage de l'application :
+
+    src/app/MyEcosystem.java
+        Landscape myLandscape = new Landscape(myWorld, config);
+
+Tous les paramètres de paysage viennent de `SimulationConfig` : taille
+`landscapeDx × landscapeDy` (200 × 200 par défaut), amplitude `landscapeScaling`
+(0.7), ratio mer `landscapeWaterRatio` (0.4), `landscapeOctaves` (10). Le
+constructeur de Landscape appelle :
+
+    landscape = PerlinNoiseLandscapeGenerator.generatePerlinNoiseLandscape(
+                    dx, dy, scaling, waterRatio, octaves);
+
+Le résultat est un `double[dxView][dyView]` (= `double[200][200]` par défaut).
+Chaque case contient une altitude entre approximativement -0.5 (fond marin) et
++0.5 (haute montagne), après mise à l'échelle.
+
+Ensuite la grille est confiée au monde et au rendu :
+
+    src/graphics/Landscape.java
+        _myWorld.init(dxView - 1, dyView - 1, landscape);
+
+Note importante : la grille de CA (cellules) est de taille `dxView - 1`
+
+
+================================================================================
+2. LE PIPELINE DU BRUIT DE PERLIN (FICHIER PerlinNoiseLandscapeGenerator.java)
+================================================================================
+
+La génération de bruit se fait en plusieurs étages empilés. Du plus bas niveau
+au plus haut :
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  noise(x, y, periodX, periodY)                                  │
+  │   ↓  hash entier déterministe → valeur dans [-1, 1]             │
+  │   ↓                                                              │
+  │  smoothNoise_1(x, y, periodX, periodY)                          │
+  │   ↓  moyenne pondérée 3×3 (passe-bas)                           │
+  │   ↓                                                              │
+  │  InterpolatedNoise_1(x, y, periodX, periodY)                    │
+  │   ↓  interpolation cosinus entre 4 sommets entiers              │
+  │   ↓                                                              │
+  │  PerlinNoise_2D(x, y, basePeriodX, basePeriodY)                 │
+  │   ↓  somme de plusieurs octaves (fréquences doublées)           │
+  │   ↓                                                              │
+  │  generatePerlinNoiseLandscape(...)                              │
+  │      écrit toute la grille + normalise + lisse les côtes        │
+  └─────────────────────────────────────────────────────────────────┘
+
+Détaillons chaque étage.
+
+
+--- 2.1 noise(x, y, periodX, periodY) ---
+
+C'est un hash entier pseudo-aléatoire. Pour une paire (x, y) entière, il
+retourne TOUJOURS la même valeur dans [-1, 1]. Aucun état, pas de génération
+préalable, pas de tableau de gradients comme dans le Perlin original — c'est
+une variante simplifiée appelée "value noise".
+
+Formule (simplifiée) :
+    n = ix + iy * rand2
+    n = (n << rand) XOR n
+    result = 1 - ((n * (n*n*r1 + r2) + r3) & 0x7FFFFFFF) / 2^30
+
+Les constantes (rand, rand2, r1, r2, r3) sont tirées au sort UNE fois au
+chargement de la classe. C'est pour ça que chaque lancement du jeu donne un
+monde différent — change les graines, change le monde.
+
+C'est dans cette fonction qu'on impose la périodicité (voir section 4).
+
+
+--- 2.2 smoothNoise_1(x, y, periodX, periodY) ---
+
+Lisse légèrement le hash en faisant la moyenne pondérée 3×3 autour de chaque
+point :
+
+    +-----+-----+-----+
+    | 1/16| 1/8 | 1/16|
+    +-----+-----+-----+
+    | 1/8 | 1/4 | 1/8 |
+    +-----+-----+-----+
+    | 1/16| 1/8 | 1/16|
+    +-----+-----+-----+
+
+Pondérations : 4/4 au centre = 1, 4×2/8 sur les côtés = 1, 4/16 aux coins = 1.
+Total = 1 (la moyenne est conservée). C'est un filtre passe-bas léger qui
+adoucit les transitions brutales du hash.
+
+
+--- 2.3 InterpolatedNoise_1(x, y, periodX, periodY) ---
+
+Le hash et le smoothing ne sont définis que sur les entiers. Pour avoir une
+fonction continue (échantillonnable à n'importe quelle coordonnée flottante),
+on interpole entre les 4 sommets entiers entourant (x, y).
+
+L'interpolation utilisée est COSINUS (et pas linéaire) :
+    f(t) = (1 - cos(π t)) / 2
+    result = a * (1 - f) + b * f
+
+Avantage sur la linéaire : pas de discontinuité de dérivée aux sommets, donc
+les transitions sont plus douces, sans "arêtes" visibles.
+
+
+--- 2.4 PerlinNoise_2D(x, y, basePeriodX, basePeriodY) ---
+
+C'est l'étage qui donne au bruit son aspect "naturel". On somme PLUSIEURS
+octaves de bruit interpolé :
+
+    octave 0 : grosses formes, basse fréquence,  amplitude pleine
+    octave 1 : moyennes formes, fréquence ×2,   amplitude × persistence
+    octave 2 : petits détails, fréquence ×4,    amplitude × persistence²
+    octave 3 : grain fin,      fréquence ×8,    amplitude × persistence³
+    ...
+
+À chaque octave, on multiplie les coordonnées d'échantillonnage par 2 (donc
+on regarde le bruit "deux fois plus serré") et on multiplie l'amplitude par
+le facteur `persistence` (1.0 dans ce projet, donc pas de décroissance).
+
+Le résultat est un bruit qui contient des structures à toutes les échelles :
+des "continents" larges + des reliefs moyens + du petit grain. C'est ce qui
+donne aux paysages Perlin leur côté organique.
+
+
+--- 2.5 generatePerlinNoiseLandscape(...) ---
+
+Le pilote :
+  1. Calcule `fact` dynamiquement pour assurer la tileability (voir section 4)
+  2. Boucle sur tous les pixels (x, y) de la grille et appelle PerlinNoise_2D
+  3. Confie le résultat à `LandscapeToolbox.scaleAndCenter(...)` pour
+     normaliser dans [-0.5, 0.5] et appliquer le ratio mer/montagne
+  4. Confie ensuite à `LandscapeToolbox.smoothLandscape(...)` qui adoucit les
+     côtes (les pixels sous l'eau adjacents à la terre passent à 0 → effet
+     "plage")
+
+
+================================================================================
+3. COMMENT LE RENDU CONSOMME LA HEIGHTMAP
+================================================================================
+
+Le rendu OpenGL parcourt cellule par cellule dans `Landscape.display()` :
+
+    src/graphics/Landscape.java
+        for (int x = 0; x < dxView - 1; x++)
+            for (int y = 0; y < dyView - 1; y++)
+
+Pour chaque cellule, il émet 4 sommets (les 4 coins) avec leurs altitudes :
+
+    src/graphics/Landscape.java
+        double altitude = landscape[(x + xIt + movingX) % (dxView - 1)]
+                                   [(y + yIt + movingY) % (dyView - 1)]
+                          * heightBooster;
+
+Le `% (dxView - 1)` est la clé du **rendu torique** :
+  - quand l'utilisateur navigue avec les flèches, `movingX` et `movingY` se
+    décalent, et le modulo ramène les indices dans la grille
+  - le bord droit du monde s'enroule jusqu'au bord gauche, etc.
+
+Pour un rendu torique sans jointure visible, il ne suffit pas que ce modulo
+soit correct : il faut aussi que le tableau de hauteurs soit lui-même continu
+d'un bord à l'autre (cf. section 4).
+
+Couleur du sol — par sommet, sans fondu eau/sable :
+La couleur du terrain (sable / vert / eau, décidée par `colorInit` selon
+l'altitude) est émise PAR SOMMET (`WorldOfCells.getVertexTerrainColor`), et
+l'ombrage lisse d'OpenGL dégrade sur le quad. Règle retenue : un sommet qui
+touche au moins une case de TERRE n'est coloré QUE par les cases de terre
+(sable légèrement dominant sur le vert) ; la fondue ne joue donc qu'entre sable
+et herbe/montagne, JAMAIS entre l'eau et le sable (sinon le bleu baverait sur la
+plage, irréaliste). Un sommet entièrement immergé prend une couleur de fond
+marin assombrie selon la profondeur.
+
+Marqueur de forêt intégré au sol :
+`ForestCA` ne peint pas la case ; le SOL est teinté dans la même passe
+(`WorldOfCells.applyForestTint`) selon l'état de la cellule — brun terreux
+(arbre vivant, intensité proportionnelle à la croissance), orange dégradé (feu,
+couleur déterministe selon le sous-état de combustion), noir (brûlé), estompé
+vers le terrain (cendres) — le tout pondéré par la couverture forestière des 4
+cases du sommet. La tache épouse le relief, reste toujours visible et ne coûte
+aucune géométrie supplémentaire.
+
+Rendu de l'eau — technique « plan d'eau » :
+L'eau est dessinée en quads à plat au niveau de la mer (z = 0), APRÈS le terrain :
+  - couleur PAR PROFONDEUR (teal clair en bordure → bleu nuit au large),
+    éclairage désactivé (couleur stable, sans scintillement selon l'angle de vue),
+    assombrie selon le cycle jour/nuit ;
+  - OPACITÉ CROISSANTE avec la profondeur : on devine le fond en eau peu profonde,
+    l'eau devient opaque au large ;
+  - la côte est lissée par une COUPE DIAGONALE des cases-coin de rivage (une case
+    de terre ayant exactement deux voisins d'eau adjacents reçoit un triangle
+    d'eau → transition à 45° au lieu d'un angle droit) ;
+  - la surface ÉCRIT la profondeur : les éléments immergés (roche, obsidienne)
+    sont masqués par l'eau au lieu d'apparaître par-dessus, et un agent dans l'eau
+    a le haut du corps qui émerge et le bas sous la surface (« à moitié immergé »),
+    automatiquement et identiquement pour loup / mouton / humain.
+
+Distance de vue — fenêtre de rendu (optimisation 2026-05-31) :
+Le rendu ne parcourt plus toute la carte à chaque image : les passes par case
+(terrain, eau, objets, arbres) sont bornées à une fenêtre `[centre ± R]` autour
+de la caméra (helper `graphics.ViewWindow`), où R = `SimulationConfig.viewDistanceCells`.
+En 3D, R par défaut suit la portée du brouillard (les cases coupées sont déjà
+noyées dans le brouillard → aucune perte visible) ; la vue de dessus a son propre
+rayon et cale son zoom pour que la fenêtre remplisse l'écran. La SIMULATION n'est
+pas concernée — elle tourne sur toute la carte : l'optimisation est purement
+graphique, rien ne se fige hors écran.
+
+
+================================================================================
+4. LE PROBLÈME DE CONTINUITÉ AU FRANCHISSEMENT DU TORE (ET SA SOLUTION)
+================================================================================
+
+--- 4.1 Symptôme ---
+
+Sur les vues de dessus ou les vues 3D obliques, on voyait clairement une
+BANDE de discontinuité au milieu de l'image : le terrain s'arrêtait net et
+une autre zone (avec un niveau de mer ou de montagne différent) commençait
+de l'autre côté. Capture d'illustration : voir docs/screenshot.png.
+
+C'est parce que le rendu, quand il "wrappe" via `% (dxView - 1)`, met côte
+à côte le pixel `landscape[127][y]` et le pixel `landscape[0][y]`. Ces deux
+pixels devraient représenter le même endroit physique sur le tore, mais le
+Perlin "naïf" produit deux valeurs totalement décorrelées : altitude qui
+saute, type de terrain qui change brutalement, jointure visible.
+
+
+--- 4.2 La cause profonde ---
+
+Le bruit de Perlin classique est défini sur ℝ². Il n'a aucune notion de
+"taille du monde". Sa fonction de hash `noise(x, y)` produit une valeur
+unique pour chaque entier (x, y) ∈ ℤ². Sans précaution, `noise(0, y)` et
+`noise(W, y)` sont totalement différents — leur seule relation est
+"pseudo-aléatoire".
+
+Pour qu'un terrain soit visuellement continu sur un tore W × H, il faut que :
+    noise(x + W, y) = noise(x, y)  pour tout (x, y)
+    noise(x, y + H) = noise(x, y)  pour tout (x, y)
+
+C'est ce qu'on appelle la TILEABILITY (en français : "carrelage", parce que
+ces motifs peuvent se répéter sans jointure visible, comme du carrelage).
+
+
+--- 4.3 La solution implémentée ---
+
+L'idée centrale : DANS LA FONCTION `noise(x, y)`, on wrappe les coordonnées
+entières modulo une période avant de les passer dans le hash.
+
+    int ix = Math.floorMod((int)Math.floor(x), periodX);
+    int iy = Math.floorMod((int)Math.floor(y), periodY);
+
+Ainsi, `noise(W + 1, y)` et `noise(1, y)` calculent leur hash sur les mêmes
+entiers (1, y) et retournent la même valeur. La propriété de périodicité se
+propage automatiquement à toutes les couches au-dessus (smoothNoise,
+InterpolatedNoise, PerlinNoise_2D, generate).
+
+`Math.floorMod` au lieu de `%` : l'opérateur `%` en Java peut retourner un
+résultat négatif si l'argument est négatif (ex: `-1 % 8 = -1`). `floorMod`
+ramène toujours dans `[0, period)` — important pour les voisins (x-1, y-1)
+de smoothNoise_1 quand x=0.
+
+
+--- 4.4 La subtilité des octaves ---
+
+À chaque octave, le bruit est échantillonné à une fréquence doublée. Si
+l'octave 0 voit le bruit à une période de 8 unités en espace-bruit, alors :
+    octave 1 voit le même bruit à période 16
+    octave 2 → période 32
+    octave 3 → période 64
+    ...
+
+(Parce que les coordonnées sont multipliées par 2^o avant d'entrer dans
+InterpolatedNoise_1.)
+
+Si on ne mettait à jour qu'UNE période fixe dans `noise()`, l'octave 0
+tilerait correctement mais les octaves suivantes auraient une période en
+espace-pixel DIFFÉRENTE de W → jointures visibles à chaque octave.
+
+La solution propre, implémentée dans `PerlinNoise_2D` :
+
+    for (int i = 0; i < n_octaves; i++) {
+        int periodX_o = basePeriodX << i;  // = basePeriodX * 2^i
+        int periodY_o = basePeriodY << i;
+        total += InterpolatedNoise_1(x * 2^i, y * 2^i, periodX_o, periodY_o) * amplitude
+    }
+
+À chaque octave, on multiplie la période ET la fréquence par 2. Résultat :
+la période en espace-PIXEL reste constante = W pour TOUTES les octaves.
+C'est l'invariant qui garantit la tileability complète.
+
+
+--- 4.5 La contrainte sur `fact` ---
+
+On veut que `W * fact * 2^o` (la période en espace-bruit à l'octave o) soit
+TOUJOURS un entier. Sinon, `Math.floorMod((int) noise_x, period)` perd de
+la précision aux frontières et on aliase.
+
+Une valeur `fact` fixe ne marcherait pas pour une largeur W arbitraire : par
+exemple avec W=128 et `fact = 0.05`, `128 * 0.05 = 6.4` — pas un entier,
+jointures aliasées à chaque octave.
+
+Le code calcule donc `fact = 8.0 / dxView` dynamiquement :
+    octave 0 : période = W * fact = 8   (entier ✓)
+    octave 1 : période = 16             (entier ✓)
+    octave 2 : période = 32             (entier ✓)
+    ...
+
+Toutes des puissances de 2 → comportement de hash propre, pas de aliasing.
+
+
+================================================================================
+5. ALTERNATIVE : CHARGEMENT DEPUIS UNE IMAGE PNG
+================================================================================
+
+Au lieu de générer le terrain procéduralement, on peut le charger depuis
+une image. Voir le constructeur alternatif :
+
+    src/graphics/Landscape.java
+        public Landscape(World __myWorld, String __filename, double scaling, ...)
+
+Activé via la configuration (`SimulationConfig`) :
+
+    config.landscapeSource = LandscapeSource.PNG;
+    config.landscapePngPath = "landscapes/landscape_paris-200.png";
+
+Le chargement passe par `LoadFromFileLandscape.load(...)` qui lit le canal
+rouge de chaque pixel comme une altitude.
+
+Note importante : les PNG fournis dans `landscapes/` ne sont PAS conçus
+tileables a priori. Pour éviter une jointure visible au franchissement du
+tore, `LoadFromFileLandscape.load()` appelle automatiquement
+`LandscapeToolbox.enforceTileability(landscape)` juste après la lecture du
+fichier.
+
+Cette fonction blende progressivement les bords (gauche↔droite et
+haut↔bas) sur une largeur de W/16 pixels (~12 px pour W=200). Concrètement :
+  - pour chaque ligne, on remplace la colonne x=0 et la colonne x=W-1 par
+    leur moyenne (forcément égales après → continuité parfaite à la jointure)
+  - on étire ce changement vers l'intérieur sur ~W/16 pixels avec une rampe
+    linéaire, pour que la transition reste douce
+  - même mécanisme appliqué en Y pour les bords haut/bas
+  - les 4 coins reçoivent la moyenne des 4 coins d'origine (obtenu
+    automatiquement par enchaînement passe-X puis passe-Y)
+
+Si l'image source EST déjà tileable (par exemple traitée avec Gimp >
+Filtres > Carte > Rendre raccordable), enforceTileability ne change quasi
+rien — c'est sûr de l'appeler dans tous les cas.
+
+Le bruit de Perlin n'a PAS besoin de ce traitement parce qu'il est déjà
+tileable algorithmiquement (voir section 4).
+
+
+================================================================================
+6. PARAMÈTRES À CONNAÎTRE POUR JOUER AVEC LE RENDU
+================================================================================
+
+Dans PerlinNoiseLandscapeGenerator.java :
+
+  persistence            décroissance d'amplitude entre octaves
+                         1.0 = pas de décroissance (terrain bruité)
+                         0.5 = décroissance forte (terrain lisse, dominé par
+                               les basses fréquences)
+
+  Number_Of_Octaves      2 à 4 (aléatoire à l'init)
+                         Plus = plus de détail fin
+                         Moins = plus lisse
+
+  fact                   recalculé dynamiquement (8/W)
+                         Pour modifier la taille des "blobs", remplacer 8
+                         par 4 (plus grands blobs) ou 16 (plus petits)
+
+  rand, rand2, r1-r3     graines aléatoires
+                         Forcer des valeurs fixes = avoir TOUJOURS la même
+                         carte (utile pour le debug)
+
+Dans Landscape.java :
+
+  heightFactor = 50.0f   amplitude verticale au rendu (multiplie l'altitude
+                         finale dans l'espace écran)
+
+  heightBooster = 2.0    multiplie l'altitude au moment du sampling
+                         (touches 1/2 en jeu pour ajuster en live)
+
+  scaling, waterRatio    passés au constructeur (0.7 et 0.4 par défaut)
+                         scaling = amplitude globale
+                         waterRatio = point pivot mer/montagne (0.4 = 40%
+                         de pixels sous le niveau de la mer)
+
+
+================================================================================
+7. POINTS À AMÉLIORER
+================================================================================
+
+  - Le nombre d'octaves est random (2 à 4). On pourrait le forcer à une
+    valeur fixe (3 ?) pour un rendu plus prévisible.
+
+  - [RÉSOLU] LandscapeToolbox.scaleAndCenter utilisait `landscape.clone()`,
+    un shallow copy trompeur sur un double[][] : les sous-tableaux étaient
+    partagés, la "copie" n'isolait rien, et le code marchait par accident.
+    Supprimé en faveur d'une mutation en place explicite (cohérent avec
+    smoothLandscape).
+
+  - [RÉSOLU] LoadFromFileLandscape n'avait pas de post-traitement pour
+    rendre les PNG tileables. Ajout de LandscapeToolbox.enforceTileability,
+    appelée automatiquement après la lecture du fichier. Blende
+    progressivement les bords gauche/droite et haut/bas sur W/16 pixels.
+

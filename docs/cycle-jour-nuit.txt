@@ -1,0 +1,250 @@
+================================================================================
+CYCLE JOUR / NUIT — Projet Environnement 3D
+================================================================================
+
+Ce document décrit le cycle jour/nuit du projet : comment le temps passe dans la
+simulation, comment l'éclairage OpenGL s'adapte, et comment les agents
+(notamment le Loup) en tiennent compte pour modifier leur comportement.
+
+
+================================================================================
+1. CONTEXTE
+================================================================================
+
+Une simulation d'écosystème sans dimension temporelle paraît statique. Un cycle
+jour/nuit apporte :
+
+    * Du rythme visuel — la scène traverse une journée complète en quelques
+      minutes de temps réel.
+    * Un crochet pour des comportements différenciés (animaux nocturnes vs
+      diurnes).
+    * Une mise en valeur des éruptions volcaniques : la lave rougeoie la nuit
+      (effet d'émission sur fond sombre).
+    * Un cadre temporel intuitif : le HUD affiche l'heure de la simulation.
+
+Le cycle est un cycle 24 h de jeu compressé en quelques minutes réelles, avec
+une asymétrie jour/nuit configurable et des transitions douces (aube,
+crépuscule). Pas de saisons ni de météo — ce sont des évolutions futures.
+
+
+================================================================================
+2. OBJECTIF
+================================================================================
+
+Faire alterner visuellement le jour et la nuit selon un cycle 24 h régulier,
+avec une course du soleil réaliste, une transition douce et un éclairage OpenGL
+adapté à chaque phase.
+
+Objectif secondaire : offrir un hook pour des comportements diurnes / nocturnes.
+Aujourd'hui, seul le Loup l'utilise (drapeau `attaqueNuit` : il chasse aussi la
+nuit, même rassasié, pour disperser le troupeau). Les autres agents pourraient
+s'en servir (les Moutons pourraient se grouper la nuit, par exemple).
+
+Objectif tertiaire : permettre de forcer la transition (touche `n`) sans
+attendre le cycle naturel — utile pour tester le rendu nocturne.
+
+
+================================================================================
+3. FONCTIONNEMENT
+================================================================================
+
+--- 3.1 La grandeur de temps (pas de temps fixe) ---
+
+La simulation tourne à PAS DE TEMPS FIXE : `SimulationConfig.simulationHz`
+(20 Hz par défaut) pas de simulation par seconde réelle, indépendamment du FPS
+de rendu (cf. `graphics.TimeKeeper`). Tous les paramètres temporels sont donc
+exprimés EN SECONDES dans la configuration, et convertis en ticks via
+`simulationHz` à la demande.
+
+Le cycle est défini par deux paramètres (réglables au lancement et à chaud) :
+
+    cycleTotalSec     = 240   durée réelle d'un cycle 24 h de jeu (secondes)
+    dayFractionRatio  = 14/24 fraction du cycle où le soleil est au-dessus de
+                              l'horizon (≈ 0.583)
+    transitionJourSec = 5     durée des transitions aube / crépuscule (secondes)
+
+Avec ces valeurs :
+
+    * Un cycle 24 h complet dure 240 s réelles (4 min) ⇒ 1 h de jeu = 10 s réelles.
+    * La phase de JOUR (soleil visible) couvre 14 h de jeu ; la NUIT, 10 h.
+      Le jour et la nuit ne durent donc PAS la même chose : le cycle est
+      asymétrique.
+
+--- 3.2 L'horloge et les repères de la journée ---
+
+La phase courante du cycle est `t ∈ [0, 1)`. L'heure de jeu en est dérivée par
+l'horloge `heure = (6 + t × 24) mod 24`, ce qui cale les repères ainsi :
+
+    t = 0.00            →  6 h   (AUBE, le soleil se lève)
+    milieu de la phase jour → 13 h  (ZÉNITH)
+    t = dayFraction     →  20 h  (CRÉPUSCULE, le soleil se couche)
+    t ≈ 0.79            →  1 h   (MINUIT, soleil au plus bas)
+
+--- 3.3 L'état jour/nuit ---
+
+Le booléen `jour` du World vaut :
+    jour = 1  →  journée (luminosité haute, brouillard distant)
+    jour = 0  →  nuit (luminosité basse, brouillard proche, étoiles visibles)
+
+Il est synchronisé chaque frame avec la hauteur du soleil simulé : `jour = 1`
+quand le soleil est au-dessus de l'horizon, `0` sinon. Le champ `before` du
+World mémorise l'état du tour précédent, ce qui permet de détecter le moment
+exact du basculement.
+
+--- 3.4 La touche `n` ---
+
+`n` exécute `it += dureeJour` (saut d'un demi-cycle), ce qui fait passer
+instantanément à l'autre phase — pratique pour tester le rendu nocturne sans
+attendre. (`dureeJour` est le nombre de ticks d'un demi-cycle, voir 4.1.)
+
+
+================================================================================
+4. IMPLÉMENTATION TECHNIQUE
+================================================================================
+
+--- 4.1 Champs et accesseurs du World ---
+
+    src/worlds/World.java   jour            état courant (0/1)
+    src/worlds/World.java   before          état du tour précédent
+    src/worlds/World.java   dureeJour       ticks d'un demi-cycle —
+                            DÉRIVÉ : dureeJour = cycleTotalSec × simulationHz / 2
+
+`dureeJour` n'est plus une constante : il est recalculé depuis `cycleTotalSec`
+et `simulationHz` à l'initialisation. Il reste utilisé par `Agent.getAgeDays()`
+(qui divise l'âge en ticks par `2 × dureeJour` pour obtenir un âge en jours de
+jeu) et par la touche `n`.
+
+Dans `World.step()`, l'incrément d'`iteration` se fait APRÈS les pas CA et
+agents (avec sauvegarde de `before = jour`), si bien que les agents voient une
+valeur d'`iteration` cohérente pendant tout leur tour.
+
+--- 4.2 Course du soleil et éclairage (Landscape.updateSunAndSky) ---
+
+Appelée à chaque frame de rendu, `updateSunAndSky()` :
+
+    1. Calcule la phase `t ∈ [0, 1)` du cycle.
+
+    2. Calcule l'angle du soleil avec DEUX PENTES (cycle asymétrique) :
+           phase jour  (t < dayFraction) : sunAngle = π · t / dayFraction
+                                           (0 → π sur la durée du jour)
+           phase nuit  (t ≥ dayFraction) : sunAngle = π + π · (t − dayFraction)
+                                                      / (1 − dayFraction)
+       La hauteur du soleil est `sunAlt = sin(sunAngle)` : > 0 le jour, < 0 la
+       nuit. Deux garde-fous bornent `dayFraction` à [0.05, 0.95] pour éviter
+       une division par zéro (jour ou nuit nul).
+
+    3. Synchronise `World.jour` selon le signe de `sunAlt`.
+
+    4. Calcule le facteur nocturne `currentNightFactor ∈ [0, 1]`
+       (= 1 − smoothstep(−0.20, 0.10, sunAlt)) : 0 = jour pur, 1 = nuit pure.
+       Ce facteur module l'éclairage ambiant, le brouillard linéaire (plus
+       proche la nuit) et l'apparition des étoiles. Il sert aussi à atténuer
+       l'émission des agents la nuit (cf. modeles-3d.txt) et l'éclairage des
+       lampes lunaires.
+
+--- 4.3 HUD : affichage de l'heure ---
+
+Le HUD (`src/ui/Hud.java`) reçoit un libellé jour/nuit et l'heure de jeu
+(`heure = (6 + t × 24) mod 24`, formatée « 13h00 ») calculés par Landscape, et
+les affiche dans le bandeau supérieur avec les compteurs d'agents et le FPS.
+
+--- 4.4 Hook pour les agents : attaqueNuit du Loup ---
+
+Dans `src/agents/Loup.java`, `updateDayNight()` met `attaqueNuit = 1` dès qu'il
+fait nuit (après le crépuscule), et `0` au retour du jour. En décision, le Loup
+chasse si `energie < HUNGER_RATIO` OU `attaqueNuit == 1` : la nuit, il poursuit
+le troupeau même rassasié (au trot, pour l'effrayer/disperser sans se vider —
+cf. arbres-de-comportement.txt). L'état s'affiche « Rode (nuit) » dans
+`AgentInfoPanel`.
+
+--- 4.5 Configuration ---
+
+    src/ui/SimulationConfig.java   simulationHz        (20)
+    src/ui/SimulationConfig.java   cycleTotalSec       (240)
+    src/ui/SimulationConfig.java   dayFractionRatio    (14/24)
+    src/ui/SimulationConfig.java   transitionJourSec   (5)
+
+Ces paramètres sont réglables avant le lancement via le `LaunchMenu`, et à chaud
+dans l'`InGameMenu` (touche `m`, onglet PARAMS). Une modification en cours de
+simulation peut faire « sauter » l'heure visuelle, effet bénin.
+
+
+================================================================================
+5. TEST
+================================================================================
+
+Le cycle jour/nuit n'a pas de test JUnit dédié au rendu, mais la base de temps à
+pas fixe est couverte par `test/src/graphics/TimeKeeperTest.java`. La validation
+visuelle se fait in-game :
+
+    1. Lancer `./run.sh`. La simulation démarre en milieu de journée.
+    2. Observer le bandeau HUD « jour | heure ».
+    3. Sur un cycle de 240 s (4 min réelles), la scène traverse une journée
+       complète : aube (6 h), zénith lumineux (13 h), crépuscule (20 h),
+       nuit sombre avec brouillard rapproché et étoiles, minuit (1 h).
+    4. Au passage à la nuit, un Loup proche passe à « Rode (nuit) » dans
+       `AgentInfoPanel` (chasse nocturne).
+    5. Presser `n` pour forcer le basculement instantané.
+
+Pour accélérer, réduire `cycleTotalSec` dans le `LaunchMenu` (ex. 60 s → cycle
+24 h en une minute).
+
+Cas à vérifier : transitions douces à l'aube et au crépuscule (pas d'à-coup),
+heure HUD cohérente (00 h → 23 h), luminosité jamais hors bornes, et asymétrie
+jour/nuit visible (le jour dure plus longtemps que la nuit avec le ratio 14/24).
+
+
+================================================================================
+6. RÉSULTAT
+================================================================================
+
+Visuellement, l'utilisateur observe :
+
+    * Une journée complète traversée en ~4 min réelles (à `cycleTotalSec` =
+      240 s), avec un jour plus long que la nuit (ratio configurable).
+    * Un soleil qui se lève à l'est et se couche à l'ouest selon une course
+      asymétrique (deux pentes : jour plus étalé que la nuit).
+    * Un HUD permanent qui indique l'heure de jeu (aube 6 h, zénith 13 h,
+      crépuscule 20 h, minuit 1 h).
+    * Des Loups qui chassent même rassasiés la nuit (« Rode (nuit) »).
+    * Des éruptions volcaniques saisissantes de nuit : lave et tephra
+      rougeoient sur fond sombre.
+
+Contrôles : touche `n` (bascule instantanée) et menus (LaunchMenu / InGameMenu
+PARAMS) pour `cycleTotalSec`, `dayFractionRatio`, `transitionJourSec`,
+`simulationHz`.
+
+
+================================================================================
+7. AMÉLIORATIONS FUTURES
+================================================================================
+
+--- Court terme ---
+
+    * Couleur du ciel qui varie selon la phase (bleu en plein jour, orange à
+      l'aube et au crépuscule, noir profond la nuit) — aujourd'hui seule la
+      luminosité globale change nettement.
+    * Lune avec son propre cycle et sa lumière douce la nuit.
+
+--- Moyen terme ---
+
+    * Comportements diurnes / nocturnes différenciés pour tous les agents (pas
+      seulement le Loup) : Moutons qui se groupent la nuit, Humains qui rentrent
+      au foyer, etc.
+    * Système de saisons (cycles plus longs affectant la pousse des arbres, la
+      couleur de la végétation…).
+
+--- Long terme ---
+
+    * Météo dynamique indépendante du cycle solaire (pluie, neige, brouillard)
+      avec interaction sur les CAs (la pluie ralentit le feu, la neige recouvre
+      la végétation).
+    * Variation de température affectant la solidification de la lave, la
+      vitesse des agents et la zone habitable de l'herbe.
+    * Orages occasionnels déclenchant des feux de forêt par la foudre (déjà
+      partiellement modélisé via `pF` dans ForestCA, sans éclair visuel).
+
+
+================================================================================
+FIN — cycle-jour-nuit.txt
+================================================================================
