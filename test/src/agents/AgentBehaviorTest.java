@@ -1365,6 +1365,37 @@ class AgentBehaviorTest {
                 "vcourse héritée ~18 (±10%) : " + cub.vcourse);
     }
 
+    /**
+     * Mémoire spatiale côté Loup : un loup repu (mais pas plein) qui flâne et dont
+     * la case droit devant a déjà été visitée tourne plutôt que d'y retourner.
+     * Cap Est, case Est mémorisée → bascule au Sud.
+     */
+    @Test
+    void loupEviteDeRevenirSurSesPas() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 14, cy = 14;
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++) {
+                world.setCellHeight(cx + dx, cy + dy, 1.0);
+                world.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        world.setJour(1);
+
+        Loup l = new Loup(cx, cy, world);
+        l.energie = (int) (l.energieD * 0.8);   // repu mais pas plein → WANDER (lazyWander)
+        l._orient = 1;                          // cap Est
+        l.recordVisit(cx + 1, cy);              // case Est déjà visitée
+        world.loups.add(l);
+        world.agents.add(l);
+        world.uniqueDynamicObjects.add(l);
+
+        l.step();
+
+        assertEquals(AgentState.WANDER, l.currentState, "le loup repu doit flâner (WANDER)");
+        assertEquals(2, l._orient,
+                "case Est déjà visitée → le loup tourne (Sud) au lieu d'y retourner");
+    }
+
     /** Place un mouton sur (cx,cy) + les 4 cases cardinales ; renvoie le troupeau. */
     private static Mouton[] addSheepCross(WorldOfCells world, int cx, int cy) {
         int[][] pos = { {cx, cy}, {cx, cy - 1}, {cx, cy + 1}, {cx - 1, cy}, {cx + 1, cy} };

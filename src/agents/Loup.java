@@ -409,6 +409,13 @@ public class Loup extends Agent {
 	private void lazyWander() {
 		mem.spiralStep = 0;
 		mem.spiralPeriod = 1;
+		if (aheadVisitedRecently()) {
+			// Mémoire spatiale : la case devant a déjà été visitée → on tourne
+			// pour ne pas flâner en boucle.
+			_orient = (_orient + 1) % 4;
+			vitesse = vpas;
+			return;
+		}
 		if (Math.random() < 0.2) {
 			_orient = (Math.random() > 0.5) ? (_orient + 1) % 4 : (_orient - 1 + 4) % 4;
 			wantsToMove = false;   // pause (équivalent de l'ancien imobil=1)

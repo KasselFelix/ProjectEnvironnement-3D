@@ -367,8 +367,11 @@ Idées d'extensions classées par effort estimé.
       `aheadVisitedRecently()` : si la case droit devant a déjà été visitée, il
       tourne au lieu d'y retourner → moins d'allers-retours en boucle. Tests :
       `memoireSpatialeRetientLesCellulesRecentes` (structure + oubli au-delà de 8),
-      `moutonEviteDeRevenirSurSesPas` (anti-boucle). RESTE : étendre l'anti-boucle
-      au Loup/Humain, et mémoriser aussi les positions de proies/dangers vus.
+      `moutonEviteDeRevenirSurSesPas` (anti-boucle). Anti-boucle étendu au **Loup**
+      (`lazyWander` ; test `loupEviteDeRevenirSurSesPas`). RESTE : anti-boucle
+      Humain, et surtout une MÉMOIRE SÉMANTIQUE (points d'eau, zones de chasse /
+      dangereuses, méthodes) avec oubli lié à l'âge — cf. notes de conception
+      « évolution » (chantier dédié).
 
 --- Long terme ---
 
