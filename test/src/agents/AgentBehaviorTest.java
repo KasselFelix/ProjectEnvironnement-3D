@@ -1320,6 +1320,51 @@ class AgentBehaviorTest {
                 "vcourse héritée ~20 (±10%) : " + lamb.vcourse);
     }
 
+    /**
+     * Reproduction sexuée + héritage évolutif côté Loup : deux loups au-dessus du
+     * seuil énergétique, avec partenaire à portée, produisent un louveteau qui
+     * hérite des traits moyennés des parents (vision ~24, vcourse ~18) ± mutation.
+     */
+    @Test
+    void louveteauHeriteDesTraitsDesParents() {
+        WorldOfCells w = AgentTestSupport.buildWorld();
+        int cx = 18, cy = 18;
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++) {
+                w.setCellHeight(cx + dx, cy + dy, 1.0);
+                w.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        w.setJour(1);
+
+        Loup a = new Loup(cx, cy, w);
+        a.energie = (int) (a.energieD * 0.9);   // au-dessus du seuil 60%
+        a.Prepro = 1.0;
+        a.vision = 24;
+        a.vcourse = 18;
+        w.loups.add(a);
+        w.agents.add(a);
+        w.uniqueDynamicObjects.add(a);
+
+        Loup mate = new Loup(cx + 1, cy, w);
+        mate.Prepro = 0;
+        mate.energie = a.energieD;
+        mate.vision = 24;
+        mate.vcourse = 18;
+        w.loups.add(mate);
+        w.agents.add(mate);
+        w.uniqueDynamicObjects.add(mate);
+
+        a.step();
+
+        assertEquals(3, w.loups.size(),
+                "avec partenaire et énergie suffisante, un louveteau naît (2 → 3).");
+        Loup cub = w.loups.get(2);
+        assertTrue(cub.vision >= 21 && cub.vision <= 27,
+                "vision héritée ~24 (±10%), pas le défaut 10 : " + cub.vision);
+        assertTrue(cub.vcourse >= 16.0 && cub.vcourse <= 20.0,
+                "vcourse héritée ~18 (±10%) : " + cub.vcourse);
+    }
+
     /** Place un mouton sur (cx,cy) + les 4 cases cardinales ; renvoie le troupeau. */
     private static Mouton[] addSheepCross(WorldOfCells world, int cx, int cy) {
         int[][] pos = { {cx, cy}, {cx, cy - 1}, {cx, cy + 1}, {cx - 1, cy}, {cx + 1, cy} };

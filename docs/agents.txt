@@ -349,7 +349,9 @@ Idées d'extensions classées par effort estimé.
       Tests : `moutonSeReproduitSeulementAvecPartenaire` (+ tests de repro
       existants mis à jour avec partenaire). Les **traits héritables** sont
       désormais branchés sur cette reproduction (cf. « Héritage évolutif » en long
-      terme). RESTE : même règle de partenaire pour le Loup.
+      terme). [RÉALISÉ aussi pour le Loup] : `Loup.findReproPartner` + partenaire
+      requis (test `louveteauHeriteDesTraitsDesParents`). Reproduction sexuée
+      opérationnelle pour les deux espèces.
     * [RÉALISÉ 2026-06-05] Communication entre proies (alarme du troupeau) — un
       Mouton qui VOIT un Loup (FLEE_PREDATOR) alerte via `alertNeighbours()` tous
       les Moutons à portée `ALERT_RADIUS=6` (tore-aware) : ils reçoivent
@@ -377,10 +379,13 @@ Idées d'extensions classées par effort estimé.
       de reprendre les défauts de la classe. La sélection naturelle peut donc
       faire émerger des valeurs adaptées (ex : meilleure vision survit mieux →
       se reproduit plus → diffuse son trait). Test :
-      `agneauHeriteDesTraitsMoyennesAvecMutation`. RESTE : même héritage pour le
-      Loup ; exposer les traits dans l'UI (AgentInfoPanel) ; suivre la dérive des
-      moyennes de population dans le graphe ; gènes supplémentaires (swimFactor,
-      seuils de repro/faim). Cf. skill `alife` (Axelrod, Sugarscape).
+      `agneauHeriteDesTraitsMoyennesAvecMutation`. Étendu au **Loup** (vision,
+      vcourse, vtrot ; test `louveteauHeriteDesTraitsDesParents`) → héritage
+      évolutif opérationnel pour les deux espèces. RESTE : exposer les traits dans
+      l'UI (AgentInfoPanel) ; suivre la dérive des moyennes de population dans le
+      graphe ; gènes supplémentaires (swimFactor, seuils repro/faim) ; factoriser
+      `mutateInt`/`mutateDouble` dans Agent (dupliqués Loup/Mouton). Cf. skill
+      `alife` (Axelrod, Sugarscape).
     * Niveaux trophiques supplémentaires : herbivores plus petits qui ne
       sont mangés que par moutons, super-prédateur qui mange les loups.
       Permet de tester la stabilité de chaînes alimentaires à 3+ niveaux.

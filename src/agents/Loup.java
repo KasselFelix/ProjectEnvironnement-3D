@@ -271,10 +271,16 @@ public class Loup extends Agent {
 		// reproduction — conditionnée à l'énergie : le loup doit être en bonne
 		// santé (≥ seuil) et INVESTIT une part de son énergie dans le petit
 		// (énergie conservée, pas créée). Le petit naît à la position du parent.
-		if (energie >= energieD * reproEnergyThreshold && Math.random() < Prepro) {
+		Loup mate = findReproPartner();
+		if (energie >= energieD * reproEnergyThreshold && mate != null && Math.random() < Prepro) {
 			double invest = energieD * reproOffspringRatio;
 			Loup prea = new Loup(this.x, this.y, this._world);
 			prea.energie = (int) invest;     // le petit hérite de l'énergie investie
+			// Héritage évolutif : traits moyennés des deux parents + mutation ±10%.
+			prea.vision  = mutateInt((this.vision + mate.vision) / 2);
+			prea.vcourse = mutateDouble((this.vcourse + mate.vcourse) / 2.0);
+			prea.vtrot   = mutateDouble((this.vtrot + mate.vtrot) / 2.0);
+			prea.maxAgeDays = this.maxAgeDays;   // longévité = paramètre config
 			energie -= (int) invest;         // le parent paie ce coût → retombe sous le seuil
 			this.world.uniqueDynamicObjects.add(prea);
 			this.world.agents.add(prea);
@@ -295,6 +301,34 @@ public class Loup extends Agent {
 	@Override
 	protected void postTick() {
 		if ( world.getIteration() % 20 == 0 )if(_fireState==1)energie-=energieD/10;
+	}
+
+	/** Rayon dans lequel un congénère vivant compte comme partenaire de repro. */
+	private static final int REPRO_RADIUS = 3;
+	/** Mutation ±MUTATION_RATE des traits hérités. */
+	private static final double MUTATION_RATE = 0.1;
+
+	private static int mutateInt(int base) {
+		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
+		return Math.max(1, (int) Math.round(base * f));
+	}
+
+	private static double mutateDouble(double base) {
+		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
+		return Math.max(0.1, base * f);
+	}
+
+	/** Partenaire de reproduction le plus proche (Loup vivant dans REPRO_RADIUS),
+	 *  ou null. Exigé par la reproduction sexuée ; fournit la moitié des gènes. */
+	private Loup findReproPartner() {
+		Loup best = null;
+		double bestD = Double.MAX_VALUE;
+		for (Loup other : world.loups) {
+			if (other == this || !other._alive) continue;
+			double d = world.distance(other.x, other.y, x, y);
+			if (d <= REPRO_RADIUS && d < bestD) { bestD = d; best = other; }
+		}
+		return best;
 	}
 
 	public AgentState decideState(Percept p) {
