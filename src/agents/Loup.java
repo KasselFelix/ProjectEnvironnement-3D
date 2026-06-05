@@ -48,7 +48,8 @@ public class Loup extends Agent {
 		float altitude = l.computeAgentAltitude(myWorld, l.x, l.y, normalizeHeight);
 		float px = offset + x2 * stepX;
 		float py = offset + y2 * stepY;
-		float scale = Math.abs(lenX) * 2.0f; // prédateur : plus grand que le mouton
+		// prédateur : plus grand que le mouton, × taille individuelle (§ 10.2).
+		float scale = Math.abs(lenX) * 2.0f * (float) l.displaySize();
 
 		// Rotation Z : aligne le forward −Y du modèle vers la direction de marche.
 		double[] u = l.getLastUnit();
@@ -102,6 +103,34 @@ public class Loup extends Agent {
 
 	public int lastX;
 	public int lastY;
+
+	// ===== Évolution (Phase I, miroir du Mouton — cf. docs/evolution.txt) =====
+	/** Génome (§ 4) : NEUTRE pour un fondateur, hérité des deux parents. */
+	public agents.ai.Genome genome = new agents.ai.Genome();
+	/** true = spawné (adulte d'emblée) ; false = né (démarre BÉBÉ, § 10.1). */
+	public boolean isFounder = true;
+	/** Facteur de taille individuel héritable (§ 10.2), clampé [0.8, 1.2]. */
+	public double sizeFactor = 1.0;
+
+	/** Stade de vie courant (§ 10.1) — un fondateur saute l'enfance. */
+	public agents.ai.LifeStage currentStage() {
+		agents.ai.LifeStage s = agents.ai.LifeStage.of(getAgeDays(), maxAgeDays);
+		if (isFounder && (s == agents.ai.LifeStage.BABY || s == agents.ai.LifeStage.JUVENILE)) {
+			return agents.ai.LifeStage.ADULT;
+		}
+		return s;
+	}
+
+	/** Échelle de croissance liée à l'âge (§ 10.2). */
+	public double growthScale() {
+		if (isFounder) return 1.0;
+		return agents.ai.LifeStage.gompertzGrowth(getAgeDays(), maxAgeDays);
+	}
+
+	/** Taille de rendu relative (§ 10.2) : trait × croissance × Force du génome. */
+	public double displaySize() {
+		return sizeFactor * growthScale() * genome.strengthSizeFactor();
+	}
 
 	public Loup(int __x, int __y, World __world) {
 		super(__x, __y, __world);
@@ -272,15 +301,30 @@ public class Loup extends Agent {
 		// santé (≥ seuil) et INVESTIT une part de son énergie dans le petit
 		// (énergie conservée, pas créée). Le petit naît à la position du parent.
 		Loup mate = findReproPartner();
-		if (energie >= energieD * reproEnergyThreshold && mate != null && Math.random() < Prepro) {
+		// Gating par STADE (§ 10.1 : bébé/jeune ne se reproduisent pas, vieux à
+		// taux réduit) + proba modulée par la fertilité du génome (§ 4.1/§ 4.3).
+		if (currentStage().canReproduce() && energie >= energieD * reproEnergyThreshold && mate != null
+				&& Math.random() < Prepro * genome.reproProbaFactor() * currentStage().fertilityFactor()) {
 			double invest = energieD * reproOffspringRatio;
 			Loup prea = new Loup(this.x, this.y, this._world);
+			prea.isFounder = false;          // né → démarre BÉBÉ (§ 10.1)
 			prea.energie = (int) invest;     // le petit hérite de l'énergie investie
 			// Héritage évolutif : traits moyennés des deux parents + mutation ±10%.
 			prea.vision  = mutateInt((this.vision + mate.vision) / 2);
 			prea.vcourse = mutateDouble((this.vcourse + mate.vcourse) / 2.0);
 			prea.vtrot   = mutateDouble((this.vtrot + mate.vtrot) / 2.0);
-			prea.maxAgeDays = this.maxAgeDays;   // longévité = paramètre config
+			// Héritage du génome (§ 4.4) + taille héritable (§ 10.2).
+			prea.genome = agents.ai.Genome.inherit(this.genome, mate.genome,
+					EVO_RNG, TYPE_MUTATION_RATE, GRANDPARENT_PROB);
+			prea.sizeFactor = clampSize(mutateDouble((this.sizeFactor + mate.sizeFactor) / 2.0));
+			// Longévité : base parentale × facteur Longévité du petit, × malus
+			// si un parent est INFERTILE (§ 4.3 : enfants à courte vie).
+			double childMaxAge = this.maxAgeDays;
+			if (childMaxAge > 0) {
+				childMaxAge *= prea.genome.longevityFactor();
+				if (isInfertile(this) || isInfertile(mate)) childMaxAge *= INFERTILE_CHILD_LONGEVITY_MALUS;
+			}
+			prea.maxAgeDays = childMaxAge;
 			energie -= (int) invest;         // le parent paie ce coût → retombe sous le seuil
 			this.world.uniqueDynamicObjects.add(prea);
 			this.world.agents.add(prea);
@@ -316,6 +360,22 @@ public class Loup extends Agent {
 	private static double mutateDouble(double base) {
 		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
 		return Math.max(0.1, base * f);
+	}
+
+	// ===== Héritage du génome (Phase I, miroir du Mouton, § 4) =====
+	private static final java.util.Random EVO_RNG = new java.util.Random();
+	private static final double TYPE_MUTATION_RATE = 0.05;
+	private static final double GRANDPARENT_PROB = 0.1;
+	private static final double INFERTILE_CHILD_LONGEVITY_MALUS = 0.5;
+	private static final double SIZE_FACTOR_MIN = 0.8;
+	private static final double SIZE_FACTOR_MAX = 1.2;
+
+	private static double clampSize(double s) {
+		return Math.max(SIZE_FACTOR_MIN, Math.min(SIZE_FACTOR_MAX, s));
+	}
+
+	private static boolean isInfertile(Loup l) {
+		return l.genome.get(agents.ai.Axis.FERTILITY) == agents.ai.Pole.NEGATIVE;
 	}
 
 	/** Partenaire de reproduction le plus proche (Loup vivant dans REPRO_RADIUS),

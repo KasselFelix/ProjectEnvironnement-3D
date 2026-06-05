@@ -654,9 +654,22 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         rendu de la fiche + les tailles variables des moutons à l'écran ;
         étiquette top-down optionnelle non faite (secondaire).
 
-    Phase I — Généralisation
+    Phase I — Généralisation                       [PARTIEL 2026-06-05]
         Remonter Genome/LifeStage/SemanticMemory/Mind/Character dans Agent et
         câbler Loup (méthode/zone de chasse, meute) puis Humain.
+        FAIT : Loup câblé pour Genome (§ 4) + LifeStage (§ 10) — miroir des
+        Phases A+B du Mouton : champ genome, isFounder (fondateur=adulte/
+        louveteau=bébé), currentStage, growthScale, displaySize (taille du loup
+        variable à l'écran), sizeFactor héritable, héritage du génome à la
+        naissance, proba repro × fertilité × fertilityFactor, gating par stade,
+        malus longévité louveteau infertile. Rendu : scale × displaySize.
+        Tests : LoupEvolutionTest (4). 159 tests verts.
+        RESTE : (1) factoriser les helpers communs (currentStage, growthScale,
+        displaySize, clampSize, isInfertile, constantes EVO) dans Agent —
+        actuellement DUPLIQUÉS entre Mouton et Loup ; (2) généraliser Mind /
+        SemanticMemory / Character au Loup (chasse mémorisée, meute) et à
+        l'Humain ; (3) Humain n'a pas de reproduction → génome non câblé pour
+        l'instant (à faire quand l'Humain gagne un cycle de vie).
 
 
 ================================================================================
