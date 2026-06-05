@@ -171,4 +171,19 @@ class GenomeTest {
         // ASCII only : pas de caractère accentué / Unicode.
         assertTrue(s.chars().allMatch(c -> c < 128), "libellés en ASCII pur");
     }
+
+    /** Diversité initiale des fondateurs (§ 4.5) : avec proba 0 le génome reste
+     *  NEUTRE ; avec proba 1 chaque axe bascule sur un pôle. */
+    @Test
+    void seedDiversiteDesFondateurs() {
+        Genome neutre = new Genome();
+        neutre.seedDiversity(new Random(1), 0.0);
+        for (Axis a : Axis.values())
+            assertEquals(Pole.NEUTRAL, neutre.get(a), "proba 0 → reste neutre");
+
+        Genome divers = new Genome();
+        divers.seedDiversity(new Random(2), 1.0);
+        for (Axis a : Axis.values())
+            assertNotEquals(Pole.NEUTRAL, divers.get(a), "proba 1 → chaque axe non-neutre");
+    }
 }

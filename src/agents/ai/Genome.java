@@ -34,6 +34,23 @@ public final class Genome {
         axes.put(axis, pole);
     }
 
+    /** Diversité initiale recommandée par axe pour un fondateur (§ 4.5). */
+    public static final double SEED_DIVERSITY = 0.1;
+
+    /**
+     * Diversité initiale d'un fondateur (§ 4.5) : pour chaque axe, avec la
+     * probabilité {@code probPerAxis}, bascule sur un pôle aléatoire
+     * (POSITIF/NÉGATIF) ; sinon l'axe reste inchangé. Amorce la sélection dès le
+     * lancement plutôt que de partir d'une population génétiquement uniforme.
+     */
+    public void seedDiversity(Random rng, double probPerAxis) {
+        for (Axis axis : Axis.values()) {
+            if (rng.nextDouble() < probPerAxis) {
+                set(axis, rng.nextBoolean() ? Pole.POSITIVE : Pole.NEGATIVE);
+            }
+        }
+    }
+
     /** Mémorise les génomes des deux parents (snapshots) → ils deviennent les
      *  grands-parents disponibles pour le saut de génération des enfants. */
     public void rememberParents(Genome a, Genome b) {

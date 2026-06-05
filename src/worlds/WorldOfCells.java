@@ -8,6 +8,7 @@ import java.util.Collections;
 import javax.media.opengl.GL2;
 
 import agents.*;
+import agents.ai.Genome;
 import cellularautomata.ecosystem.*;
 import objects.*;
 import objects.blocks.*;
@@ -201,10 +202,16 @@ public class WorldOfCells extends World {
      * (utilisé pour les modifs live via le menu in-game) préserve l'état
      * dynamique de l'agent et clampe juste l'énergie au nouveau plafond.
      */
+    /** Aléa pour la diversité génétique initiale des fondateurs (§ 4.5). */
+    private final java.util.Random spawnRng = new java.util.Random();
+
     private void applyConfigTo(Loup l) { applyConfigTo(l, true); }
 
     private void applyConfigTo(Loup l, boolean resetDynamic) {
     	if (config == null) return;
+    	// Diversité initiale : un fondateur (spawn) peut naître avec quelques axes
+    	// non-neutres → amorce la sélection (§ 4.5). Pas sur les modifs live.
+    	if (resetDynamic) l.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);
     	l.vision     = config.loupVision;
     	l.energieD   = config.loupEnergieMax;
     	if (resetDynamic) l.energie = l.energieD;
@@ -226,6 +233,9 @@ public class WorldOfCells extends World {
 
     private void applyConfigTo(Mouton m, boolean resetDynamic) {
     	if (config == null) return;
+    	// Diversité initiale (§ 4.5) puis recalage de l'esprit sur le génome seedé
+    	// (un fondateur intelligent démarre réellement plus vif).
+    	if (resetDynamic) { m.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY); m.initMind(); }
     	m.vision      = config.moutonVision;
     	m.energieMAX  = config.moutonEnergieMax;
     	if (resetDynamic) m.energie = m.energieMAX;
