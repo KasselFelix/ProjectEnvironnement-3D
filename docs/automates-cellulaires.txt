@@ -441,9 +441,17 @@ quand la lave solidifie elle enterre les cendres restantes.
     * Nouveau CA « eau qui s'écoule » : à chaque tick, l'eau s'écoule
       vers la cellule voisine la plus basse. Permet de simuler les
       rivières et le ruissellement quand la lave bloque un cours.
-    * CA neige sur les sommets : couche blanche qui s'accumule en
-      altitude > seuil, fond progressivement avec une température
-      saisonnière (voir cycle-jour-nuit.txt pour les saisons).
+    * [RÉALISÉ 2026-06-06, L7] Neige sur les sommets. Grille `World.snowDepth`
+      (surface-state distinct du système Layer) pilotée par la loi PURE
+      `World.nextSnowDepth(current, tempC, altitudeNorm, snowLineFrac)` :
+      accumulation (×SNOW_ACCUM_RATE, plafond SNOW_MAX) sur les cellules au-dessus
+      de la ligne de neige (`SNOW_LINE_FRAC=0.55` × maxH) quand T ≤ 0°C, fonte
+      (×SNOW_MELT_RATE) quand T ≥ 2°C, jamais de neige sous la ligne. `stepSnow()`
+      balaie la grille à 1 Hz (toutes les 20 ticks) depuis
+      `WorldOfCells.stepCellularAutomata`. Rendu : `WorldOfCells.applySnowTint`
+      blanchit les sommets enneigés (par-dessus la teinte forêt) dans
+      `Landscape`. Couplé à la température L6 (cf. cycle-jour-nuit.txt). Tests :
+      `WorldSnowTest` (×5). 195 verts.
 
 --- Long terme ---
 

@@ -388,6 +388,9 @@ public class WorldOfCells extends World {
     	forestCA.step();
     	grassCA.step();
     	lavaCA.step();
+    	// L7 — neige : varie lentement, mise à jour 1×/sec (20 ticks) pour épargner
+    	// le balayage complet de la grille à chaque tick.
+    	if (getIteration() % 20 == 0) stepSnow();
     }
     
     protected void stepAgents()
@@ -574,6 +577,32 @@ public class WorldOfCells extends World {
     	col[0] = col[0]*(1f-strength) + ar*strength;
     	col[1] = col[1]*(1f-strength) + ag*strength;
     	col[2] = col[2]*(1f-strength) + ab*strength;
+    }
+
+    /**
+     * Blanchit la couleur d'un sommet de terrain selon la NEIGE accumulée (L7)
+     * sur les 4 cellules adjacentes. Appelé APRÈS applyForestTint (la neige
+     * recouvre la végétation). La force suit l'épaisseur moyenne (∈ [0, SNOW_MAX])
+     * et plafonne pour rester légèrement translucide (le relief reste lisible).
+     */
+    public void applySnowTint(int vx, int vy, float[] col)
+    {
+    	final float SNOW_TINT_MAX = 0.92f;
+    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	double sum = 0; int n = 0;
+    	for (int[] c : cells) {
+    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
+    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    		sum += getSnowDepth(cxm, cym);
+    		n++;
+    	}
+    	if (n == 0) return;
+    	float strength = (float) (sum / n / World.SNOW_MAX) * SNOW_TINT_MAX;
+    	if (strength <= 0f) return;
+    	if (strength > SNOW_TINT_MAX) strength = SNOW_TINT_MAX;
+    	col[0] = col[0]*(1f-strength) + 1f*strength;   // blend vers le blanc
+    	col[1] = col[1]*(1f-strength) + 1f*strength;
+    	col[2] = col[2]*(1f-strength) + 1f*strength;
     }
 
     public int getGrassCAValue(int x, int y)

@@ -112,6 +112,9 @@ public abstract class World {
     		this.cellStacks.add(new ArrayList<Layer>(0));
     	}
 
+    	// Grille de neige (L7) : surface-state des sommets, vide au départ.
+    	this.snowDepth = new double[__dxCA][__dyCA];
+
     	int cpt=0;
     	
     	// init altitude and color related information
@@ -269,6 +272,65 @@ public abstract class World {
 		if (t >= 5.0) return 1.0;
 		double f = 1.0 - (5.0 - t) / 15.0 * 0.3;   // -10°C → 0.7
 		return Math.max(0.7, Math.min(1.0, f));
+	}
+
+	// ===== Neige sur les sommets (L7) =====
+	/** Épaisseur de neige par cellule (0 = sol nu). Surface-state distinct du
+	 *  système Layer (la neige ne s'empile pas avec la pierre/lave) ; lu par le
+	 *  rendu pour blanchir les sommets enneigés. */
+	protected double[][] snowDepth;
+
+	/** Fraction de {@code maxEverHeight} au-dessus de laquelle la neige peut tenir. */
+	private static final double SNOW_LINE_FRAC = 0.55;
+	/** Température (°C) sous laquelle la neige s'accumule. */
+	private static final double SNOW_FREEZE_C = 0.0;
+	/** Température (°C) au-dessus de laquelle la neige fond. */
+	private static final double SNOW_MELT_C = 2.0;
+	/** Épaisseur de neige max (unités arbitraires de rendu). */
+	public static final double SNOW_MAX = 1.0;
+	private static final double SNOW_ACCUM_RATE = 0.05;
+	private static final double SNOW_MELT_RATE = 0.04;
+
+	public double getSnowDepth(int x, int y) {
+		return snowDepth == null ? 0.0 : snowDepth[x % dxCA][y % dyCA];
+	}
+	public void setSnowDepth(int x, int y, double d) {
+		if (snowDepth != null) snowDepth[x % dxCA][y % dyCA] = Math.max(0.0, Math.min(SNOW_MAX, d));
+	}
+
+	/**
+	 * Loi d'évolution PURE de la neige d'une cellule (L7), testable sans état.
+	 * La neige s'accumule sur les hauts sommets quand il gèle, fond quand il fait
+	 * doux, et ne tient jamais sous la ligne de neige (altitude normalisée &lt;
+	 * {@code snowLineFrac}).
+	 *
+	 * @param current     épaisseur actuelle
+	 * @param tempC       température du monde en °C
+	 * @param altitudeNorm altitude normalisée de la cellule ∈ [0,1] (h / maxH)
+	 */
+	public static double nextSnowDepth(double current, double tempC,
+			double altitudeNorm, double snowLineFrac) {
+		if (altitudeNorm < snowLineFrac) {
+			return Math.max(0.0, current - SNOW_MELT_RATE);   // trop bas : fond/pas de neige
+		}
+		if (tempC <= SNOW_FREEZE_C) return Math.min(SNOW_MAX, current + SNOW_ACCUM_RATE);
+		if (tempC >= SNOW_MELT_C)   return Math.max(0.0, current - SNOW_MELT_RATE);
+		return current;   // zone tampon [0, 2]°C : stable
+	}
+
+	/** Met à jour toute la grille de neige selon la température et l'altitude (L7).
+	 *  Appelée à cadence réduite par {@link worlds.WorldOfCells} (la neige varie
+	 *  lentement). No-op si la grille n'est pas allouée. */
+	public void stepSnow() {
+		if (snowDepth == null) return;
+		double maxH = getMaxEverHeight();
+		if (maxH <= 0) return;
+		double t = getTemperature();
+		for (int x = 0; x < dxCA; x++)
+			for (int y = 0; y < dyCA; y++) {
+				double hN = getCellHeight(x, y) / maxH;
+				snowDepth[x][y] = nextSnowDepth(snowDepth[x][y], t, hN, SNOW_LINE_FRAC);
+			}
 	}
 
 	public int getBefore() {

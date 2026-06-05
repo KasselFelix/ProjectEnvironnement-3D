@@ -1470,6 +1470,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	                        // Marqueur de forêt : on TEINTE le sol directement (suit le
 	                        // relief, toujours visible) au lieu d'un disque flottant.
 	                        ((worlds.WorldOfCells)_myWorld).applyForestTint(x+xIt+movingX, y+yIt+movingY, vcol);
+	                        // L7 — neige : blanchit les sommets enneigés (par-dessus la forêt).
+	                        ((worlds.WorldOfCells)_myWorld).applySnowTint(x+xIt+movingX, y+yIt+movingY, vcol);
 	                        gl.glColor3f(vcol[0], vcol[1], vcol[2]);
 	                        gl.glVertex3f( offset+x*stepX+xSign*lenX, offset+y*stepY+ySign*lenY, zValue);
                         }
