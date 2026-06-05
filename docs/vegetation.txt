@@ -398,13 +398,28 @@ l'écosystème.
 
 --- Moyen terme ---
 
-    * Dispersion de graines — un arbre adulte (g proche de 1) augmente la proba
-      de germination dans son voisinage, créant une vraie propagation de la
-      forêt plutôt qu'une germination uniforme.
+    * [RÉALISÉ 2026-06-05] Dispersion de graines — la proba de germination d'une
+      case vide est désormais portée par `ForestCA.germinationProb(x,y)` (extrait
+      de `step()`), qui ajoute un terme de dispersion : chaque arbre ADULTE voisin
+      (8-connexe) contribue à hauteur de sa maturité `growth ∈ [0,1]`, et la proba
+      est multipliée par `(1 + SEED_DISPERSAL_K=4 × pression)`. Un voisinage saturé
+      d'adultes germe donc jusqu'à 5× plus vite → la forêt se propage depuis les
+      peuplements existants. La compétition (`fComp`) ralentit ensuite la croissance
+      en zone dense → propagation surtout en lisière (réaliste). Test :
+      `ForestCATest.dispersionDeGrainesAugmenteGermination`.
     * Saisonnalité — coupler la fertilité au cycle jour/nuit ou à une saison
       lente (croissance ralentie « l'hiver »).
-    * Fertilité enrichie — intégrer la proximité de l'eau (berges plus fertiles)
-      ou l'humidité comme quatrième facteur.
+    * [RÉALISÉ 2026-06-05] Fertilité enrichie par la proximité de l'eau —
+      4e facteur `fWater` ajouté à `ForestCA.fertility` (= fAlt × fSoil × fComp ×
+      fWater). Modèle de sécheresse : `fWater ∈ [WATER_DRY_MIN=0.55, 1.0]`, valant
+      1.0 au contact de l'eau et décroissant jusqu'au plancher au-delà de
+      WATER_REACH=4 cases → les berges sont relativement plus fertiles, l'intérieur
+      sec pousse plus lentement. Reste dans [0,1] (préserve taux de croissance,
+      seed et taille de rendu). Scan en anneaux avec sortie anticipée à la 1re eau
+      (bon marché quand l'eau est proche). Test :
+      `ForestCATest.fertilitePlusHauteProcheDeLEau`. RESTE : un vrai champ
+      d'humidité dynamique (évaporation, pluie) comme alternative au simple
+      gradient de distance.
 
 --- Long terme ---
 

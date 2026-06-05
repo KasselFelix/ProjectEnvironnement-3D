@@ -228,9 +228,17 @@ PARAMS) pour `cycleTotalSec`, `dayFractionRatio`, `transitionJourSec`,
 
 --- Moyen terme ---
 
-    * Comportements diurnes / nocturnes différenciés pour tous les agents (pas
-      seulement le Loup) : Moutons qui se groupent la nuit, Humains qui rentrent
-      au foyer, etc.
+    * [RÉALISÉ 2026-06-05, volet Mouton] Comportements diurnes / nocturnes
+      différenciés. Le Loup avait déjà `attaqueNuit`. Désormais le **Mouton se
+      regroupe la nuit** (jour=0) : s'il voit des congénères, il passe en HERD et
+      marche vers le centre de masse du troupeau (`Perception.dirToFlockCentroid`),
+      sécurité du nombre ; de jour il broute/erre normalement. Test :
+      `AgentBehaviorTest.moutonSeRegroupeLaNuitPasLeJour`. L'**Humain rentre au
+      foyer** la nuit : état HOME, il s'oriente vers la bergerie
+      (`WorldOfCells.getBergerieX/Y` + `Perception.dirToCell`). Test :
+      `humainRentreAuFoyerLaNuit`. Comportements diurnes/nocturnes désormais
+      couverts pour les trois espèces (Loup attaqueNuit, Mouton regroupement,
+      Humain repli au foyer).
     * Système de saisons (cycles plus longs affectant la pousse des arbres, la
       couleur de la végétation…).
 

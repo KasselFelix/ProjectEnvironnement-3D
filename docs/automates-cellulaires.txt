@@ -412,9 +412,13 @@ quand la lave solidifie elle enterre les cendres restantes.
 
 --- Court terme ---
 
-    * Test JUnit pour ForestCA et GrassCA. Au moins valider l'invariant
-      de la restriction d'altitude pour GrassCA, et le compteur de
-      dispersion des cendres pour ForestCA.
+    * [RÉALISÉ 2026-06-05, en partie] Tests JUnit ForestCA / GrassCA. ForestCA
+      est couvert (`ForestCATest` : fertilité pierre/compétition/eau, croissance,
+      dispersion de graines). L'invariant d'altitude de GrassCA est désormais
+      validé : le prédicat `GrassCA.canGrowGrass(x,y)` (bande [maxH/12, maxH×0.7],
+      extrait de `init()`/`step()`) est testé par `GrassCATest`
+      (`herbeSeulementDansLaBandeDAltitude`, `pasDHerbeDansLEau`). RESTE : un test
+      du compteur de dispersion des cendres (tDispertion) de ForestCA.
     * Documenter chaque constante avec son unité et son ordre de grandeur
       attendu (le code en a déjà certaines, mais pas toutes).
 
@@ -422,9 +426,13 @@ quand la lave solidifie elle enterre les cendres restantes.
 
     * Couplage CA renforcé : la fumée du feu (nouveau CA ou champ
       d'opacité au-dessus de la forêt) devrait réduire la visibilité
-      des agents pendant quelques ticks. Et après le passage du feu,
-      la cendre devrait fertiliser le sol (augmenter localement pA de
-      ForestCA et pH de GrassCA pour quelques dizaines de ticks).
+      des agents pendant quelques ticks. [RÉALISÉ 2026-06-05, volet cendre→sol]
+      Après le passage du feu, la cendre fertilise désormais le sol, à la fois
+      pour ForestCA (`markAsh` + `ASH_BOOST_FACTOR=3` dans `germinationProb`,
+      ~200 ticks ; test `ForestCATest.cendreFertiliseLeSol`) ET pour GrassCA
+      (`markAsh` + bonus dans `grassGerminationProb` ; test
+      `GrassCATest.cendreFertiliseLeSolPourLHerbe`). RESTE : le CA fumée réduisant
+      la visibilité des agents.
     * Nouveau CA « eau qui s'écoule » : à chaque tick, l'eau s'écoule
       vers la cellule voisine la plus basse. Permet de simuler les
       rivières et le ruissellement quand la lave bloque un cours.

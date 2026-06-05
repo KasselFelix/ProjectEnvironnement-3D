@@ -225,19 +225,34 @@ déséquilibres se lisent sur le graphe Lotka-Volterra (touche `g`).
 
 --- Court terme ---
 
-    * Donner un rôle actif à l'Humain : « berger » (suit le centre de masse du
-      troupeau) ou « chasseur » (cible le Loup le plus proche). Les hooks de la
-      FSM sont déjà en place.
-    * État « repos » : à énergie maximale, l'agent s'arrête au lieu d'errer
-      (économie d'énergie).
+    * [RÉALISÉ 2026-06-05, variante berger] Rôle actif de l'Humain : « berger »
+      — quand il voit le troupeau (état HERD), l'Humain s'oriente vers le centre
+      de masse des Moutons visibles (`Perception.dirToFlockCentroid`). Les hooks
+      FSM (`decideState`/`applyState`/`prey`) portent la logique. Effet écologique
+      ajouté : le Loup fuit l'Humain (FLEE_PREDATOR, priorité sur la chasse) →
+      le berger protège réellement le troupeau. RESTE : la variante « chasseur »
+      (l'Humain poursuit activement le Loup le plus proche).
+    * [RÉALISÉ 2026-06-05, volet comportemental] État « repos » (REST) : un
+      Mouton à énergie MAXIMALE, sans danger, se repose (rumination) et ne se
+      déplace pas ce tick — `decideState` renvoie REST, `applyState` met
+      `wantsToMove=false`. Étendu au **Loup** (REST à pleine énergie, de jour,
+      sans proie ; test `loupRepuPleineEnergieSeRepose`). Tests Mouton :
+      `moutonRepuSeReposeEtNeBougePas`, `moutonNonRepuNeSeReposePas`. RESTE : le
+      volet « économie d'énergie » (coût métabolique du déplacement > coût au
+      repos) est délibérément différé — il modifie l'équilibre Lotka-Volterra et
+      doit être validé en simulation, pas seulement en test unitaire. (L'Humain
+      a déjà un rôle actif de berger, le repos y est moins pertinent.)
 
 --- Moyen terme ---
 
     * Utility AI : au lieu de gardes booléennes, chaque action reçoit un score
       calculé sur les variables d'état, la décision étant l'argmax. Plus souple,
       transitions plus fluides.
-    * Communication entre agents : un Mouton qui voit un Loup « alerte » ses
-      voisins (drapeau diffusé en anneau pendant quelques ticks).
+    * [RÉALISÉ 2026-06-05] Communication entre agents : un Mouton qui voit un Loup
+      alerte ses voisins (`alertNeighbours()`, rayon 6, `alertTtl`/`alertDir`
+      partagés). Les moutons alertés fuient avec le troupeau sans voir le loup ;
+      seuls les témoins directs propagent (pas de cascade). Test :
+      `moutonAlerteSesVoisinsDUnLoup`. Cf. agents.txt pour le détail.
 
 --- Long terme ---
 
@@ -246,9 +261,11 @@ déséquilibres se lisent sur le graphe Lotka-Volterra (touche `g`).
     * Apprentissage par renforcement : l'agent apprend par essai-erreur à partir
       d'une fonction de récompense (survie, énergie, descendance). Demande une
       boucle d'apprentissage (Q-table ou réseau neuronal).
-    * Mémoire spatiale : trace des cellules visitées et des positions où l'agent
-      a vu proies ou dangers, pour planifier ses déplacements. Cf. littérature
-      ALife (Sugarscape, Epstein-Axtell).
+    * [RÉALISÉ 2026-06-05, base] Mémoire spatiale : trace des 8 dernières cellules
+      visitées (`Agent.recordVisit`/`hasVisitedRecently`), utilisée par le Mouton
+      pour éviter d'errer en boucle (`aheadVisitedRecently`). Cf. agents.txt. RESTE
+      (volet planification) : mémoriser les positions où l'agent a vu proies ou
+      dangers pour planifier ses déplacements (Sugarscape, Epstein-Axtell).
 
 
 ================================================================================

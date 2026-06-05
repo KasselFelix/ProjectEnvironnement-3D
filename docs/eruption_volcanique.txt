@@ -463,8 +463,14 @@ Moyen terme :
       opposée).
     * **Tremblement précurseur** avant les éruptions auto (`pErruption`) :
       screen shake léger 5-10 sec avant le trigger.
-    * **Reforestation accélérée sur cendres** : sol fertile (`pA` × 3
-      sur cellules ayant eu une couche cendre récemment dispersée).
+    * [RÉALISÉ 2026-06-05] **Reforestation accélérée sur cendres** : à la
+      dispersion des cendres d'un arbre brûlé (`step()` : BURNT+tDispertion → 0),
+      `ForestCA.markAsh(i,j)` enrichit le sol pour ASH_BOOST_DURATION=200 ticks.
+      `germinationProb` multiplie alors la proba par ASH_BOOST_FACTOR=3. L'effet
+      s'épuise (décrément 1×/cellule/tick). Succession écologique : la forêt
+      repousse plus vite là où elle a brûlé. Même bonus appliqué à l'herbe
+      (GrassCA.grassGerminationProb ; test cendreFertiliseLeSolPourLHerbe). Tests :
+      `ForestCATest.cendreFertiliseLeSol`, `GrassCATest.cendreFertiliseLeSolPourLHerbe`.
     * **Bombes de lave rebondissantes** : tephras LAVA qui rebondissent
       une fois avant de se poser.
 

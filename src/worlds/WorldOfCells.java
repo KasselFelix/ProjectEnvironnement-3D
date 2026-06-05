@@ -621,6 +621,12 @@ public class WorldOfCells extends World {
 		return bergerie;
 	}
 
+	/** Coordonnée X de la bergerie (foyer des Humains). Décodage identique au
+	 *  rendu (cf. Landscape : bergerie % dxCA). */
+	public int getBergerieX() { return bergerie % getWidth(); }
+	/** Coordonnée Y de la bergerie (foyer des Humains). */
+	public int getBergerieY() { return bergerie / getWidth(); }
+
 	public void setBergerie(int bergerie) {
 		this.bergerie = bergerie;
 	}

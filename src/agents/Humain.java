@@ -38,7 +38,9 @@ public class Humain extends Agent {
 
 	@Override public String getCurrentBehavior() {
 		if (playerControlled) return "Piloté";
-		return _fireState == 1 ? "En feu" : "Errance";
+		if (_fireState == 1)  return "En feu";
+		if (currentState == agents.ai.AgentState.HOME) return "Rentre au foyer";
+		return currentState == agents.ai.AgentState.HERD ? "Garde le troupeau" : "Errance";
 	}
 
 	// ===== Hooks du Template Method (Agent.step) =====
@@ -54,9 +56,19 @@ public class Humain extends Agent {
 	@Override
 	protected void applyControlSpeed() { vitesse = vcourse; }
 
+	/** Le berger « perçoit » le troupeau : les moutons alimentent preyDir/preyVisible
+	 *  du Percept (cf. Agent.step → Perception.sense). */
+	@Override
+	protected java.util.List<? extends objects.UniqueDynamicObject> prey() {
+		return world.moutons;
+	}
+
 	@Override
 	protected agents.ai.AgentState decideState(agents.ai.Percept p) {
-		return isOnFire() ? agents.ai.AgentState.ON_FIRE : agents.ai.AgentState.WANDER;
+		if (isOnFire())          return agents.ai.AgentState.ON_FIRE;
+		if (world.getJour() == 0) return agents.ai.AgentState.HOME;  // la nuit, rentre au foyer
+		if (p.preyVisible())     return agents.ai.AgentState.HERD;   // berger : rejoint le troupeau
+		return agents.ai.AgentState.WANDER;
 	}
 
 	@Override
@@ -64,6 +76,20 @@ public class Humain extends Agent {
 		if (s == agents.ai.AgentState.ON_FIRE) {
 			if (p.waterDir >= 0) _orient = p.waterDir;
 			return agents.ai.MoveConstraints.amphibious();
+		}
+		if (s == agents.ai.AgentState.HOME) {
+			// La nuit, l'Humain rallie le foyer (bergerie).
+			worlds.WorldOfCells wc = (worlds.WorldOfCells) world;
+			int dir = agents.ai.Perception.dirToCell(this, world, wc.getBergerieX(), wc.getBergerieY());
+			if (dir >= 0) _orient = dir;
+			return agents.ai.MoveConstraints.landBound();
+		}
+		if (s == agents.ai.AgentState.HERD) {
+			// Suit le CENTRE DE MASSE du troupeau visible (pas la bête la plus
+			// proche) — un berger conduit le gros du troupeau, pas une traînarde.
+			int dir = agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons);
+			if (dir >= 0) _orient = dir;
+			return agents.ai.MoveConstraints.landBound();
 		}
 		if (Math.random() < 0.25) _orient = (int)(Math.random() * 4);
 		return agents.ai.MoveConstraints.landBound();

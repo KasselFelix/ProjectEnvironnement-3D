@@ -69,6 +69,92 @@ class ForestCATest {
     }
 
     @Test
+    void fertilitePlusHauteProcheDeLEau() {
+        WorldOfCells w = buildWorld();
+        double h0 = w.getMaxEverHeight() * 0.5;
+        if (h0 <= 0) h0 = 1.0;
+
+        int ax = 10, ay = 10;   // au bord de l'eau
+        int bx = 40, by = 40;   // loin de toute eau
+
+        // Deux régions distinctes aplaties en terre à la MÊME altitude h0, sans
+        // arbres voisins ni pierre → seul le facteur « proximité de l'eau » varie.
+        for (int[] c : new int[][] { {ax, ay}, {bx, by} }) {
+            for (int dx = -6; dx <= 6; dx++)
+                for (int dy = -6; dy <= 6; dy++) {
+                    int x = (c[0] + dx + DX) % DX, y = (c[1] + dy + DY) % DY;
+                    w.setCellHeight(x, y, h0);
+                    w.forestCA.setCellState(x, y, 0);
+                }
+        }
+        // Une cellule d'eau juste au Sud de A (B reste au sec dans son disque).
+        w.setCellHeight(ax % DX, (ay + 1) % DY, -1.0);
+
+        double fA = w.forestCA.fertility(ax, ay);
+        double fB = w.forestCA.fertility(bx, by);
+
+        assertTrue(fB > 0, "la cellule sèche garde une fertilité > 0 (" + fB + ")");
+        assertTrue(fA > fB,
+                "une cellule au bord de l'eau doit être plus fertile qu'une cellule "
+                + "sèche de même altitude (" + fA + " > " + fB + ")");
+    }
+
+    @Test
+    void dispersionDeGrainesAugmenteGermination() {
+        WorldOfCells w = buildWorld();
+        int x = 25, y = 25;
+        w.forestCA.pA = 0.01;   // proba de base non nulle pour comparer
+
+        // Case vide sur terre, sans pierre ; voisinage vide au départ.
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++) {
+                int cx = (x + dx + DX) % DX, cy = (y + dy + DY) % DY;
+                w.setCellHeight(cx, cy, 1.0);
+                w.forestCA.setCellState(cx, cy, 0);
+                w.forestCA.setGrowth(cx, cy, 0.0);
+            }
+        double pBare = w.forestCA.germinationProb(x, y);
+
+        // Entoure la case de 8 arbres ADULTES (état 1, maturité 1).
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++) {
+                if (dx == 0 && dy == 0) continue;
+                int cx = (x + dx + DX) % DX, cy = (y + dy + DY) % DY;
+                w.forestCA.setCellState(cx, cy, 1);
+                w.forestCA.setGrowth(cx, cy, 1.0);
+            }
+        double pSeeded = w.forestCA.germinationProb(x, y);
+
+        assertTrue(pSeeded > pBare,
+                "des arbres adultes voisins doivent augmenter la proba de germination ("
+                + pSeeded + " > " + pBare + ")");
+    }
+
+    @Test
+    void cendreFertiliseLeSol() {
+        WorldOfCells w = buildWorld();
+        int x = 25, y = 25;
+        w.forestCA.pA = 0.01;
+
+        // Case vide, sans arbres voisins ni pierre → seule la cendre varie.
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++) {
+                int cx = (x + dx + DX) % DX, cy = (y + dy + DY) % DY;
+                w.setCellHeight(cx, cy, 1.0);
+                w.forestCA.setCellState(cx, cy, 0);
+                w.forestCA.setGrowth(cx, cy, 0.0);
+            }
+        double pBefore = w.forestCA.germinationProb(x, y);
+
+        w.forestCA.markAsh(x, y);   // sol enrichi par la cendre d'un incendie
+        double pAfter = w.forestCA.germinationProb(x, y);
+
+        assertTrue(pAfter > pBefore,
+                "la cendre récente doit accélérer la reforestation (" + pAfter
+                + " > " + pBefore + ")");
+    }
+
+    @Test
     void croissanceAugmenteEtPlafonne() {
         WorldOfCells w = buildWorld();
         int[] c = bestFertileCell(w);

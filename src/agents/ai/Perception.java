@@ -89,6 +89,44 @@ public final class Perception {
                 fireAdj, lavaAdj, inWater, onLava, cardinalFree);
     }
 
+    /**
+     * Direction dominante (0=N/1=E/2=S/3=O) vers le CENTRE DE MASSE des membres
+     * de {@code flock} situés dans le rayon de vision de {@code self}, tore-aware.
+     * Renvoie -1 si aucun membre n'est visible. Utilisé par le berger (Humain)
+     * pour suivre le barycentre du troupeau plutôt que la bête la plus proche.
+     */
+    public static int dirToFlockCentroid(objects.UniqueDynamicObject self, World world,
+                                         List<? extends UniqueDynamicObject> flock) {
+        if (flock == null) return -1;
+        final int ax = self.x, ay = self.y;
+        final int w = world.getWidth(), h = world.getHeight();
+        final int vision = visionOf(self);
+        long sumDx = 0, sumDy = 0;
+        int n = 0;
+        for (UniqueDynamicObject a : flock) {
+            if (a == self) continue;
+            if (torusDist(ax, ay, a.x, a.y, w, h) > vision) continue;
+            sumDx += signedDelta(ax, a.x, w);   // >0 → barycentre à l'Est
+            sumDy += signedDelta(ay, a.y, h);   // >0 → barycentre au Sud
+            n++;
+        }
+        if (n == 0) return -1;
+        double mdx = sumDx / (double) n, mdy = sumDy / (double) n;
+        if (Math.abs(mdx) >= Math.abs(mdy)) return mdx >= 0 ? 1 : 3;
+        return mdy >= 0 ? 2 : 0;
+    }
+
+    /**
+     * Direction dominante (0=N/1=E/2=S/3=O) de l'agent {@code self} vers la
+     * cellule cible (tx,ty), tore-aware. -1 si l'agent est déjà sur la cible.
+     * Utilisé pour rallier un point fixe (ex : l'Humain qui rentre au foyer).
+     */
+    public static int dirToCell(objects.UniqueDynamicObject self, World world, int tx, int ty) {
+        final int w = world.getWidth(), h = world.getHeight();
+        if (self.x == tx && self.y == ty) return -1;
+        return dominantDir(self.x, self.y, tx, ty, w, h);
+    }
+
     /** Distance torique min entre deux cellules. */
     static double torusDist(int ax, int ay, int bx, int by, int w, int h) {
         double dx = Math.min((ax - bx + w) % w, (bx - ax + w) % w);

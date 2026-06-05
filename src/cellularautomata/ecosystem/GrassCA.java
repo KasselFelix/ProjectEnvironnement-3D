@@ -25,16 +25,51 @@ public class GrassCA extends CellularAutomataInteger {
 	 * pour cohérence (la végétation reconquiert la pierre lentement).
 	 */
 	private static final double STONE_GROWTH_FACTOR = 0.1;
+	/** Tours restants d'enrichissement du sol par la cendre (post-incendie) ; booste pH. */
+	private int[][] ashBoost;
+	/** Facteur multiplicatif de germination de l'herbe sur sol cendré récent. */
+	private static final double ASH_BOOST_FACTOR = 3.0;
+	/** Durée (ticks) de l'effet fertilisant de la cendre. */
+	private static final int ASH_BOOST_DURATION = 200;
 	
 	public GrassCA ( World __world, int __dx , int __dy, CellularAutomataDouble cellsHeightValuesCA )
 	{
 		super(__dx,__dy,false ); // buffering must be true.
 		
 		_cellsHeightValuesCA = cellsHeightValuesCA;
-		
+
 		this.world = __world;
+		this.ashBoost = new int[_dx][_dy];
 	}
 	
+	/**
+	 * Invariant d'altitude de l'herbe : elle ne pousse que dans une bande
+	 * d'altitude [maxH/12, maxH×0.7] — ni dans l'eau / le littoral très bas
+	 * (h < maxH/12), ni sur les hauts sommets (h > maxH×0.7). La borne basse
+	 * (positive) implique aussi « terre ferme ». Prédicat pur, partagé par
+	 * `init()` et `step()`.
+	 */
+	public boolean canGrowGrass(int x, int y) {
+		double maxH = world.getMaxEverHeight();
+		double h = world.getCellHeight(x, y);
+		return h >= maxH / 12 && h <= maxH * 0.7;
+	}
+
+	/** Marque la cellule comme enrichie par la cendre : booste pH pendant
+	 *  ASH_BOOST_DURATION ticks (succession après incendie). */
+	public void markAsh(int x, int y) {
+		ashBoost[x][y] = ASH_BOOST_DURATION;
+	}
+
+	/** Probabilité de germination de l'herbe sur la case (x,y) : pH de base,
+	 *  réduit sur pierre, augmenté sur sol cendré récent. Fonction pure. */
+	public double grassGerminationProb(int x, int y) {
+		double p = pH;
+		if (world.getStoneCAValue(x, y) > 0) p *= STONE_GROWTH_FACTOR;
+		if (ashBoost[x][y] > 0) p *= ASH_BOOST_FACTOR;   // sol cendré récent → repousse accélérée
+		return p;
+	}
+
 	public void init()
 	{
 		for ( int x = 0 ; x != _dx ; x++ )
@@ -42,9 +77,7 @@ public class GrassCA extends CellularAutomataInteger {
     		{
     			if ( _cellsHeightValuesCA.getCellState(x,y) >= 0 )
     			{
-    				if ( Math.random() < dherbe 
-    						&& world.getCellHeight(x,y)>=world.getMaxEverHeight()/12 
-    						&& world.getCellHeight(x,y)<=world.getMaxEverHeight()*0.7){
+    				if ( Math.random() < dherbe && canGrowGrass(x, y)){
     					this.setCellState(x, y, 1); // grass
     					NbHerbe+=1;
     				}
@@ -67,6 +100,7 @@ public class GrassCA extends CellularAutomataInteger {
     	for(int d=0;d<world.list.size();d++){
     		int i=world.list.get(d)%_dx;
 			int j=world.list.get(d)/_dy;
+			if (ashBoost[i][j] > 0) ashBoost[i][j]--;   // l'enrichissement cendre s'épuise (1×/cellule/tick)
     			if (this.getCellState(i, j)>=0 &&  this.getCellState(i,j)<= 3+tDispertion)
     			{	
     				// Pour une case sans herbe. Pas de germination sur la lave
@@ -75,13 +109,7 @@ public class GrassCA extends CellularAutomataInteger {
     				// mais avec proba réduite (sol minéral peu fertile).
     				if ( this.getCellState(i,j) == 0
     						&& world.getLavaCAValue(i, j)==0){
-    					double effectivePH = pH;
-    					if (world.getStoneCAValue(i, j) > 0) {
-    						effectivePH *= STONE_GROWTH_FACTOR;
-    					}
-    					if(Math.random() < effectivePH
-    							&& world.getCellHeight(i,j)>=world.getMaxEverHeight()/12
-    							&& world.getCellHeight(i,j)<=world.getMaxEverHeight()*0.7 ){
+    					if(Math.random() < grassGerminationProb(i, j) && canGrowGrass(i, j)){
     						this.setCellState(i,j,1);
     						/*solid[x][y][]=1;*/
     						NbHerbe+=1;
@@ -90,6 +118,7 @@ public class GrassCA extends CellularAutomataInteger {
     				//pour un herbe en cendre
     				else if ( this.getCellState(i,j) == 3+tDispertion){
 	    				this.setCellState(i,j,0); //dispertion
+	    				markAsh(i, j);            // la cendre de l'herbe brûlée enrichit le sol
 	    			}
     				// Pour une case avec herbe
 	    			else if ( this.getCellState(i,j) == 1 ) // grass

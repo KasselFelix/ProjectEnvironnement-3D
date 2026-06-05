@@ -125,6 +125,8 @@ public class Loup extends Agent {
 		if (m == 1)          return "Mange";
 		if (playerControlled) return "Piloté";
 		switch (currentState) {
+			case FLEE_PREDATOR: return "Fuit berger";
+			case REST:      return "Repos";
 			case HUNT:      return "Chasse";
 			case SEARCH:    return "Cherche proie";
 			case SEEK_LAND: return "Cherche terre";
@@ -169,6 +171,13 @@ public class Loup extends Agent {
 	@Override
 	protected java.util.List<? extends objects.UniqueDynamicObject> prey() {
 		return world.moutons;
+	}
+
+	/** Le Loup craint l'Humain (berger) : les Humains alimentent predatorDir du
+	 *  Percept → le loup fuit, ce qui rend un troupeau gardé plus sûr. */
+	@Override
+	protected java.util.List<? extends objects.UniqueDynamicObject> predators() {
+		return world.humains;
 	}
 
 	@Override
@@ -291,9 +300,11 @@ public class Loup extends Agent {
 	public AgentState decideState(Percept p) {
 		boolean enChasse = energie < energieD * HUNGER_RATIO || attaqueNuit == 1;
 		if (isOnFire())                       return AgentState.ON_FIRE;
+		if (p.predatorVisible())              return AgentState.FLEE_PREDATOR;  // fuit l'Humain (prime sur la faim)
 		if (enChasse && p.preyVisible())      return AgentState.HUNT;
 		if (p.inWater)                        return AgentState.SEEK_LAND;
 		if (enChasse)                         return AgentState.SEARCH;   // balayage spirale
+		if (energie >= energieD)              return AgentState.REST;     // repu plein → repos
 		return AgentState.WANDER;                                          // flânerie économe
 	}
 
@@ -302,6 +313,12 @@ public class Loup extends Agent {
 			case ON_FIRE:
 				// fuit vers l'eau si vue, sinon continue tout droit (pas de demi-tour)
 				if (p.waterDir >= 0) _orient = p.waterDir;
+				vitesse = vcourse;
+				return MoveConstraints.amphibious();
+			case FLEE_PREDATOR:
+				// Fuit à l'opposé de l'Humain. Le loup nage bien (swimFactor élevé)
+				// → amphibie, pas besoin d'éviter l'eau comme le mouton.
+				_orient = AgentState.opposite(p.predatorDir);
 				vitesse = vcourse;
 				return MoveConstraints.amphibious();
 			case HUNT:
@@ -318,6 +335,10 @@ public class Loup extends Agent {
 				if (p.landDir >= 0) _orient = p.landDir;
 				vitesse = vcourse;   // ralenti dans l'eau par swimFactor (postMove)
 				return MoveConstraints.amphibious();
+			case REST:
+				// Repu (énergie pleine) : repos sur place (économie d'énergie).
+				wantsToMove = false;
+				return MoveConstraints.landBound();
 			case SEARCH:
 				spiralSearch();
 				return MoveConstraints.landBound();

@@ -46,6 +46,38 @@ public class Agent extends UniqueDynamicObject{
 	 */
 	protected boolean wantsToMove = true;
 
+	// ---- Mémoire spatiale (carte mentale anti-errance en boucle) ----
+	private static final int MEM_SIZE = 8;
+	private final int[] memVisitX = new int[MEM_SIZE];
+	private final int[] memVisitY = new int[MEM_SIZE];
+	private int memVisitCount = 0;
+	private int memVisitHead = 0;
+
+	/** Enregistre la cellule (vx,vy) dans la mémoire spatiale (buffer circulaire
+	 *  des MEM_SIZE dernières positions). Appelé à chaque tour effectif. */
+	protected void recordVisit(int vx, int vy) {
+		memVisitX[memVisitHead] = vx;
+		memVisitY[memVisitHead] = vy;
+		memVisitHead = (memVisitHead + 1) % MEM_SIZE;
+		if (memVisitCount < MEM_SIZE) memVisitCount++;
+	}
+
+	/** Vrai si (vx,vy) figure dans la mémoire spatiale récente. */
+	public boolean hasVisitedRecently(int vx, int vy) {
+		for (int k = 0; k < memVisitCount; k++) {
+			if (memVisitX[k] == vx && memVisitY[k] == vy) return true;
+		}
+		return false;
+	}
+
+	/** Vrai si la cellule droit devant (selon _orient) a été visitée récemment
+	 *  → sert à éviter de retourner sur ses pas pendant l'errance. */
+	protected boolean aheadVisitedRecently() {
+		int ax = (x + orientDx(_orient) + world.getWidth()) % world.getWidth();
+		int ay = (y + orientDy(_orient) + world.getHeight()) % world.getHeight();
+		return hasVisitedRecently(ax, ay);
+	}
+
 	/**
 	 * Contrôle manuel par le joueur. Quand {@code playerControlled} est vrai,
 	 * {@code step()} court-circuite decideState/applyState : l'agent prend pour
@@ -268,6 +300,7 @@ public class Agent extends UniqueDynamicObject{
 				if (canMove() && wantsToMove) agents.ai.Locomotion.move(this, world, _orient, c);
 			}
 			postMove(p);                // blocs post-mouvement spécifiques (manger, feu, énergie, repro…)
+			recordVisit(x, y);          // mémoire spatiale : trace la cellule occupée ce tour
 		}
 		postTick();                     // tourne CHAQUE tick (ex: drain de feu)
 	}

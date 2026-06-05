@@ -312,22 +312,61 @@ Idées d'extensions classées par effort estimé.
 
 --- Court terme ---
 
-    * Implémenter le step() de l'Humain — au moins une logique de chasseur
-      (cible Loup) ou de berger (suit un Mouton). Le squelette est déjà là.
-    * Activer la mort par vieillesse (maxAgeDays > 0). Le champ existe,
-      `getAgeDays()` aussi, il suffit de l'utiliser dans la condition de
-      mort.
+    * [RÉALISÉ 2026-06-05] Rôle actif de l'Humain — logique de BERGER : quand
+      des Moutons sont dans son champ de vision, l'Humain quitte l'errance
+      (état HERD) et s'oriente vers le CENTRE DE MASSE du troupeau, et non
+      vers la bête la plus proche (un berger conduit le gros du troupeau, pas
+      une traînarde). Implémentation : `Humain.prey()` expose `world.moutons`
+      au Percept, `decideState` bascule en HERD si `preyVisible()`, et
+      `Perception.dirToFlockCentroid(...)` calcule la direction du barycentre
+      (tore-aware). Tests : `AgentBehaviorTest.humainBergerSuitLeCentreDeMasse
+      DuTroupeau` (contraste centroïde Est vs traînarde Ouest) et
+      `humainSansTroupeauEnVueErre`.
+    * [RÉALISÉ 2026-06-05] Effet écologique du berger — le Loup CRAINT l'Humain :
+      `Loup.predators()` expose `world.humains` au Percept, et `decideState`
+      bascule en FLEE_PREDATOR dès qu'un Humain est en vue, AVANT le test de
+      chasse → la peur du berger prime sur la faim (le loup fuit à l'opposé du
+      berger, à `vcourse`). Un troupeau gardé tient donc les loups à distance.
+      Tests : `loupFuitHumainMemeAffameAvecProie` (priorité fuite > chasse) et
+      `loupSansHumainChasseNormalement` (garde-fou : pas d'Humain → HUNT normal).
+      RESTE À FAIRE : variante CHASSEUR de l'Humain (cibler/poursuivre le Loup
+      le plus proche au lieu de seulement suivre le troupeau).
+    * [RÉALISÉ] Mort par vieillesse (maxAgeDays > 0) — opérationnelle dans
+      `Loup.preStepAbort()` / `Mouton.preStepAbort()`
+      (`if (maxAgeDays > 0 && getAgeDays() > maxAgeDays) _alive = false`),
+      câblée via `config.loupMaxAgeDays` / `moutonMaxAgeDays`. Test :
+      `LoupTest.loupMeurtParVieillesse`.
     * Système de faim variable selon l'activité (chasser coûte plus que
       marcher) pour rendre la dynamique plus riche.
 
 --- Moyen terme ---
 
-    * Reproduction sexuée (besoin de deux agents adjacents au lieu d'un
-      tirage probabiliste). Permet d'introduire des traits héritables.
-    * Communication simple entre agents (ex : un Mouton qui voit un Loup
-      « alerte » les Moutons voisins via un drapeau partagé).
-    * Mémoire spatiale : chaque agent garde la trace des cellules visitées
-      récemment (carte mentale petite) pour éviter d'errer en boucle.
+    * [RÉALISÉ 2026-06-05, volet Mouton] Reproduction sexuée — la reproduction du
+      Mouton exige désormais un congénère vivant à portée (`hasReproPartnerNearby`,
+      rayon REPRO_RADIUS=3), en plus des gardes énergie + Prepro : un mouton isolé
+      ne se reproduit plus. Le regroupement nocturne maintient le troupeau assez
+      serré pour que la repro reste possible (anti-extinction par dispersion).
+      Tests : `moutonSeReproduitSeulementAvecPartenaire` (+ tests de repro
+      existants mis à jour avec partenaire). RESTE : même règle pour le Loup, et
+      surtout les **traits héritables** (chaque petit hérite + mute les valeurs
+      du/des parent(s) — base de la sélection évolutive, cf. item long terme).
+    * [RÉALISÉ 2026-06-05] Communication entre proies (alarme du troupeau) — un
+      Mouton qui VOIT un Loup (FLEE_PREDATOR) alerte via `alertNeighbours()` tous
+      les Moutons à portée `ALERT_RADIUS=6` (tore-aware) : ils reçoivent
+      `alertTtl=ALERT_DURATION=4` tours et le cap de fuite du troupeau (`alertDir`).
+      Un mouton alerté fuit (FLEE_PREDATOR via `alertTtl>0`) même sans voir le loup,
+      dans le même cap → le troupeau détale ensemble. Anti-cascade : seuls les
+      moutons qui voient réellement le loup propagent (un alerté ne ré-alerte pas).
+      L'alarme s'estompe (`alertTtl--` par tour). Test :
+      `AgentBehaviorTest.moutonAlerteSesVoisinsDUnLoup`.
+    * [RÉALISÉ 2026-06-05] Mémoire spatiale (carte mentale) — `Agent` porte un
+      buffer circulaire des 8 dernières cellules visitées (`recordVisit` appelé à
+      chaque tour, `hasVisitedRecently`). En errance, le Mouton consulte
+      `aheadVisitedRecently()` : si la case droit devant a déjà été visitée, il
+      tourne au lieu d'y retourner → moins d'allers-retours en boucle. Tests :
+      `memoireSpatialeRetientLesCellulesRecentes` (structure + oubli au-delà de 8),
+      `moutonEviteDeRevenirSurSesPas` (anti-boucle). RESTE : étendre l'anti-boucle
+      au Loup/Humain, et mémoriser aussi les positions de proies/dangers vus.
 
 --- Long terme ---
 

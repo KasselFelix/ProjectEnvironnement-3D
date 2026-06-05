@@ -110,7 +110,30 @@ public class ForestCA extends CellularAutomataInteger {
 			}
 		double fComp = 1.0 - COMP_K * (n / 8.0);
 		if (fComp < 0) fComp = 0;
-		return fAlt * fSoil * fComp;
+		return fAlt * fSoil * fComp * waterProximityFactor(x, y);
+	}
+
+	/**
+	 * Facteur d'humidité ∈ [WATER_DRY_MIN, 1] : modélise la sécheresse loin de
+	 * l'eau (berges plus fertiles). 1.0 au contact de l'eau, décroît avec la
+	 * distance, plancher WATER_DRY_MIN au-delà de WATER_REACH cases. Reste dans
+	 * [0,1] → préserve l'invariant fertilité ∈ [0,1] (taux de croissance, seed,
+	 * taille de rendu). Scan en anneaux avec sortie anticipée à la 1re eau
+	 * trouvée : bon marché là où il y a de l'eau proche (cas courant), coûteux
+	 * seulement au cœur des terres sèches.
+	 */
+	private double waterProximityFactor(int x, int y) {
+		for (int r = 1; r <= WATER_REACH; r++) {
+			for (int dx = -r; dx <= r; dx++)
+				for (int dy = -r; dy <= r; dy++) {
+					if (Math.max(Math.abs(dx), Math.abs(dy)) != r) continue; // anneau
+					if (world.getCellHeight((x + dx + _dx) % _dx, (y + dy + _dy) % _dy) < 0) {
+						double prox = 1.0 - (double) (r - 1) / WATER_REACH; // r=1→1, r=REACH→1/REACH
+						return WATER_DRY_MIN + (1.0 - WATER_DRY_MIN) * prox;
+					}
+				}
+		}
+		return WATER_DRY_MIN;
 	}
 
 	/** Nombre de ticks pour atteindre g=1 en fertilité maximale (≥ 1). */
@@ -118,6 +141,38 @@ public class ForestCA extends CellularAutomataInteger {
 		SimulationConfig c = SimulationConfig.getInstance();
 		double ticksPerGameDay = (double) c.cycleTotalSec * c.simulationHz;
 		return Math.max(1.0, treeGrowthDays * ticksPerGameDay);
+	}
+
+	/**
+	 * Probabilité qu'un arbre germe sur la case vide (x,y) ce tick. Combine :
+	 *  - la proba de base `pA` ;
+	 *  - la pénalité de sol minéral (× STONE_GROWTH_FACTOR sur pierre) ;
+	 *  - la DISPERSION DE GRAINES : les arbres ADULTES voisins (8-connexe,
+	 *    pondérés par leur maturité `growth ∈ [0,1]`) augmentent la proba via
+	 *    `× (1 + SEED_DISPERSAL_K × pression)`. La forêt se propage donc depuis
+	 *    les peuplements existants plutôt que par germination uniforme.
+	 * Fonction pure (lecture seule). Bornée par construction à pA × (1 + K).
+	 */
+	public double germinationProb(int x, int y) {
+		double p = pA;
+		if (world.getStoneCAValue(x, y) > 0) p *= STONE_GROWTH_FACTOR;
+		if (ashBoost[x][y] > 0) p *= ASH_BOOST_FACTOR;   // sol cendré récent → reforestation accélérée
+		double seed = 0.0;
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++) {
+				if (dx == 0 && dy == 0) continue;
+				int nx = (x + dx + _dx) % _dx, ny = (y + dy + _dy) % _dy;
+				if (this.getCellState(nx, ny) == 1) seed += growth[nx][ny]; // maturité ∈ [0,1]
+			}
+		seed /= 8.0;                                    // pression de graines ∈ [0,1]
+		return p * (1.0 + SEED_DISPERSAL_K * seed);
+	}
+
+	/** Marque la cellule comme enrichie par la cendre (post-incendie) : le sol
+	 *  fertile booste la germination pendant ASH_BOOST_DURATION ticks. Appelé à
+	 *  la dispersion des cendres d'un arbre brûlé. */
+	public void markAsh(int x, int y) {
+		ashBoost[x][y] = ASH_BOOST_DURATION;
 	}
 
 	/** Valeur de croissance de la cellule après un tick, bornée à 1. Fonction pure. */
@@ -150,9 +205,23 @@ public class ForestCA extends CellularAutomataInteger {
 	private static final double STONE_FERTILITY = 0.3;
 	/** Pénalité de compétition : 8 voisins-arbres ⇒ fertilité × (1 - COMP_K). */
 	private static final double COMP_K = 0.6;
+	/** Portée (en cases) de l'effet fertilisant de l'eau au-delà duquel le sol est « sec ». */
+	private static final int WATER_REACH = 4;
+	/** Plancher de fertilité en sol sec (loin de l'eau) ; 1.0 au contact de l'eau. */
+	private static final double WATER_DRY_MIN = 0.55;
+	/** Dispersion de graines : 8 voisins adultes (maturité 1) ⇒ proba germination × (1 + K). */
+	private static final double SEED_DISPERSAL_K = 4.0;
 
 	/** Progression de croissance par cellule, g ∈ [0,1] (0 = pousse, 1 = adulte). */
 	private final double[][] growth;
+
+	/** Tours restants d'enrichissement du sol par la cendre (post-incendie) par
+	 *  cellule ; 0 = sol normal. Booste la germination (succession écologique). */
+	private final int[][] ashBoost;
+	/** Facteur multiplicatif de germination sur sol cendré récent. */
+	private static final double ASH_BOOST_FACTOR = 3.0;
+	/** Durée (ticks) de l'effet fertilisant de la cendre après dispersion. */
+	private static final int ASH_BOOST_DURATION = 200;
 
 	public ForestCA ( World __world, int __dx , int __dy, CellularAutomataDouble cellsHeightValuesCA )
 	{
@@ -162,6 +231,7 @@ public class ForestCA extends CellularAutomataInteger {
 
 		this.world = __world;
 		this.growth = new double[_dx][_dy];
+		this.ashBoost = new int[_dx][_dy];
 	}
 	
 	public void init()
@@ -205,6 +275,7 @@ public class ForestCA extends CellularAutomataInteger {
     	for(int d=0;d<world.list.size();d++){
     		int i=world.list.get(d)%_dx;
 			int j=world.list.get(d)/_dy;
+			if (ashBoost[i][j] > 0) ashBoost[i][j]--;   // l'enrichissement cendre s'épuise (1×/cellule/tick)
     			if (this.getCellState(i, j)>=0 &&  this.getCellState(i,j)<= BURNT+tDispertion)
     			{	
     				// Pour une case sans arbre. Conditions de germination :
@@ -216,11 +287,7 @@ public class ForestCA extends CellularAutomataInteger {
     				//   - sol au-dessus du niveau de la mer (height >= 0).
     				if ( this.getCellState(i,j) == 0
     						&& world.getLavaCAValue(i, j)==0){
-    					double effectivePA = pA;
-    					if (world.getStoneCAValue(i, j) > 0) {
-    						effectivePA *= STONE_GROWTH_FACTOR;
-    					}
-    					if(Math.random() < effectivePA && world.getCellHeight(i,j) >= 0){
+    					if(Math.random() < germinationProb(i, j) && world.getCellHeight(i,j) >= 0){
     						this.setCellState(i,j,1);
     						NbArbreSaint+=1;
     					}
@@ -228,6 +295,7 @@ public class ForestCA extends CellularAutomataInteger {
     				//pour un arbre en cendre
     				else if ( this.getCellState(i,j) == BURNT + tDispertion){
 	    				this.setCellState(i,j,0); //dispertion
+	    				markAsh(i, j);            // la cendre dispersée enrichit le sol
 	    			}
     				// Pour une case avec arbre
 	    			else if ( this.getCellState(i,j) == 1 ) // tree?

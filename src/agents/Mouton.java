@@ -106,6 +106,11 @@ public class Mouton extends Agent {
 	public int earthSearch=0;// 1 si est dans l'eau et recherche la terre ferme
 
 	public int fuite=0;
+	/** Alarme du troupeau : tours restants où ce mouton fuit car ALERTÉ par un
+	 *  congénère qui a vu un loup (même sans le voir lui-même). 0 = pas alerté. */
+	public int alertTtl=0;
+	/** Direction de fuite imposée par l'alarme (cap du troupeau). -1 = aucune. */
+	public int alertDir=-1;
 	public int m=0;
 	public int lastX;
 	public int lastY;
@@ -136,6 +141,8 @@ public class Mouton extends Agent {
 			case FLEE_PREDATOR: return "Fuit loup";
 			case SEEK_LAND:     return "Cherche terre";
 			case SEEK_FOOD:     return "Cherche herbe";
+			case HERD:          return "Regroupement";
+			case REST:          return "Repos";
 			default:            return "Errance";
 		}
 	}
@@ -159,11 +166,33 @@ public class Mouton extends Agent {
 	protected void resetTickFlags() {
 		fuite=0;
 		m=0;
+		if (alertTtl > 0) alertTtl--;        // l'alarme s'estompe (en TOURS, pas en ticks)
 		if(world.getCellHeight(x, y)>=0)earthSearch=0;
 		if(world.getCellHeight(x, y)<0){this._fireState=0;}
 
 		lastX=x;
 		lastY=y;
+	}
+
+	/** Rayon (cases) de propagation de l'alarme à un congénère. */
+	private static final int ALERT_RADIUS = 6;
+	/** Durée de l'alarme transmise, en TOURS de l'agent (gating vitesse). */
+	private static final int ALERT_DURATION = 4;
+
+	/**
+	 * Donne l'alarme : tout Mouton à portée ALERT_RADIUS (tore-aware) est marqué
+	 * alerté pour ALERT_DURATION tours et reçoit le cap de fuite du troupeau.
+	 * Seuls les moutons qui VOIENT réellement le loup propagent → pas de cascade
+	 * infinie (un mouton seulement alerté ne ré-alerte personne).
+	 */
+	private void alertNeighbours() {
+		for (Mouton other : world.moutons) {
+			if (other == this) continue;
+			if (world.distance(other.x, other.y, x, y) <= ALERT_RADIUS) {
+				other.alertTtl = ALERT_DURATION;
+				other.alertDir = _orient;
+			}
+		}
 	}
 
 	@Override
@@ -262,7 +291,7 @@ public class Mouton extends Agent {
 		//reproduction — conditionnée à l'énergie : le mouton doit être en bonne
 		// santé (≥ seuil) et INVESTIT une part de son énergie dans l'agneau
 		// (énergie conservée, pas créée). L'agneau naît à la position du parent.
-		if(energie >= energieMAX * reproEnergyThreshold && Math.random()<Prepro) {
+		if(energie >= energieMAX * reproEnergyThreshold && hasReproPartnerNearby() && Math.random()<Prepro) {
 			double invest = energieMAX * reproOffspringRatio;
 			Mouton prea=new Mouton(this.x, this.y, this._world);
 			prea.energie = invest;       // l'agneau hérite de l'énergie investie
@@ -284,6 +313,21 @@ public class Mouton extends Agent {
 		if ( world.getIteration() % 20 == 0 )if(_fireState==1)energie-=energieMAX/10;
 	}
 
+	/** Rayon (cases) dans lequel un congénère vivant compte comme partenaire de
+	 *  reproduction. La reproduction sexuée exige un tel partenaire à portée. */
+	private static final int REPRO_RADIUS = 3;
+
+	/** Vrai si au moins un autre Mouton vivant est à portée de reproduction. Le
+	 *  regroupement nocturne maintient le troupeau assez serré pour que la
+	 *  reproduction reste possible (évite l'extinction par dispersion). */
+	private boolean hasReproPartnerNearby() {
+		for (Mouton other : world.moutons) {
+			if (other == this || !other._alive) continue;
+			if (world.distance(other.x, other.y, x, y) <= REPRO_RADIUS) return true;
+		}
+		return false;
+	}
+
 
 	/** Décision pure (priorité = ordre des gardes). La recherche de nourriture
 	 *  vient APRÈS la survie (feu, fuite, sortie de l'eau) : un mouton affamé
@@ -292,8 +336,14 @@ public class Mouton extends Agent {
 	public AgentState decideState(Percept p) {
 		if (isOnFire())          return AgentState.ON_FIRE;
 		if (p.predatorVisible()) return AgentState.FLEE_PREDATOR;
+		if (alertTtl > 0)        return AgentState.FLEE_PREDATOR;   // alerté par le troupeau
 		if (p.inWater)           return AgentState.SEEK_LAND;
+		// La nuit, le troupeau se regroupe (sécurité du nombre) s'il voit des congénères.
+		if (world.getJour() == 0
+				&& agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons) >= 0)
+			return AgentState.HERD;
 		if (energie < energieMAX * 0.5 && p.grassVisible()) return AgentState.SEEK_FOOD;
+		if (energie >= energieMAX)                          return AgentState.REST;   // repu → rumination
 		return AgentState.WANDER;
 	}
 
@@ -303,15 +353,34 @@ public class Mouton extends Agent {
 		// par défaut, on remet les flags legacy à 0 ; chaque état réactive ce qu'il faut
 		fuite = 0; earthSearch = 0;
 		switch (s) {
+			case HERD:
+				// Regroupement nocturne : marche vers le centre de masse du troupeau.
+				int gdir = agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons);
+				if (gdir >= 0) _orient = gdir;
+				vitesse = vmarche;
+				return MoveConstraints.landBound();
+			case REST:
+				// Repu : rumination sur place. On annule le déplacement de ce tick
+				// (le coût d'énergie de postMove s'applique quand même — l'économie
+				// métabolique réelle est laissée à un futur modèle d'activité).
+				wantsToMove = false;
+				vitesse = vmarche;
+				return MoveConstraints.landBound();
 			case ON_FIRE:
 				// fuit vers l'eau si vue, sinon continue tout droit (pas de demi-tour)
 				if (p.waterDir >= 0) _orient = p.waterDir;
 				vitesse = vcourse;
 				return MoveConstraints.amphibious();
 			case FLEE_PREDATOR:
-				// Fuit à l'opposé du prédateur MAIS évite de plonger dans l'eau
-				// (mortelle pour le mouton) si une issue terrestre existe.
-				_orient = chooseFleeOrient(p);
+				if (p.predatorVisible()) {
+					// Voit le loup : fuit à l'opposé (en évitant l'eau si possible)
+					// ET donne l'alarme au troupeau proche.
+					_orient = chooseFleeOrient(p);
+					alertNeighbours();
+				} else if (alertDir >= 0) {
+					// Alerté sans voir le loup : fuit dans le cap du troupeau.
+					_orient = alertDir;
+				}
 				fuite = 1;                       // supprime le Broute pendant la fuite
 				vitesse = vcourse;               // correctif : toujours vcourse à la fuite
 				return MoveConstraints.amphibious();
@@ -330,7 +399,11 @@ public class Mouton extends Agent {
 				return MoveConstraints.landBound();
 			case WANDER:
 			default:
-				if (Math.random() < 0.2) {
+				if (aheadVisitedRecently()) {
+					// Mémoire spatiale : la case devant a déjà été visitée → on
+					// tourne pour ne pas errer en boucle.
+					_orient = (_orient + 1) % 4;
+				} else if (Math.random() < 0.2) {
 					_orient = (Math.random() > 0.5) ? (_orient + 1) % 4 : (_orient - 1 + 4) % 4;
 				}
 				vitesse = vmarche;
