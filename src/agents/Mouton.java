@@ -115,6 +115,10 @@ public class Mouton extends Agent {
 	public int lastX;
 	public int lastY;
 
+	/** Génome (Phase A évolution, cf. docs/evolution.txt § 4). Un fondateur est
+	 *  NEUTRE sur tous les axes ; un agneau l'hérite des deux parents. */
+	public agents.ai.Genome genome = new agents.ai.Genome();
+
 	public Mouton( int __x, int __y, World __World )
 	{
 		super(__x,__y,__World);
@@ -292,7 +296,10 @@ public class Mouton extends Agent {
 		// santé (≥ seuil) et INVESTIT une part de son énergie dans l'agneau
 		// (énergie conservée, pas créée). L'agneau naît à la position du parent.
 		Mouton mate = findReproPartner();
-		if(energie >= energieMAX * reproEnergyThreshold && mate != null && Math.random()<Prepro) {
+		// La proba de reproduction est modulée par la fertilité du génome (§ 4.1/§ 4.3) :
+		// FERTILE ×1.5, INFERTILE ×0.2 (cul-de-sac mou : rare mais non nul).
+		if(energie >= energieMAX * reproEnergyThreshold && mate != null
+				&& Math.random() < Prepro * genome.reproProbaFactor()) {
 			double invest = energieMAX * reproOffspringRatio;
 			Mouton prea=new Mouton(this.x, this.y, this._world);
 			prea.energie = invest;       // l'agneau hérite de l'énergie investie
@@ -302,7 +309,21 @@ public class Mouton extends Agent {
 			prea.vision  = mutateInt((this.vision + mate.vision) / 2);
 			prea.vcourse = mutateDouble((this.vcourse + mate.vcourse) / 2.0);
 			prea.vmarche = mutateDouble((this.vmarche + mate.vmarche) / 2.0);
-			prea.maxAgeDays = this.maxAgeDays;   // longévité = paramètre config, pas un trait muté
+			// Héritage du GÉNOME : axes hérités des deux parents (+ conflit→NEUTRE,
+			// mutation de type, saut de génération possible — cf. Genome.inherit § 4.4).
+			prea.genome = agents.ai.Genome.inherit(this.genome, mate.genome,
+					EVO_RNG, TYPE_MUTATION_RATE, GRANDPARENT_PROB);
+			// Longévité de l'agneau : base parentale × facteur de son propre axe
+			// Longévité (§ 4.1), puis malus si un parent est INFERTILE (§ 4.3 :
+			// enfants à courte espérance de vie).
+			double childMaxAge = this.maxAgeDays;
+			if (childMaxAge > 0) {
+				childMaxAge *= prea.genome.longevityFactor();
+				if (isInfertile(this) || isInfertile(mate)) {
+					childMaxAge *= INFERTILE_CHILD_LONGEVITY_MALUS;
+				}
+			}
+			prea.maxAgeDays = childMaxAge;
 			energie -= invest;           // le parent paie ce coût → retombe sous le seuil
 			this.world.uniqueDynamicObjects.add(prea);
 			this.world.agents.add(prea);
@@ -327,6 +348,21 @@ public class Mouton extends Agent {
 
 	/** Mutation ±MUTATION_RATE appliquée aux traits hérités. */
 	private static final double MUTATION_RATE = 0.1;
+
+	// ===== Héritage du génome (Phase A évolution, § 4) =====
+	/** Source d'aléa pour l'héritage du génome à la naissance. */
+	private static final java.util.Random EVO_RNG = new java.util.Random();
+	/** Proba qu'un axe mute d'un cran à la naissance (§ 4.2). */
+	private static final double TYPE_MUTATION_RATE = 0.05;
+	/** Proba qu'un axe soit hérité d'un grand-parent (§ 4.4). */
+	private static final double GRANDPARENT_PROB = 0.1;
+	/** Malus de longévité des enfants d'un parent INFERTILE (§ 4.3). */
+	private static final double INFERTILE_CHILD_LONGEVITY_MALUS = 0.5;
+
+	/** true si l'agent porte l'axe Fertilité au pôle NÉGATIF (INFERTILE). */
+	private static boolean isInfertile(Mouton m) {
+		return m.genome.get(agents.ai.Axis.FERTILITY) == agents.ai.Pole.NEGATIVE;
+	}
 
 	private static int mutateInt(int base) {
 		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;

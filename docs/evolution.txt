@@ -1,0 +1,676 @@
+================================================================================
+SYSTÈME D'ÉVOLUTION DES AGENTS — Cahier des charges
+Projet Environnement 3D
+================================================================================
+
+Ce document est un CAHIER DES CHARGES (pas encore un état des lieux). Il décrit
+le système d'évolution que l'on veut construire au-dessus de la couche d'agents
+existante (Loup / Mouton / Humain) pour rendre la simulation nettement plus
+vivante et réaliste : des individus qui naissent différents, héritent, mutent,
+apprennent, mémorisent, vieillissent, grandissent et se distinguent par leur
+caractère.
+
+Il sert deux objectifs :
+  1. Mettre par écrit une vision cohérente à partir des idées de conception,
+     en levant les ambiguïtés (formules, structures, héritage, oubli).
+  2. Servir de feuille de route d'implémentation en TDD, phase par phase.
+
+Tant que ce document n'est pas validé, AUCUN code d'évolution n'est écrit. Une
+fois validé, chaque phase est implémentée en Test-Driven Development (test rouge
+→ implémentation minimale → doc), et ce fichier est annoté [RÉALISÉ <date>] au
+fur et à mesure (même convention que generation-terrain.txt).
+
+
+================================================================================
+1. OÙ EN EST-ON AUJOURD'HUI (le socle déjà en place)
+================================================================================
+
+Le projet possède déjà la BRIQUE DE BASE d'une évolution, posée aux incréments
+15-16 (branche `update`) :
+
+    * Reproduction SEXUÉE : un agneau ne naît que si un partenaire de la même
+      espèce est à portée (Mouton.findReproPartner, REPRO_RADIUS = 3). Idem
+      pour le louveteau (Loup).
+    * Héritage de traits NUMÉRIQUES : le petit hérite de la MOYENNE des deux
+      parents sur trois traits continus — vision, vitesse de course (vcourse),
+      vitesse de marche (vmarche).
+    * MUTATION : chaque trait hérité subit un facteur aléatoire ±10 %
+      (MUTATION_RATE = 0.1, mutateInt / mutateDouble).
+    * SÉLECTION NATURELLE émergente : les individus mieux adaptés survivent et
+      laissent plus de descendants → dérive des traits au fil des générations.
+    * ÂGE : Agent.birthIteration → getAge() (ticks vécus) et getAgeDays()
+      (jours-jeu). Mort par vieillesse via maxAgeDays.
+    * MÉMOIRE SPATIALE COURTE : Agent garde les 8 dernières cases visitées
+      (recordVisit / hasVisitedRecently / aheadVisitedRecently) pour éviter
+      d'errer en boucle. C'est une mémoire de TRAJET, pas encore une mémoire
+      SÉMANTIQUE (cf. § 5).
+
+Ce socle est purement NUMÉRIQUE et CONTINU. Le système d'évolution décrit ici
+vient SE POSER PAR-DESSUS, sans le remplacer : les TYPES discrets (§ 4) sont des
+MODIFICATEURS appliqués aux traits numériques existants ; la mémoire sémantique
+(§ 5) est une nouvelle structure ; l'intelligence (§ 6) est un poids qui module
+le reste. On enrichit, on ne réécrit pas.
+
+
+================================================================================
+2. OBJECTIF
+================================================================================
+
+Faire passer chaque agent de « clone interchangeable avec quelques nombres
+mutés » à « individu » :
+
+    * deux moutons nés le même jour doivent pouvoir être DISTINGUABLES (l'un
+      intelligent et endurant, l'autre faible et paresseux), y compris
+      visuellement (taille différente, cf. § 10) ;
+    * un individu doit pouvoir APPRENDRE de son vécu (où est l'eau, où chasser,
+      où est le danger) et de ses congénères (apprentissage social) ;
+    * les parents doivent pouvoir TRANSMETTRE — par les gènes (héritage) ET par
+      l'éducation (enseignement actif), les petits SUIVANT leurs parents ;
+    * le vieillissement doit avoir un COÛT cognitif (dégénérescence, oubli) que
+      l'entraînement peut ralentir, et un CYCLE DE VIE (bébé → jeune → adulte →
+      vieux) ;
+    * un aspect PSYCHOLOGIQUE et SOCIAL doit émerger : un caractère qui se
+      DÉVELOPPE selon le vécu et la satisfaction, pas donné à la naissance ;
+    * tout cela doit rester OBSERVABLE (fiche de l'agent, § 10) et TESTABLE
+      (le step() ne touche pas OpenGL).
+
+Critère de réussite : sur une longue partie, on doit voir émerger des lignées
+distinctes, une amélioration moyenne des compétences sous pression de sélection,
+des tailles et des comportements individualisés lisibles à l'écran.
+
+
+================================================================================
+3. ARCHITECTURE D'ENSEMBLE
+================================================================================
+
+On attache à `Agent` cinq objets de composition (pas d'héritage en plus) :
+
+    Agent
+      ├── Genome        : les TYPES discrets (axes à 3 états) + leur héritage
+      ├── LifeStage     : âge → stade (bébé/jeune/adulte/vieux) + taille
+      ├── SemanticMemory: connaissances acquises (eau, chasse, danger…)
+      ├── Mind          : intelligence (poids global) + entraînement cérébral
+      └── Character      : trait social ÉMERGENT (développé par session)
+
+Principe directeur : ces objets MODULENT les traits numériques existants ; ils
+ne dupliquent pas la logique de comportement. Exemple : un Mouton ENDURANT n'a
+pas un nouveau `step()`, il a juste un multiplicateur d'énergie/endurance que
+`postMove` lit. Cela garde la couche comportementale (arbres de décision) intacte
+et testable indépendamment.
+
+Portée d'implémentation (décision § 13.3) : on construit et valide TOUT le
+système sur le MOUTON d'abord. Quand il est éprouvé, on remonte les parties
+communes dans `Agent` et on généralise à Loup puis Humain. Les structures sont
+néanmoins conçues GÉNÉRIQUES dès le départ, mais seul Mouton les CÂBLE en phase 1.
+
+
+================================================================================
+4. MODULE GENOME — types discrets héritables
+================================================================================
+
+4.1 Le modèle « axe à 3 états » (décision § 13.2)
+-------------------------------------------------
+Un type n'est pas un drapeau indépendant : c'est la valeur d'un AXE. Chaque axe
+est un seul emplacement (slot) à trois états :
+
+        NÉGATIF        ←  NEUTRE  →        POSITIF
+
+Il est donc IMPOSSIBLE d'être à la fois FORT et FAIBLE : ce sont les deux pôles
+du même axe « Force ». Le profil par défaut d'un individu est NEUTRE sur tous les
+axes (cf. § 4.5).
+
+Axes prévus (extensible — enum `Axis`) :
+
+    Axe              NÉGATIF              NEUTRE       POSITIF
+    ───────────────────────────────────────────────────────────────────
+    Intelligence     STUPIDE              —            INTELLIGENT
+    Fertilité        INFERTILE            —            FERTILE
+    Endurance        FATIGUE_CHRONIQUE    —            ENDURANT
+    Force            FAIBLE               —            FORT
+    Sagesse          NAÏF                 —            SAGE
+    Longévité        DÉGÉNÉRESCENCE       —            LONGÉVITÉ
+    Orientation      DÉSORIENTÉ           —            BON_SENS_ORIENT.
+
+Chaque axe a un EFFET MÉCANIQUE chiffré (modificateur multiplicatif appliqué au
+trait numérique correspondant). Valeurs de départ proposées (à ajuster en
+simulation) :
+
+    Intelligence  → poids global du Mind (§ 6). POSITIF ×1.3, NÉGATIF ×0.7.
+    Fertilité     → proba de reproduction. POSITIF ×1.5, NÉGATIF : cas spécial
+                    « cul-de-sac mou » (§ 4.3).
+    Endurance     → réserve/dépense d'énergie (energieMAX et coût/tick).
+                    POSITIF : +25 % réserve, −20 % dépense. NÉGATIF : inverse.
+    Force         → en prédation (Loup) : gain énergétique ; en proie (Mouton) :
+                    résistance/vcourse. POSITIF ×1.2, NÉGATIF ×0.85. Influence
+                    aussi la taille adulte (§ 10.2).
+    Sagesse       → qualité des décisions risquées (seuils de fuite/chasse) et
+                    vitesse d'apprentissage social (§ 8). POSITIF/ NÉGATIF ±.
+    Longévité     → maxAgeDays. POSITIF ×1.4, NÉGATIF ×0.6.
+    Orientation   → fiabilité du cap en navigation LONGUE DISTANCE (§ 9).
+                    POSITIF : cap exact ; NÉGATIF : bruit ajouté à la direction.
+
+4.2 Mutation : du continu au discret
+-------------------------------------
+À la naissance, après l'héritage (§ 4.4), chaque axe peut MUTER avec une petite
+probabilité (TYPE_MUTATION_RATE, proposé 0.05 par axe). Une mutation fait
+basculer l'axe d'un cran vers un pôle (NEUTRE→POSITIF, NEUTRE→NÉGATIF, ou
+retour au NEUTRE). C'est le pont entre la mutation numérique existante (±10 % sur
+les valeurs) et l'apparition de TYPES qualitatifs.
+
+4.3 INFERTILE = cul-de-sac mou (décision § 13.1)
+------------------------------------------------
+Le pôle NÉGATIF de l'axe Fertilité n'est PAS une simple stérilité. C'est un
+« cul-de-sac génétique mou » :
+
+    * Reproduction RARE mais non nulle : proba de repro fortement divisée
+      (facteur proposé ×0.2 par-dessus la proba de base).
+    * Transmission RENFORCÉE des mauvais traits : quand un INFERTILE se
+      reproduit malgré tout, ses axes NÉGATIFS sont transmis avec une proba
+      accrue (biais d'héritage vers le pôle négatif du parent infertile).
+    * Enfants à COURTE espérance de vie : la descendance reçoit un malus de
+      longévité (maxAgeDays réduit).
+
+Conséquence biologique voulue : la lignée infertile s'éteint LENTEMENT plutôt
+que d'un coup ; elle « traîne » de mauvais gènes un moment avant de disparaître.
+C'est une force de sélection douce mais directionnelle.
+
+4.4 Héritage parent / grand-parent
+-----------------------------------
+Pour chaque axe, l'état de l'enfant est tiré ainsi :
+
+    1. Cas dominant — l'enfant prend l'état d'un des DEUX PARENTS (tirage 50/50
+       entre père et mère sur cet axe).
+    2. Conflit d'axe (un parent POSITIF, l'autre NÉGATIF) : résolution par
+       tirage pondéré → le plus souvent retour au NEUTRE (les pôles opposés
+       « s'annulent » génétiquement), sinon l'un des deux pôles. (Cohérent avec
+       l'exclusion mutuelle : un enfant n'est jamais POSITIF ET NÉGATIF.)
+    3. Saut de génération (rare) — avec une faible probabilité
+       (GRANDPARENT_PROB, proposé 0.1), l'axe est hérité d'un GRAND-PARENT au
+       lieu d'un parent (résurgence d'un trait « sauté »). Nécessite de garder
+       une trace légère des axes des grands-parents au moment de la naissance
+       (snapshot stocké dans le Genome de l'enfant, pas de pointeur vers des
+       agents potentiellement morts).
+    4. Mutation finale (§ 4.2) appliquée par-dessus le résultat.
+
+L'HÉRITAGE PHYSIQUE (force, endurance, longévité, taille § 10.2) suit ce même
+mécanisme : le « type physique » vient d'un parent, parfois des deux (mélange →
+NEUTRE), avec la faible proba grand-parent.
+
+4.5 Profil par défaut
+---------------------
+Un agent spawné au lancement (pas né d'une reproduction) a un Genome NEUTRE sur
+tous les axes, mais avec une petite chance d'axe non-neutre (diversité initiale,
+SEED_DIVERSITY proposé 0.1 par axe) pour amorcer la sélection.
+
+
+================================================================================
+5. MODULE MÉMOIRE SÉMANTIQUE
+================================================================================
+
+Distincte de la mémoire de trajet (les 8 dernières cases). C'est une mémoire de
+CONNAISSANCES, structurée par catégorie :
+
+    * POINTS D'EAU       : cases d'eau découvertes (utile pour boire / fuir le
+                           feu / le mouton les ÉVITE, le loup s'en sert pour
+                           cerner une proie).
+    * MÉTHODE & ZONE DE CHASSE (Loup / Humain) : direction et zone où la chasse
+                           a réussi par le passé → on y retourne.
+    * ZONE DE DANGER      : cases où l'agent a vu un prédateur / a failli mourir
+                           → à éviter.
+    * LIEUX SÛRS          : p. ex. la bergerie pour un mouton — un lieu connu où
+                           l'on est en sécurité, vers lequel on cherche à rentrer
+                           le soir (cf. navigation longue distance § 9).
+
+5.1 Capacité VARIABLE
+---------------------
+La mémoire a une capacité MAX qui dépend de l'individu :
+
+    capacité = BASE_MEM + f(Intelligence) + f(Sagesse) − f(âge, Longévité)
+
+Un agent intelligent et sage retient plus ; un agent vieux et dégénérescent
+retient moins. La capacité n'est PAS fixe : elle DÉCROÎT avec l'âge (sauf
+entraînement cérébral, § 6.2).
+
+5.2 Oubli lié à l'âge — « mauvaise mémoire »
+--------------------------------------------
+Chaque souvenir porte un SCORE D'UTILISATION (incrémenté quand le souvenir sert,
+décrémenté lentement sinon). Quand la mémoire est PLEINE et qu'un nouveau
+souvenir arrive, on OUBLIE le souvenir le MOINS utilisé (politique LFU). Le score
+global de mémoire DÉCROÎT avec l'âge → un vieil agent oublie plus vite et retient
+moins. C'est la « dégénérescence » de l'axe Longévité rendue concrète.
+
+5.3 Lien avec la décision
+-------------------------
+La mémoire sémantique INFLÉCHIT les arbres de décision existants sans les
+réécrire : par ex. en l'absence de prédateur visible, un Mouton assoiffé oriente
+son errance vers le point d'eau mémorisé le plus proche plutôt qu'au hasard ; un
+Loup affamé sans proie en vue se dirige vers sa zone de chasse mémorisée ; un
+mouton seul cherche à rentrer au lieu sûr (bergerie) mémorisé le soir.
+
+
+================================================================================
+6. MODULE MIND — intelligence & entraînement cérébral
+================================================================================
+
+6.1 L'intelligence comme POIDS
+------------------------------
+L'intelligence n'est pas une compétence isolée : c'est un SCORE (0..1) qui agit
+comme un MULTIPLICATEUR sur la capacité d'AMÉLIORER les autres compétences. Deux
+agents qui vivent la même expérience ne progressent pas pareil : le plus
+intelligent apprend plus vite (mémoire qui retient mieux, apprentissage social
+plus efficace, meilleures décisions). L'axe Intelligence (§ 4) fixe la valeur de
+DÉPART de ce score ; le vécu le fait évoluer.
+
+6.2 Entraînement cérébral vs dégénérescence
+-------------------------------------------
+Avec l'âge, le score d'intelligence subit une DÉGÉNÉRESCENCE (pente liée à l'axe
+Longévité et au stade VIEUX § 10). L'ENTRAÎNEMENT — c.-à-d. le fait d'utiliser
+activement ses capacités (résoudre des situations : chasser, fuir intelligemment,
+naviguer) — RALENTIT cette pente. Modèle proposé :
+
+    intelligence(t+1) = intelligence(t) − DEGEN_RATE(âge) + TRAIN_GAIN·activité
+
+où `activité` mesure le nombre de décisions « cognitives » prises dans la
+fenêtre récente. Un agent qui ne fait qu'errer dégénère ; un agent qui chasse et
+résout des problèmes garde l'esprit vif plus longtemps.
+
+
+================================================================================
+7. MODULE CHARACTER — caractère social ÉMERGENT
+================================================================================
+
+Principe fondateur : AUCUN agent ne naît avec un caractère. Le caractère N'EST NI
+inné NI hérité — il se DÉVELOPPE selon le vécu de l'individu et sa SATISFACTION.
+Le but est de simuler un aspect psychologique et social : un individu devient ce
+qu'il a vécu, et le caractère acquis le pousse ENCORE PLUS dans cette voie.
+
+7.1 La SESSION, unité de développement
+--------------------------------------
+Le caractère s'évalue par SESSION : une fenêtre de temps (sessionLengthDays,
+valeur à régler — proposé 2 jours-jeu, multi-cycles jour/nuit). Pendant une
+session, on AGRÈGE deux mesures par individu :
+
+    * un PROFIL DE COMPORTEMENT (p. ex. fraction du temps passé isolé du
+      troupeau, fraction du temps actif, etc.) ;
+    * un SCORE DE SATISFACTION moyen (§ 7.3).
+
+À la FIN de chaque session, on décide d'attribuer / conserver / retirer un
+caractère (§ 7.4). Le caractère acquis influence le comportement de la session
+SUIVANTE.
+
+7.2 Les caractères (axes sociaux)
+---------------------------------
+Indépendants des axes génétiques (§ 4). Exemples (extensible) :
+
+    * SOLITAIRE ↔ GRÉGAIRE : dérivé du temps passé isolé vs au sein du troupeau.
+    * PARESSEUX ↔ ASSIDU   : dérivé du ratio temps au repos vs temps actif.
+
+Effet sur le comportement — exemple SOLITAIRE : tendance à NE PAS rejoindre le
+troupeau. Concrètement, si un état « se rapprocher du troupeau » (HERD) existe,
+un mouton SOLITAIRE a une probabilité ÉLEVÉE de QUITTER cet état (il ne se
+regroupe pas la nuit, ou repart vite). Symétriquement, un GRÉGAIRE renforce HERD.
+
+7.3 Qu'est-ce qui rend un agent SATISFAIT ? (besoins primaires)
+---------------------------------------------------------------
+La satisfaction est un agrégat pondéré du niveau de plusieurs BESOINS PRIMAIRES,
+évalué en continu et moyenné sur la session :
+
+    * FAIM       : satisfait quand l'énergie est haute (bien nourri).
+    * REPOS      : satisfait quand l'agent n'est pas épuisé (a pu se reposer).
+    * SÉCURITÉ   : satisfait quand pas de prédateur / pas en fuite / pas en feu /
+                   hors zone de danger.
+    * REPRODUCTION : satisfait quand l'agent s'est reproduit récemment / a un
+                   partenaire à portée.
+    * SOCIAL     : besoin spécifique, MODULÉ PAR LE CARACTÈRE (point clé § 7.5) :
+                   un GRÉGAIRE est satisfait PRÈS du troupeau, un SOLITAIRE est
+                   satisfait À L'ÉCART. Sans cette modulation, un solitaire aurait
+                   toujours une satisfaction sociale basse et perdrait aussitôt
+                   son trait — l'inverse du but recherché.
+
+Des besoins SPÉCIFIQUES À UNE ESPÈCE peuvent s'ajouter (ex. Loup : succès de
+chasse / cohésion de meute).
+
+7.4 Acquérir / conserver / perdre un caractère (avec hystérésis)
+----------------------------------------------------------------
+Pour éviter le yo-yo (gagne/perd/gagne à chaque micro-variation) tout en gardant
+ta mécanique de « remise en question », on utilise une HYSTÉRÉSIS (bande morte)
+et une condition qui doit tenir sur une SESSION ENTIÈRE :
+
+    GAGNER (fin de session) : le profil de comportement est SOUTENU (ex. isolé
+        > 50 % du temps) ET la satisfaction moyenne ≥ S_GAIN (seuil HAUT).
+        → le caractère est attribué pour la session suivante.
+
+    CONSERVER (défaut) : rien de spécial. Le caractère biaise le comportement,
+        donc le profil tend à s'AUTO-ENTRETENIR (il pousse l'individu dans le
+        même sens → « difficile à perdre »).
+
+    PERDRE (fin de session), si l'UNE des deux conditions tient sur la session :
+        (a) le profil est RETOMBÉ sous un plancher de maintien (ex. isolé
+            < 30 %) → l'individu a DE FAIT changé de vie ; ou
+        (b) la satisfaction moyenne ≤ S_LOSE (seuil BAS) → l'individu est
+            malheureux à vivre ainsi et « se remet en question », il ABANDONNE le
+            caractère pour essayer autre chose.
+
+    Hystérésis : S_LOSE << S_GAIN. La large bande intermédiaire stabilise le
+    trait. La condition (a) ou (b) doit tenir sur la SESSION COMPLÈTE (pas un
+    creux passager) → ton « difficile à perdre » est garanti.
+
+7.5 Pourquoi (b) est désirable
+------------------------------
+La perte par satisfaction basse modélise la MALADAPTATION et l'auto-correction :
+un SOLITAIRE qui prospère seul GARDE son trait (renforcé) ; un SOLITAIRE seul ET
+affamé/en danger (satisfaction basse) finit par abandonner la solitude et
+rejoindre le troupeau. Sans (b), un individu pourrait se verrouiller dans un
+comportement auto-destructeur jusqu'à l'extinction. C'est précisément l'aspect
+psychologique recherché — à condition que la satisfaction SOCIALE soit bien
+modulée par le caractère (§ 7.3), sinon le mécanisme se mord la queue.
+
+
+================================================================================
+8. APPRENTISSAGE SOCIAL & ÉDUCATION
+================================================================================
+
+Deux canaux de transmission NON génétiques :
+
+8.1 Apprentissage social (horizontal)
+-------------------------------------
+Un agent APPREND EN OBSERVANT ses congénères proches : s'il voit un congénère
+réussir (brouter à tel endroit, fuir efficacement, chasser dans telle zone), il
+peut COPIER une connaissance sémantique (§ 5) — par ex. recopier un point d'eau
+ou une zone de chasse dans sa propre mémoire. La probabilité de copie dépend de
+l'Intelligence et de la Sagesse de l'observateur.
+
+8.2 Éducation (vertical, parent → enfant)
+-----------------------------------------
+Tant qu'un enfant est jeune (stade bébé/jeune § 10) et reste à proximité d'un
+parent vivant — ce que garantit le comportement « suivre son parent » (§ 10.3) —
+le parent lui ENSEIGNE : transfert accéléré de connaissances sémantiques (les
+bons points d'eau, les zones de danger, la méthode de chasse, le lieu sûr).
+L'éducation donne un avantage de DÉPART aux petits bien entourés — et pénalise
+les orphelins. Cela crée une seconde boucle de sélection (les lignées qui
+« éduquent » bien prospèrent), en plus de la sélection génétique.
+
+
+================================================================================
+9. SENS DE L'ORIENTATION (navigation longue distance)
+================================================================================
+
+L'axe Orientation (§ 4) gouverne UNIQUEMENT la navigation à LONGUE DISTANCE, vers
+une cible que l'agent ne voit PAS (hors de son champ de vision). Règle simple :
+
+    * Cible À PORTÉE DE VUE → pilotage direct par Perception (orientation vers la
+      cible visible). L'axe Orientation n'a AUCUN effet ici.
+    * Cible HORS DE VUE (connue par la mémoire sémantique § 5 — p. ex. la
+      bergerie le soir pour un mouton isolé qui ne peut pas suivre le troupeau,
+      ou un point d'eau lointain) → l'agent doit NAVIGUER « à l'estime » : il
+      calcule un cap (tore-aware) vers la position mémorisée. C'est la variable
+      `directionSens`.
+
+`directionSens` est DISTINCTE de `_orient` : `_orient` = la direction où l'agent
+REGARDE / se déplace au pas-à-pas ; `directionSens` = le CAP visé vers un lieu
+lointain. La fiabilité de `directionSens` est gouvernée par l'axe Orientation :
+
+    * BON_SENS_ORIENT. → cap exact, l'agent file droit vers la cible.
+    * NEUTRE           → cap correct avec une légère imprécision.
+    * DÉSORIENTÉ       → bruit aléatoire ajouté au cap → l'agent tourne en rond,
+                         rate sa cible, met plus de temps à rentrer (voire se
+                         perd la nuit).
+
+C'est un modificateur sur la DIRECTION calculée, pas une nouvelle logique de
+déplacement. Cas d'usage canonique : un mouton hors du troupeau qui « sait »
+(mémoire) que la bergerie est sûre et veut y rentrer au crépuscule.
+
+
+================================================================================
+10. MODULE CROISSANCE & CYCLE DE VIE
+================================================================================
+
+Objectif : remplacer les agents « adultes instantanés tous identiques » par un
+cycle de vie biologique — bébé → jeune → adulte → vieux — avec une TAILLE qui
+grandit et VARIE d'un individu à l'autre.
+
+10.1 Les quatre stades (calés sur la biologie)
+----------------------------------------------
+Le stade se déduit de l'âge (getAgeDays) rapporté à la durée de vie effective L
+(L = maxAgeDays si > 0, sinon une référence de config). Seuils exprimés en
+FRACTIONS de L, calés sur la biologie du mouton (recherche : sevrage ~3 mois,
+maturité sexuelle ~6-8 mois, adulte ~1 an, vie 10-12 ans) :
+
+    Stade    Fraction de la vie     Repro ?   Notes
+    ─────────────────────────────────────────────────────────────────────
+    BÉBÉ     [0,    weanFrac]       NON       suit le parent, sevrage
+    JEUNE    [weanFrac, matFrac]    NON       sevré, immature, suit le parent
+    ADULTE   [matFrac, senFrac]     OUI       pleine taille, reproduction
+    VIEUX    [senFrac, 1.0]         réduite   sénescence : repro et mémoire
+                                              déclinent (§ 5.2, § 6.2)
+
+Valeurs de départ proposées (mouton, tunables en config) : weanFrac ≈ 0.03,
+matFrac ≈ 0.06, senFrac ≈ 0.80. NB : le mouton mûrit TÔT par rapport à sa
+longévité (maturité ~6 % de la vie) — ces fractions diffèrent par espèce (le loup
+mûrit bien plus tard, ~0.25). On pourra ÉTIRER légèrement la fenêtre jeune pour
+la lisibilité de jeu, mais la valeur biologique reste la référence.
+
+Conséquence comportementale directe : la REPRODUCTION (§ 1) est désormais gardée
+par le stade — bébé et jeune NE PEUVENT PAS se reproduire, en plus des conditions
+d'énergie et de partenaire déjà en place. Le VIEUX se reproduit à taux réduit.
+
+10.2 La TAILLE : courbe de croissance + variation individuelle
+--------------------------------------------------------------
+Deux facteurs se multiplient pour donner l'échelle de rendu d'un individu :
+
+    scale = baseScale × sizeFactor × growth(age)
+
+    * sizeFactor : trait HÉRITABLE continu (comme vision/vcourse), moyenné des
+      deux parents + mutation ±10 %, clampé [0.8, 1.2]. → deux adultes du même
+      stade n'ont PAS la même taille. Légèrement tiré par l'axe Force (FORT →
+      plus grand, FAIBLE → plus petit).
+    * growth(age) : courbe de croissance SIGMOÏDE montant de la taille de
+      naissance à la taille adulte. On retient le modèle de GOMPERTZ (standard
+      des courbes de croissance mammifères) :
+
+          growth(u) = exp( ln(birthFrac) × exp(−GROWTH_K × u) )
+
+      avec u = ageDays / (matFrac×L) (clampé), birthFrac ≈ 0.40 (taille linéaire
+      du nouveau-né ≈ 40 % de l'adulte = racine cubique du ratio de masse), et
+      GROWTH_K ≈ 3-4 (atteint ~1.0 vers la maturité). À u=0 → birthFrac ; à
+      maturité → ~1.0 ; ensuite constante (adulte). Sénescence : on peut laisser
+      1.0 (pas de rétrécissement) pour rester simple.
+
+10.3 Suivre son parent
+----------------------
+Nouveau comportement pour les BÉBÉS et JEUNES : tant qu'un parent vivant est à
+portée (FOLLOW_RADIUS), le petit BIAISE son déplacement vers ce parent (priorité
+sous la survie : feu, fuite prédateur, sortie de l'eau, mais AU-DESSUS de
+l'errance). Implémentation : on stocke à la naissance une référence vers le(s)
+parent(s) ; elle est mise à NULL quand le parent meurt ou quand l'enfant devient
+adulte. Ce comportement est aussi le DÉCLENCHEUR de l'éducation (§ 8.2) : rester
+près du parent = apprendre de lui. Un orphelin (parent mort) erre seul et
+n'éduque pas → désavantage sélectif.
+
+
+================================================================================
+11. UI — traits affichés sur la FICHE de l'agent
+================================================================================
+
+EXIGENCE PRINCIPALE : les traits / types / caractéristiques d'un agent sont
+visibles sur SA FICHE (l'AgentInfoPanel, en bas à gauche quand l'agent est
+sélectionné). C'est là qu'on lit son individualité complète :
+
+    * Genome : les axes non-neutres listés (ex. « INTELLIGENT, ENDURANT,
+      FAIBLE »), les axes NEUTRES n'étant pas affichés pour ne pas surcharger.
+    * Stade & taille : BÉBÉ/JEUNE/ADULTE/VIEUX + indication de taille relative.
+    * Caractère : SOLITAIRE/GRÉGAIRE, PARESSEUX/ASSIDU (s'ils sont acquis) +
+      score de satisfaction courant.
+    * Intelligence (Mind) : score courant + tendance (progresse / dégénère).
+    * Mémoire sémantique : nombre de souvenirs par catégorie (eau / chasse /
+      danger / lieu sûr) et capacité courante.
+    * Âge (déjà affiché) et lignée éventuelle.
+
+L'AgentInfoPanel s'enrichit donc de plusieurs lignes ; il faudra veiller à la
+place disponible (regrouper / paginer si nécessaire).
+
+Contraintes techniques (cf. ui-overlay.txt) : UiRenderer.drawText utilise GLUT
+bitmap Helvetica 12, ASCII UNIQUEMENT (pas d'accents ni de flèches Unicode).
+Les libellés affichés seront donc en ASCII (« INTELLIGENT, ENDURANT, paresseux »),
+même si la doc et le code internes gardent les accents.
+
+OPTIONNEL (secondaire) : une étiquette courte au-dessus de l'agent en VUE DE
+DESSUS (texte projeté via gluProject, même mécanisme que le picking) pourra
+résumer 1-2 traits saillants. À ne traiter qu'après la fiche, et seulement si
+c'est lisible sans encombrer la scène. La TAILLE différente des individus (§ 10)
+donne déjà une lecture visuelle directe sans texte.
+
+
+================================================================================
+12. PLAN D'IMPLÉMENTATION TDD (par phases)
+================================================================================
+
+Chaque phase = un lot de tests rouges → implémentation minimale → doc annotée.
+Tout est validé via ./build.sh puis ./test.sh (pattern AgentBehaviorTest,
+helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
+
+    Phase A — Genome + types (axes à 3 états)   [RÉALISÉ 2026-06-05]
+        Genome (enum Axis, état par axe), modificateurs mécaniques, mutation
+        type, héritage parent + conflit→NEUTRE + saut grand-parent, INFERTILE
+        cul-de-sac mou, profil par défaut NEUTRE. Câblé sur Mouton.
+        Tests : héritage d'axe, résolution de conflit, mutation de type,
+        cul-de-sac mou (proba + malus longévité enfant), grand-parent.
+        FAIT : agents.ai.Axis (7 axes), agents.ai.Pole {NEGATIVE/NEUTRAL/
+        POSITIVE}, agents.ai.Genome (inherit + reproProbaFactor +
+        longevityFactor + snapshots grands-parents). Mouton.genome + héritage
+        à la naissance + proba repro × fertilité + malus longévité infertile.
+        Tests : GenomeTest (6), MoutonGenomeTest (2). RESTE : seed diversity
+        des fondateurs (§ 4.5) et câblage des autres modificateurs (endurance,
+        force→taille, intelligence, orientation) — à faire dans leurs phases.
+
+    Phase B — Croissance & cycle de vie
+        LifeStage (stade depuis l'âge), gating reproduction par stade,
+        sizeFactor héritable, growth(age) Gompertz, suivre son parent.
+        Tests : bébé/jeune ne se reproduit pas, l'adulte oui ; sizeFactor hérité
+        moyenné+muté ; growth(0)=birthFrac et croît ; un petit se dirige vers
+        son parent ; orphelin n'a plus de cible parent.
+
+    Phase C — Mémoire sémantique
+        SemanticMemory (catégories, capacité variable, LFU + oubli lié à l'âge),
+        branchement sur la décision (eau/danger/lieu sûr pour Mouton).
+        Tests : ajout/oubli LFU, capacité décroît avec l'âge, l'errance vise un
+        point d'eau mémorisé.
+
+    Phase D — Mind (intelligence + entraînement)
+        Mind (score poids, dégénérescence, gain par activité). Intelligence
+        module la vitesse d'apprentissage (mémoire/social).
+        Tests : un agent « actif » dégénère moins qu'un agent « inactif » à âge
+        égal ; intelligence haute → apprentissage plus rapide.
+
+    Phase E — Sens de l'orientation
+        directionSens (cap vers cible hors-vue mémorisée), modulé par l'axe
+        Orientation ; règle en-vue / hors-vue.
+        Tests : cible en vue → ignore l'axe ; cible hors vue → BON_SENS file
+        droit, DÉSORIENTÉ dévie ; mouton isolé rentre vers la bergerie mémorisée.
+
+    Phase F — Apprentissage social + éducation
+        Copie de souvenirs entre congénères ; transfert parent→enfant à
+        proximité (couplé au « suivre son parent » Phase B).
+        Tests : un mouton recopie un point d'eau vu chez un voisin ; un agneau
+        près de sa mère acquiert ses souvenirs plus vite qu'un orphelin.
+
+    Phase G — Caractère (social émergent)
+        Character (session, profil de comportement, satisfaction = besoins
+        primaires modulés par le caractère, gain/conserver/perdre avec
+        hystérésis), effet sur les états (HERD pour SOLITAIRE/GRÉGAIRE).
+        Tests : un mouton isolé > 50 % + satisfaction haute → devient SOLITAIRE ;
+        un SOLITAIRE quitte HERD avec proba élevée ; satisfaction sociale d'un
+        solitaire est HAUTE quand il est seul ; perte du trait si satisfaction
+        ≤ S_LOSE sur une session ; hystérésis (pas de yo-yo).
+
+    Phase H — UI (validation par screenshot, pas test unitaire)
+        Fiche AgentInfoPanel enrichie (Genome, stade/taille, caractère, mind,
+        mémoire) ; tailles d'agents distinctes à l'écran ; étiquette top-down
+        optionnelle. Validé en lançant l'app (WSLg software) et capture.
+
+    Phase I — Généralisation
+        Remonter Genome/LifeStage/SemanticMemory/Mind/Character dans Agent et
+        câbler Loup (méthode/zone de chasse, meute) puis Humain.
+
+
+================================================================================
+13. DÉCISIONS TRANCHÉES (questions de conception résolues)
+================================================================================
+
+13.1 INFERTILE = « cul-de-sac MOU ». Reproduction rare (×0.2) mais possible ;
+     quand elle a lieu, transmission renforcée des MAUVAIS traits + enfants à
+     courte espérance de vie. La lignée s'éteint lentement, pas d'un coup.
+     (Détail § 4.3.)
+
+13.2 Types opposés = EXCLUSION MUTUELLE par AXE. Chaque axe est un slot à 3
+     états {NÉGATIF, NEUTRE, POSITIF} ; impossible d'être FORT ET FAIBLE.
+     Hériter les deux pôles → résolution (le plus souvent retour au NEUTRE).
+     (Détail § 4.1 et § 4.4.)
+
+13.3 Portée = MOUTON D'ABORD. Construire et valider tout le système sur le
+     Mouton en TDD, puis factoriser dans Agent et généraliser à Loup/Humain.
+     Les structures sont néanmoins conçues génériques dès le départ. (Détail
+     § 3 et Phase I.)
+
+13.4 CARACTÈRE = social ÉMERGENT, jamais inné ni hérité. Développé par SESSION
+     (fenêtre multi-jours). Gagné si profil de comportement soutenu (ex. isolé
+     > 50 %) ET satisfaction ≥ S_GAIN. Perdu si, sur une session entière, le
+     profil retombe sous un plancher OU la satisfaction ≤ S_LOSE. Hystérésis
+     (S_LOSE << S_GAIN) + persistance sur session → pas d'oscillation, trait
+     « difficile à perdre ». SATISFACTION = agrégat des besoins primaires (faim,
+     repos, sécurité, reproduction, social), le besoin SOCIAL étant MODULÉ par le
+     caractère (un solitaire est satisfait seul). La perte par satisfaction basse
+     est VOULUE : elle modélise la maladaptation / remise en question. (Détail
+     § 7.)
+
+13.5 SENS DE L'ORIENTATION = navigation LONGUE DISTANCE seulement (cible hors du
+     champ de vision). En vue → pilotage direct (Perception), axe sans effet.
+     Hors vue → variable `directionSens` (cap vers lieu mémorisé), fiabilité
+     gouvernée par l'axe Orientation. Distincte de `_orient` (direction du
+     regard). Règle : tout lieu hors de portée de vue nécessite l'orientation.
+     (Détail § 9.)
+
+13.6 CYCLE DE VIE = bébé / jeune / adulte / vieux (fractions de la durée de vie,
+     calées sur la biologie du mouton). Bébé & jeune NE SE REPRODUISENT PAS et
+     SUIVENT un parent (déclencheur de l'éducation) ; vieux se reproduit à taux
+     réduit. TAILLE variable par individu (trait sizeFactor héritable, clamp
+     [0.8, 1.2]) ET par stade (courbe de croissance Gompertz, birthFrac ≈ 0.40).
+     (Détail § 10.)
+
+
+================================================================================
+14. POINTS OUVERTS / À CALIBRER EN SIMULATION
+================================================================================
+
+Les VALEURS chiffrées de ce document (multiplicateurs d'axes, probabilités de
+mutation, fenêtres temporelles, capacités mémoire, fractions de stade, birthFrac,
+GROWTH_K, seuils S_GAIN/S_LOSE, sessionLengthDays) sont des PROPOSITIONS de
+départ. L'équilibre Lotka-Volterra est sensible : tout modificateur qui touche
+l'énergie, la fertilité ou la longévité doit être validé EN SIMULATION (graphe
+de populations), pas seulement en test unitaire. On committe les valeurs comme
+paramètres de SimulationConfig (sliders) pour pouvoir les régler à chaud.
+
+Note de principe : on ASSUME qu'une lignée « invincible » puisse émerger (cumul
+INTELLIGENT + ENDURANT + FORT + FERTILE). Ce n'est PAS un risque à corriger : si
+une telle lignée domine, c'est que la sélection va dans ce sens — il n'existe pas
+de garde-fou dans la réalité. Aucun plafond d'axes positifs ni coût artificiel
+par axe n'est imposé. La diversité est maintenue (ou non) par la seule pression
+de l'environnement.
+
+Risques à surveiller :
+  * Oscillation du caractère : malgré l'hystérésis, mal régler S_GAIN/S_LOSE ou
+    sessionLengthDays peut faire clignoter les traits. Vérifier la stabilité en
+    jeu (Phase G).
+  * Coût CPU du « suivre le parent » et de la navigation longue distance
+    (recherche de cap répétée) : rester en O(1) par agent (pas de pathfinding
+    global), simple biais de direction tore-aware.
+  * Fenêtres de stade trop courtes : avec la maturité biologique du mouton
+    (~6 % de la vie), bébé/jeune sont brefs ; étirer si l'effet est invisible.
+
+────────────────────────────────────────────────────────────────────────────────
+Références biologiques (croissance & cycle de vie, § 10)
+  * Stades du mouton (sevrage, maturité, longévité) : recoupement de fiches
+    d'élevage (a-z-animals.com, sheepgoatinsights.com).
+  * Courbe de croissance sigmoïde des mammifères (Gompertz/von Bertalanffy) :
+    « Fitting Sigmoidal Equations to Mammalian Growth Curves », J. of Mammalogy.
+────────────────────────────────────────────────────────────────────────────────
