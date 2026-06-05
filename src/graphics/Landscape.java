@@ -281,7 +281,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private int[][] moonLightCells; // [N][2] : (cellX, cellY)
 		private static final int N_MOON_LIGHTS = 6;
 
-        int it = 0;
+        int it = 0;                  // horloge de SIMULATION (ticks) : pilote le cycle
+                                     // jour/nuit ; n'avance qu'avec world.step() → figée
+                                     // en pause, accélérée en x2/x4/x8.
+        private int renderFrames = 0; // compteur de frames de RENDU, pour le calcul du FPS
         int movingIt = 0;
         int dxView;
         int dyView;
@@ -1148,10 +1151,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
         		// ** compute FPS
         		
+        		renderFrames++;
         		if ( System.currentTimeMillis() - lastTimeStamp >= 1000 )
         		{
-    				int fps = ( it - lastItStamp ) / 1;   // FPS pour le HUD (log console retiré)
-        			lastItStamp = it;
+    				int fps = ( renderFrames - lastItStamp ) / 1;   // frames de rendu / s
+        			lastItStamp = renderFrames;
         			lastTimeStamp = System.currentTimeMillis();
 
         			lastFpsValue = fps;
@@ -1344,9 +1348,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 // getJour()/setJour() est maintenant synchronisé par updateSunAndSky()
                 // selon l'altitude du soleil. Plus de toggle à it%dureeJour ici —
                 // le clic droit shift directement 'it' pour basculer.
+                // NB : 'it' (horloge jour/nuit) n'est PLUS incrémenté par frame de
+                // rendu ici — il avance dans le step loop, au rythme de la simulation
+                // (cf. « it += stepsThisFrame »), donc figé en pause et accéléré en xN.
 
-                it++;
-                
                 /*
                 if ( it % 30 == 0 )//&& it != 0)
                 	movingIt++;
@@ -1375,6 +1380,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             					populationGraph.sample((WorldOfCells) _myWorld);
             				}
             			}
+            			// L'horloge jour/nuit avance au rythme de la SIMULATION (1 tick
+            			// par step) : figée en pause, ×N en accéléré, et la durée du jour
+            			// respecte enfin cycleTotalSec au lieu du FPS de rendu.
+            			it += stepsThisFrame;
             		}
             	}
 
