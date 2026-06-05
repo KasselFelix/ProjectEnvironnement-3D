@@ -37,6 +37,8 @@ public class SimulationConfig {
     public int nbLoups    = 5;
     public int nbMoutons  = 20;
     public int nbHumains  = 2;
+    /** L4 — super-prédateurs (ours) qui chassent les loups. */
+    public int nbOurs     = 1;
     /** L3 — 0 = berger (garde le troupeau), 1 = chasseur (pourchasse les loups). */
     public int humainChasseur = 0;
 

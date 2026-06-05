@@ -10,6 +10,7 @@ import agents.Agent;
 import agents.Loup;
 import agents.Mouton;
 import agents.Humain;
+import agents.Ours;
 
 import cellularautomata.*;
 import cellularautomata.ecosystem.LavaSource;
@@ -27,6 +28,8 @@ public abstract class World {
 	public ArrayList<Humain> humains = new ArrayList<Humain>();
 	public ArrayList<Loup> loups = new ArrayList<Loup>();
 	public ArrayList<Mouton> moutons = new ArrayList<Mouton>();
+	/** Super-prédateurs (L4) : chassent les loups. */
+	public ArrayList<Ours> ours = new ArrayList<Ours>();
 
 	/**
 	 * La case ({@code x}, {@code y}) est-elle bloquée pour {@code mover} par un
@@ -366,6 +369,8 @@ public abstract class World {
 	abstract public void setNbloups(int nbloups);
 	abstract public int getNbmoutons();
 	abstract public void setNbmoutons(int nbmoutons);
+	abstract public int getNbours();
+	abstract public void setNbours(int nbours);
 	abstract public int getBergerie();
 	abstract public void setBergerie(int bergerie);
 	abstract public int getWolfHome();

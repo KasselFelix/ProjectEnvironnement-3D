@@ -174,11 +174,17 @@ public class Loup extends Agent {
 		return world.moutons;
 	}
 
-	/** Le Loup craint l'Humain (berger) : les Humains alimentent predatorDir du
-	 *  Percept → le loup fuit, ce qui rend un troupeau gardé plus sûr. */
+	/** Le Loup craint l'Humain (berger) ET l'Ours (super-prédateur, L4) : les deux
+	 *  alimentent predatorDir du Percept → le loup fuit. Un troupeau gardé est plus
+	 *  sûr ; un ours dans les parages fait fuir la meute. */
 	@Override
 	protected java.util.List<? extends objects.UniqueDynamicObject> predators() {
-		return world.humains;
+		if (world.ours.isEmpty()) return world.humains;   // cas courant : pas d'ours
+		java.util.List<objects.UniqueDynamicObject> threats =
+				new java.util.ArrayList<>(world.humains.size() + world.ours.size());
+		threats.addAll(world.humains);
+		threats.addAll(world.ours);
+		return threats;
 	}
 
 	@Override

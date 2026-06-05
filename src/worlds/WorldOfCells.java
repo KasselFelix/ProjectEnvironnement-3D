@@ -29,6 +29,7 @@ public class WorldOfCells extends World {
 	public int nbloups = 10;//20
 	public int nbmoutons =20;//45//20
 	public int nbhumains=2;
+	public int nbours=1;   // L4 — super-prédateurs
 	int bergerie;
 	int wolfHome;
 	float nivPlage;
@@ -46,6 +47,7 @@ public class WorldOfCells extends World {
     		nbloups   = config.nbLoups;
     		nbmoutons = config.nbMoutons;
     		nbhumains = config.nbHumains;
+    		nbours    = config.nbOurs;
     		// Module 1 (refonte 2026-05) : conversion sec → ticks via simulationHz
     		setDureeJour(Math.max(1, Math.round(config.cycleTotalSec * config.simulationHz / 2f)));
     		setTransitionJour(Math.max(1, Math.round(config.transitionJourSec * config.simulationHz)));
@@ -133,6 +135,17 @@ public class WorldOfCells extends World {
 			agents.add(preyA);
 			uniqueDynamicObjects.add(preyA);
 		}
+    	for ( int i = 0 ; i != nbours; i++ ){           // L4 — super-prédateurs
+			px=(int)(Math.random()*dxCA);
+			py=(int)(Math.random()*dyCA);
+			Ours bear = new Ours(px,py,this);
+			bear.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);
+			bear.initMind();
+			applyConfigTo(bear);
+			ours.add(bear);
+			agents.add(bear);
+			uniqueDynamicObjects.add(bear);
+		}
 
     }
 
@@ -150,6 +163,7 @@ public class WorldOfCells extends World {
     		nbloups   = config.nbLoups;
     		nbmoutons = config.nbMoutons;
     		nbhumains = config.nbHumains;
+    		nbours    = config.nbOurs;
     		// Module 1 (refonte 2026-05) : conversion sec → ticks via simulationHz
     		setDureeJour(Math.max(1, Math.round(config.cycleTotalSec * config.simulationHz / 2f)));
     		setTransitionJour(Math.max(1, Math.round(config.transitionJourSec * config.simulationHz)));
@@ -163,12 +177,15 @@ public class WorldOfCells extends World {
     	uniqueDynamicObjects.removeAll(loups);
     	uniqueDynamicObjects.removeAll(moutons);
     	uniqueDynamicObjects.removeAll(humains);
+    	uniqueDynamicObjects.removeAll(ours);
     	agents.removeAll(loups);
     	agents.removeAll(moutons);
     	agents.removeAll(humains);
+    	agents.removeAll(ours);
     	loups.clear();
     	moutons.clear();
     	humains.clear();
+    	ours.clear();
 
     	int px, py;
     	for (int i = 0; i < nbhumains; i++) {
@@ -200,6 +217,17 @@ public class WorldOfCells extends World {
     		moutons.add(m);
     		agents.add(m);
     		uniqueDynamicObjects.add(m);
+    	}
+    	for (int i = 0; i < nbours; i++) {              // L4 — super-prédateurs
+    		px = (int)(Math.random() * dxCA);
+    		py = (int)(Math.random() * dyCA);
+    		Ours bear = new Ours(px, py, this);
+    		bear.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);
+    		bear.initMind();
+    		applyConfigTo(bear);
+    		ours.add(bear);
+    		agents.add(bear);
+    		uniqueDynamicObjects.add(bear);
     	}
     }
 
@@ -241,6 +269,14 @@ public class WorldOfCells extends World {
     private void applyConfigTo(Humain h) {
     	if (config == null) return;
     	h.chasseur = config.humainChasseur == 1;
+    }
+
+    /** L4 — applique la config à un ours. Pour l'instant l'ours n'a pas de
+     *  paramètres exposés au menu (biologie fixe) ; le hook existe pour symétrie
+     *  et extension future. */
+    private void applyConfigTo(Ours o) {
+    	if (config == null) return;
+    	// (aucun paramètre configurable pour l'instant)
     }
 
     /** Variante mouton. */
@@ -427,6 +463,14 @@ public class WorldOfCells extends World {
 				this.agents.remove(this.moutons.get(i));
 				this.moutons.remove(i);
 				nbmoutons--;
+			}
+    	}
+    	for ( int i = 0 ; i < ours.size() ; i++ ){        // L4 — purge des ours morts
+			if(ours.get(i)._alive == false) {
+				this.uniqueDynamicObjects.remove((UniqueDynamicObject)this.ours.get(i));
+				this.agents.remove(this.ours.get(i));
+				this.ours.remove(i);
+				nbours--;
 			}
     	}
     	int w = getWidth();
@@ -671,6 +715,14 @@ public class WorldOfCells extends World {
 
 	public void setNbmoutons(int nbmoutons) {
 		this.nbmoutons = nbmoutons;
+	}
+
+	public int getNbours() {
+		return nbours;
+	}
+
+	public void setNbours(int nbours) {
+		this.nbours = nbours;
 	}
 
 	public int getBergerie() {

@@ -31,6 +31,7 @@ public class Hud {
         int loups   = world.loups.size();
         int moutons = world.moutons.size();
         int humains = world.humains.size();
+        int oursN   = world.ours.size();
 
         // L5/L6 — saison courante (+ jour-jeu) et météo (température, pluie).
         String saison = world.currentSeason().label;
@@ -38,8 +39,8 @@ public class Hud {
                 world.getTemperature(), world.isRaining() ? " pluie" : "");
 
         String text = String.format(
-                "Iter:%d  |  %s %s  |  %s J%d %s  |  Loups:%d  Moutons:%d  Humains:%d  |  FPS:%d  |  ",
-                iter, dayLabel, gameTime, saison, world.getCurrentDay(), meteo, loups, moutons, humains, fps);
+                "Iter:%d  |  %s %s  |  %s J%d %s  |  Ours:%d  Loups:%d  Moutons:%d  Humains:%d  |  FPS:%d  |  ",
+                iter, dayLabel, gameTime, saison, world.getCurrentDay(), meteo, oursN, loups, moutons, humains, fps);
 
         ui.drawText(gl, PADDING_X, TEXT_Y_OFFSET, viewportHeight, text, 1f, 1f, 1f);
 

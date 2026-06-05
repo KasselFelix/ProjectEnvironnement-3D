@@ -28,6 +28,7 @@ public class PopulationGraph {
     private final int[] loups   = new int[CAPACITY];
     private final int[] moutons = new int[CAPACITY];
     private final int[] humains = new int[CAPACITY];
+    private final int[] ours    = new int[CAPACITY];   // L4 super-prédateur
     private int head = 0;
     private int size = 0;
     private int lastSampleIter = -1;
@@ -42,6 +43,7 @@ public class PopulationGraph {
         loups[head]   = world.loups.size();
         moutons[head] = world.moutons.size();
         humains[head] = world.humains.size();
+        ours[head]    = world.ours.size();
         head = (head + 1) % CAPACITY;
         if (size < CAPACITY) size++;
     }
@@ -59,9 +61,10 @@ public class PopulationGraph {
         // Titre avec légende colorée.
         ui.drawText(gl, gx + 8, gy + 14, viewportHeight, "Populations", 1f, 1f, 0.7f);
         int legX = gx + 95;
-        ui.drawText(gl, legX,        gy + 14, viewportHeight, "Loups",   1f,   0.3f, 0.3f);
-        ui.drawText(gl, legX + 50,   gy + 14, viewportHeight, "Moutons", 0.95f,0.95f,0.95f);
-        ui.drawText(gl, legX + 115,  gy + 14, viewportHeight, "Humains", 0.4f, 0.7f, 1f);
+        ui.drawText(gl, legX,        gy + 14, viewportHeight, "Ours",    0.7f, 0.45f, 0.2f);
+        ui.drawText(gl, legX + 42,   gy + 14, viewportHeight, "Loups",   1f,   0.3f, 0.3f);
+        ui.drawText(gl, legX + 92,   gy + 14, viewportHeight, "Moutons", 0.95f,0.95f,0.95f);
+        ui.drawText(gl, legX + 157,  gy + 14, viewportHeight, "Humains", 0.4f, 0.7f, 1f);
 
         if (size < 2) {
             ui.drawText(gl, gx + 8, gy + gh / 2, viewportHeight,
@@ -75,6 +78,7 @@ public class PopulationGraph {
             if (loups[i]   > maxVal) maxVal = loups[i];
             if (moutons[i] > maxVal) maxVal = moutons[i];
             if (humains[i] > maxVal) maxVal = humains[i];
+            if (ours[i]    > maxVal) maxVal = ours[i];
         }
 
         // Axe Y à gauche : gouttière pour labels "max" en haut et "0" en bas, puis ligne verticale.
@@ -99,6 +103,7 @@ public class PopulationGraph {
         ui.drawText(gl, plotX - 6 - 3, plotY + plotH + 4, viewportHeight,
                 "0", 0.7f, 0.7f, 0.7f);
 
+        drawSeries(gl, ours,    plotX, plotY, plotW, plotH, maxVal, 0.7f,  0.45f, 0.2f);
         drawSeries(gl, loups,   plotX, plotY, plotW, plotH, maxVal, 1f,    0.3f, 0.3f);
         drawSeries(gl, moutons, plotX, plotY, plotW, plotH, maxVal, 0.95f, 0.95f, 0.95f);
         drawSeries(gl, humains, plotX, plotY, plotW, plotH, maxVal, 0.4f,  0.7f,  1f);

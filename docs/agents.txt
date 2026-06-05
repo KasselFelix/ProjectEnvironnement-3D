@@ -392,9 +392,20 @@ Idées d'extensions classées par effort estimé.
       graphe ; gènes supplémentaires (swimFactor, seuils repro/faim) ; factoriser
       `mutateInt`/`mutateDouble` dans Agent (dupliqués Loup/Mouton). Cf. skill
       `alife` (Axelrod, Sugarscape).
-    * Niveaux trophiques supplémentaires : herbivores plus petits qui ne
-      sont mangés que par moutons, super-prédateur qui mange les loups.
-      Permet de tester la stabilité de chaînes alimentaires à 3+ niveaux.
+    * [RÉALISÉ 2026-06-06, L4] Niveau trophique supplémentaire — super-prédateur
+      OURS (`agents.Ours`) qui chasse le LOUP → chaîne à 3 niveaux Ours → Loup →
+      Mouton (→ herbe). Calqué sur le Loup (mêmes hooks Template Method, socle
+      cognitif L1) mais sans GLB (rendu cube), apex (ne fuit que feu/lave),
+      `prey()` = `world.loups`, dévore le loup au contact (gain plafonné à
+      energieD/2), reproduction sexuée + héritage. Le LOUP craint l'ours :
+      `Loup.predators()` renvoie désormais humains ∪ ours → il fuit les deux.
+      Câblage complet : liste `World.ours`, compteurs `nb ours`/`getNbours`,
+      spawn (2 chemins) + purge dans `stepAgents`, config `SimulationConfig.nbOurs`
+      (slider LaunchMenu), HUD (compteur Ours), `PopulationGraph` (4e courbe
+      brune), `AgentInfoPanel`. Tests `OursTest` (×3 : chasse, prédation, peur du
+      loup). 199 tests verts. RESTE (optionnel) : modèle GLB de l'ours ; petit
+      herbivore commun (2e proie). Permet de tester la stabilité de chaînes
+      alimentaires à 3+ niveaux.
     * Apprentissage par renforcement (au lieu d'arbre de comportement
       hardcodé). Demande un changement important d'architecture mais
       permettrait à l'écosystème de générer des stratégies non-anticipées.

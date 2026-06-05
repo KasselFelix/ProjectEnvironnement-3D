@@ -112,12 +112,14 @@ public class AgentInfoPanel {
         if (a instanceof Loup)   return ((Loup) a).getEnergie();
         if (a instanceof Mouton) return (int) ((Mouton) a).getEnergie();
         if (a instanceof Humain) return ((Humain) a).getEnergie();
+        if (a instanceof agents.Ours) return ((agents.Ours) a).getEnergie();
         return 0;
     }
     private int energieMaxOf(Agent a) {
         if (a instanceof Loup)   return ((Loup) a).getEnergieMax();
         if (a instanceof Mouton) return (int) ((Mouton) a).getEnergieMax();
         if (a instanceof Humain) return ((Humain) a).getEnergieMax();
+        if (a instanceof agents.Ours) return ((agents.Ours) a).getEnergieMax();
         return 1;
     }
 }
