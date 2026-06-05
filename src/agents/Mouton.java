@@ -291,10 +291,18 @@ public class Mouton extends Agent {
 		//reproduction — conditionnée à l'énergie : le mouton doit être en bonne
 		// santé (≥ seuil) et INVESTIT une part de son énergie dans l'agneau
 		// (énergie conservée, pas créée). L'agneau naît à la position du parent.
-		if(energie >= energieMAX * reproEnergyThreshold && hasReproPartnerNearby() && Math.random()<Prepro) {
+		Mouton mate = findReproPartner();
+		if(energie >= energieMAX * reproEnergyThreshold && mate != null && Math.random()<Prepro) {
 			double invest = energieMAX * reproOffspringRatio;
 			Mouton prea=new Mouton(this.x, this.y, this._world);
 			prea.energie = invest;       // l'agneau hérite de l'énergie investie
+			// Héritage évolutif : l'agneau hérite des traits MOYENNÉS des deux
+			// parents, avec une légère mutation → variation individuelle et
+			// sélection naturelle (les mieux adaptés laissent plus de descendants).
+			prea.vision  = mutateInt((this.vision + mate.vision) / 2);
+			prea.vcourse = mutateDouble((this.vcourse + mate.vcourse) / 2.0);
+			prea.vmarche = mutateDouble((this.vmarche + mate.vmarche) / 2.0);
+			prea.maxAgeDays = this.maxAgeDays;   // longévité = paramètre config, pas un trait muté
 			energie -= invest;           // le parent paie ce coût → retombe sous le seuil
 			this.world.uniqueDynamicObjects.add(prea);
 			this.world.agents.add(prea);
@@ -317,15 +325,32 @@ public class Mouton extends Agent {
 	 *  reproduction. La reproduction sexuée exige un tel partenaire à portée. */
 	private static final int REPRO_RADIUS = 3;
 
-	/** Vrai si au moins un autre Mouton vivant est à portée de reproduction. Le
-	 *  regroupement nocturne maintient le troupeau assez serré pour que la
-	 *  reproduction reste possible (évite l'extinction par dispersion). */
-	private boolean hasReproPartnerNearby() {
+	/** Mutation ±MUTATION_RATE appliquée aux traits hérités. */
+	private static final double MUTATION_RATE = 0.1;
+
+	private static int mutateInt(int base) {
+		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
+		return Math.max(1, (int) Math.round(base * f));
+	}
+
+	private static double mutateDouble(double base) {
+		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
+		return Math.max(0.1, base * f);
+	}
+
+	/** Partenaire de reproduction le plus proche (Mouton vivant dans REPRO_RADIUS),
+	 *  ou null si aucun. La reproduction sexuée l'exige ; il fournit aussi la
+	 *  moitié des traits hérités par l'agneau. Le regroupement nocturne maintient
+	 *  le troupeau assez serré pour éviter l'extinction par dispersion. */
+	private Mouton findReproPartner() {
+		Mouton best = null;
+		double bestD = Double.MAX_VALUE;
 		for (Mouton other : world.moutons) {
 			if (other == this || !other._alive) continue;
-			if (world.distance(other.x, other.y, x, y) <= REPRO_RADIUS) return true;
+			double d = world.distance(other.x, other.y, x, y);
+			if (d <= REPRO_RADIUS && d < bestD) { bestD = d; best = other; }
 		}
-		return false;
+		return best;
 	}
 
 

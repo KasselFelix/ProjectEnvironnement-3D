@@ -1272,6 +1272,54 @@ class AgentBehaviorTest {
                 "avec un partenaire à portée, le mouton se reproduit (2 → 3).");
     }
 
+    // -----------------------------------------------------------------------
+    // Test — Héritage évolutif : l'agneau hérite des traits moyennés + mutation
+    // -----------------------------------------------------------------------
+
+    /**
+     * À la reproduction, l'agneau hérite des traits MOYENNÉS de ses deux parents
+     * avec une légère mutation (±10%) — base de la sélection naturelle. Deux
+     * parents à vision=30 / vcourse=20 produisent un agneau dont vision ≈ 30 (et
+     * non la valeur par défaut 10) et vcourse ≈ 20, dans les bornes de mutation.
+     */
+    @Test
+    void agneauHeriteDesTraitsMoyennesAvecMutation() {
+        WorldOfCells w = AgentTestSupport.buildWorld();
+        int cx = 22, cy = 22;
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++) {
+                w.setCellHeight(cx + dx, cy + dy, 1.0);
+                w.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        w.setJour(1);
+
+        Mouton a = new Mouton(cx, cy, w);
+        a.energie = a.energieMAX;
+        a.Prepro = 1.0;
+        a.vision = 30;
+        a.vcourse = 20;
+        w.moutons.add(a);
+        w.agents.add(a);
+        w.uniqueDynamicObjects.add(a);
+
+        Mouton mate = new Mouton(cx + 1, cy, w);
+        mate.Prepro = 0;
+        mate.vision = 30;
+        mate.vcourse = 20;
+        w.moutons.add(mate);
+        w.agents.add(mate);
+        w.uniqueDynamicObjects.add(mate);
+
+        a.step();
+
+        assertEquals(3, w.moutons.size(), "un agneau doit naître (2 → 3).");
+        Mouton lamb = w.moutons.get(2);
+        assertTrue(lamb.vision >= 27 && lamb.vision <= 33,
+                "vision héritée ~30 (±10%), pas le défaut 10 : " + lamb.vision);
+        assertTrue(lamb.vcourse >= 18.0 && lamb.vcourse <= 22.0,
+                "vcourse héritée ~20 (±10%) : " + lamb.vcourse);
+    }
+
     /** Place un mouton sur (cx,cy) + les 4 cases cardinales ; renvoie le troupeau. */
     private static Mouton[] addSheepCross(WorldOfCells world, int cx, int cy) {
         int[][] pos = { {cx, cy}, {cx, cy - 1}, {cx, cy + 1}, {cx - 1, cy}, {cx + 1, cy} };
