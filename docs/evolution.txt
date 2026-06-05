@@ -593,11 +593,19 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         consommé : capacité mémoire ; sera lu aussi en Phase F (apprentissage
         social) et Phase H (fiche UI).
 
-    Phase E — Sens de l'orientation
+    Phase E — Sens de l'orientation                [RÉALISÉ 2026-06-05]
         directionSens (cap vers cible hors-vue mémorisée), modulé par l'axe
         Orientation ; règle en-vue / hors-vue.
         Tests : cible en vue → ignore l'axe ; cible hors vue → BON_SENS file
         droit, DÉSORIENTÉ dévie ; mouton isolé rentre vers la bergerie mémorisée.
+        FAIT : Genome.orientationErrorProb (BON_SENS 0.0 / NEUTRE 0.15 /
+        DÉSORIENTÉ 0.5) ; Perception.navigate(self,world,tx,ty,errorProb,rng)
+        = dirToCell éventuellement dévié ±1. Mouton : directionSens, nearestSafePlace
+        (consomme memory.nearest en prod), learnNearbyLandmarks (mémorise la
+        bergerie SAFE_PLACE à ≤3 cases, appelé par tick), decideState nuit
+        isolé+lieu sûr → HOME, applyState HOME (en vue dirToCell exact / hors vue
+        navigate perturbé). Tests : GenomeTest +1, PerceptionTest +1,
+        MoutonHomingTest (4). 139 tests verts.
 
     Phase F — Apprentissage social + éducation
         Copie de souvenirs entre congénères ; transfert parent→enfant à

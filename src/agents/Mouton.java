@@ -133,6 +133,10 @@ public class Mouton extends Agent {
 	 *  ou un orphelin. Le suivi cesse quand le parent meurt ou qu'on devient adulte. */
 	public Mouton parent;
 
+	/** Cap de navigation longue distance courant (§ 9), distinct de _orient (le
+	 *  regard pas-à-pas). -1 = pas de cap longue distance actif. */
+	public int directionSens = -1;
+
 	/** Mémoire sémantique (§ 5) : zones de danger connues, etc. Capacité réglée
 	 *  selon l'intelligence et l'âge (refreshMemoryCapacity). */
 	public final agents.ai.SemanticMemory memory = new agents.ai.SemanticMemory();
@@ -177,6 +181,25 @@ public class Mouton extends Agent {
 			if (d <= vision && d < bestD) { bestD = d; nearest = l; }
 		}
 		if (nearest != null) memory.remember(agents.ai.MemoryKind.DANGER, nearest.x, nearest.y);
+	}
+
+	/** Rayon (cases) d'apprentissage d'un point de repère (bergerie → lieu sûr). */
+	private static final int LEARN_LANDMARK_RADIUS = 3;
+
+	/** Mémorise les repères proches comme lieux sûrs (§ 5 / § 9) : si le mouton
+	 *  est près de la bergerie, il l'enregistre comme SAFE_PLACE. */
+	public void learnNearbyLandmarks() {
+		worlds.WorldOfCells wc = (worlds.WorldOfCells) world;
+		int bx = wc.getBergerieX(), by = wc.getBergerieY();
+		if (world.distance(x, y, bx, by) <= LEARN_LANDMARK_RADIUS) {
+			memory.remember(agents.ai.MemoryKind.SAFE_PLACE, bx, by);
+		}
+	}
+
+	/** Lieu sûr mémorisé le plus proche (tore-aware), ou null. */
+	private int[] nearestSafePlace() {
+		return memory.nearest(agents.ai.MemoryKind.SAFE_PLACE, x, y,
+				(a, b, c, d) -> world.distance(a, b, c, d));
 	}
 
 	/** true si la case droit devant (cap _orient) est une zone de danger mémorisée. */
@@ -272,6 +295,7 @@ public class Mouton extends Agent {
 		fuite=0;
 		m=0;
 		refreshMemoryCapacity();             // la capacité mémoire suit l'âge (§ 5.1)
+		learnNearbyLandmarks();              // apprend la bergerie comme lieu sûr (§ 9)
 		if (alertTtl > 0) alertTtl--;        // l'alarme s'estompe (en TOURS, pas en ticks)
 		if(world.getCellHeight(x, y)>=0)earthSearch=0;
 		if(world.getCellHeight(x, y)<0){this._fireState=0;}
@@ -523,10 +547,14 @@ public class Mouton extends Agent {
 		// Suivi du parent (§ 10.3) : un agneau colle à son parent, priorité sur
 		// l'herbe / le troupeau / l'errance (mais après la survie ci-dessus).
 		if (shouldFollowParent()) return AgentState.FOLLOW_PARENT;
-		// La nuit, le troupeau se regroupe (sécurité du nombre) s'il voit des congénères.
-		if (world.getJour() == 0
-				&& agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons) >= 0)
-			return AgentState.HERD;
+		// La nuit : le troupeau se regroupe (sécurité du nombre) s'il voit des
+		// congénères ; sinon un mouton ISOLÉ qui connaît un lieu sûr y rentre (§ 9).
+		if (world.getJour() == 0) {
+			if (agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons) >= 0)
+				return AgentState.HERD;
+			if (nearestSafePlace() != null)
+				return AgentState.HOME;
+		}
 		if (energie < energieMAX * 0.5 && p.grassVisible()) return AgentState.SEEK_FOOD;
 		if (energie >= energieMAX)                          return AgentState.REST;   // repu → rumination
 		return AgentState.WANDER;
@@ -544,6 +572,21 @@ public class Mouton extends Agent {
 				if (parent != null) {
 					int pdir = agents.ai.Perception.dirToCell(this, world, parent.x, parent.y);
 					if (pdir >= 0) _orient = pdir;
+				}
+				vitesse = vmarche;
+				return MoveConstraints.landBound();
+			case HOME:
+				// Rentre vers le lieu sûr connu le plus proche (§ 9). En vue → cap
+				// exact ; hors vue → navigation à l'estime, perturbée par l'axe
+				// Orientation (directionSens, distinct du regard pas-à-pas).
+				int[] safe = nearestSafePlace();
+				if (safe != null) {
+					boolean inSight = world.distance(x, y, safe[0], safe[1]) <= vision;
+					directionSens = inSight
+							? agents.ai.Perception.dirToCell(this, world, safe[0], safe[1])
+							: agents.ai.Perception.navigate(this, world, safe[0], safe[1],
+									genome.orientationErrorProb(), EVO_RNG);
+					if (directionSens >= 0) _orient = directionSens;
 				}
 				vitesse = vmarche;
 				return MoveConstraints.landBound();

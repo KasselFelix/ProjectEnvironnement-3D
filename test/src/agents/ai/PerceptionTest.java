@@ -9,6 +9,31 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PerceptionTest {
 
+    /** navigate() (§ 9) : avec une probabilité d'erreur nulle (BON_SENS), le cap
+     *  vers une cible lointaine est EXACT (== dirToCell). Avec une probabilité 1
+     *  (très désorienté), il DÉVIE toujours d'un cran. Cible = soi → -1. */
+    @Test
+    void navigationLongueDistancePerturbeeParLOrientation() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        Mouton m = new Mouton(10, 10, world);
+        world.moutons.add(m); world.agents.add(m);
+        int tx = 40, ty = 10;                       // cible lointaine à l'Est
+        int base = Perception.dirToCell(m, world, tx, ty);
+
+        java.util.Random rng = new java.util.Random(1);
+        for (int i = 0; i < 50; i++) {
+            assertEquals(base, Perception.navigate(m, world, tx, ty, 0.0, rng),
+                    "erreur 0 → cap exact");
+        }
+        for (int i = 0; i < 50; i++) {
+            int d = Perception.navigate(m, world, tx, ty, 1.0, rng);
+            assertNotEquals(base, d, "erreur 1 → dévie toujours d'un cran");
+            assertTrue(d >= 0 && d <= 3);
+        }
+        assertEquals(-1, Perception.navigate(m, world, 10, 10, 0.0, rng),
+                "cible = position courante → pas de cap");
+    }
+
     /** Un mouton doit percevoir un loup placé EN DIAGONALE (correctif C1). */
     @Test
     void moutonPercoitPredateurEnDiagonale() {

@@ -139,4 +139,20 @@ class GenomeTest {
         g.set(Axis.STRENGTH, Pole.NEGATIVE);
         assertEquals(0.9, g.strengthSizeFactor(), 1e-9);
     }
+
+    /** Probabilité d'erreur de cap en navigation longue distance (§ 4.1, § 9) :
+     *  BON_SENS 0.0 (cap exact), NEUTRE faible, DÉSORIENTÉ élevée. */
+    @Test
+    void probabiliteDErreurDOrientation() {
+        Genome g = new Genome();
+        double neutre = g.orientationErrorProb();
+        g.set(Axis.ORIENTATION, Pole.POSITIVE);
+        double bonSens = g.orientationErrorProb();
+        g.set(Axis.ORIENTATION, Pole.NEGATIVE);
+        double desoriente = g.orientationErrorProb();
+
+        assertEquals(0.0, bonSens, 1e-9, "BON_SENS → cap exact, aucune erreur");
+        assertTrue(neutre > bonSens, "le neutre dévie parfois");
+        assertTrue(desoriente > neutre, "le désorienté dévie souvent");
+    }
 }

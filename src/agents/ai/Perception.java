@@ -127,6 +127,22 @@ public final class Perception {
         return dominantDir(self.x, self.y, tx, ty, w, h);
     }
 
+    /**
+     * Cap de navigation LONGUE DISTANCE vers ({@code tx}, {@code ty}) : le cap
+     * exact ({@link #dirToCell}) éventuellement dévié d'un cran (±1) avec la
+     * probabilité {@code errorProb} (gouvernée par l'axe Orientation, § 9).
+     * Renvoie -1 si la cible est la position courante.
+     */
+    public static int navigate(objects.UniqueDynamicObject self, World world,
+                               int tx, int ty, double errorProb, java.util.Random rng) {
+        int base = dirToCell(self, world, tx, ty);
+        if (base < 0) return -1;
+        if (rng.nextDouble() < errorProb) {
+            return rng.nextBoolean() ? (base + 1) % 4 : (base + 3) % 4;
+        }
+        return base;
+    }
+
     /** Distance torique min entre deux cellules. */
     static double torusDist(int ax, int ay, int bx, int by, int w, int h) {
         double dx = Math.min((ax - bx + w) % w, (bx - ax + w) % w);

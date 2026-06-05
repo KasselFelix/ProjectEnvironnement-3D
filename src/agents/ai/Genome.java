@@ -74,6 +74,17 @@ public final class Genome {
         }
     }
 
+    /** Probabilité de dévier du cap en navigation LONGUE DISTANCE (axe
+     *  Orientation, § 4.1/§ 9) : BON_SENS 0.0 (cap exact), NEUTRE 0.15,
+     *  DÉSORIENTÉ 0.5. Sans effet quand la cible est en vue (cf. § 9). */
+    public double orientationErrorProb() {
+        switch (get(Axis.ORIENTATION)) {
+            case POSITIVE: return 0.0;
+            case NEGATIVE: return 0.5;
+            default:       return 0.15;
+        }
+    }
+
     /**
      * Construit le génome d'un enfant à partir des deux parents (§ 4.4). Pour
      * chaque axe, l'enfant prend le pôle d'un des deux parents (tirage 50/50).
