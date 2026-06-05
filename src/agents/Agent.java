@@ -30,6 +30,72 @@ public class Agent extends UniqueDynamicObject{
 		return true;
 	}
 
+	// ===== Évolution — socle commun (cf. docs/evolution.txt) =====
+	// Factorisé depuis Mouton/Loup (consolidation C3). Chaque espèce câble sa
+	// reproduction par-dessus ; les fondateurs ont un génome NEUTRE.
+
+	/** Durée de vie en jours-jeu ; ≤ 0 = immortel par vieillesse (§ 10.1). */
+	public double maxAgeDays = -1;
+	/** Génome : axes à 3 états héritables (§ 4). NEUTRE pour un fondateur. */
+	public agents.ai.Genome genome = new agents.ai.Genome();
+	/** true = spawné (adulte d'emblée) ; false = né (démarre BÉBÉ, § 10.1). */
+	public boolean isFounder = true;
+	/** Facteur de taille individuel héritable (§ 10.2), clampé [0.8, 1.2]. */
+	public double sizeFactor = 1.0;
+
+	/** Stade de vie courant (§ 10.1) — un fondateur saute l'enfance. */
+	public agents.ai.LifeStage currentStage() {
+		agents.ai.LifeStage s = agents.ai.LifeStage.of(getAgeDays(), maxAgeDays);
+		if (isFounder && (s == agents.ai.LifeStage.BABY || s == agents.ai.LifeStage.JUVENILE)) {
+			return agents.ai.LifeStage.ADULT;
+		}
+		return s;
+	}
+
+	/** Échelle de croissance liée à l'âge (§ 10.2) : fondateur 1.0, né = Gompertz. */
+	public double growthScale() {
+		if (isFounder) return 1.0;
+		return agents.ai.LifeStage.gompertzGrowth(getAgeDays(), maxAgeDays);
+	}
+
+	/** Taille de rendu relative (§ 10.2) : trait × croissance × Force du génome. */
+	public double displaySize() {
+		return sizeFactor * growthScale() * genome.strengthSizeFactor();
+	}
+
+	// ----- Héritage à la naissance (constantes + utilitaires partagés) -----
+	/** Source d'aléa pour l'héritage du génome. */
+	protected static final java.util.Random EVO_RNG = new java.util.Random();
+	/** Mutation ±MUTATION_RATE des traits numériques hérités. */
+	protected static final double MUTATION_RATE = 0.1;
+	/** Proba de mutation d'un axe du génome à la naissance (§ 4.2). */
+	protected static final double TYPE_MUTATION_RATE = 0.05;
+	/** Proba d'hériter un axe d'un grand-parent (§ 4.4). */
+	protected static final double GRANDPARENT_PROB = 0.1;
+	/** Malus de longévité des enfants d'un parent INFERTILE (§ 4.3). */
+	protected static final double INFERTILE_CHILD_LONGEVITY_MALUS = 0.5;
+	private static final double SIZE_FACTOR_MIN = 0.8;
+	private static final double SIZE_FACTOR_MAX = 1.2;
+
+	protected static int mutateInt(int base) {
+		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
+		return Math.max(1, (int) Math.round(base * f));
+	}
+
+	protected static double mutateDouble(double base) {
+		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
+		return Math.max(0.1, base * f);
+	}
+
+	protected static double clampSize(double s) {
+		return Math.max(SIZE_FACTOR_MIN, Math.min(SIZE_FACTOR_MAX, s));
+	}
+
+	/** true si l'agent porte l'axe Fertilité au pôle NÉGATIF (INFERTILE, § 4.3). */
+	protected static boolean isInfertile(Agent a) {
+		return a.genome.get(agents.ai.Axis.FERTILITY) == agents.ai.Pole.NEGATIVE;
+	}
+
 	int 	_x;
 	int 	_y;
 	int		_z;

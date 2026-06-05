@@ -98,10 +98,6 @@ public class Mouton extends Agent {
 	// états confondus (cf. SimulationConfig).
 	public double swimFactor = 0.25;
 
-	// Mort par vieillesse — surchargé par SimulationConfig au spawn et en live.
-	// Valeur ≤ 0 = pas de mort par âge.
-	public double maxAgeDays = -1;
-
 	public int earthSearch=0;// 1 si est dans l'eau et recherche la terre ferme
 
 	public int fuite=0;
@@ -113,19 +109,6 @@ public class Mouton extends Agent {
 	public int m=0;
 	public int lastX;
 	public int lastY;
-
-	/** Génome (Phase A évolution, cf. docs/evolution.txt § 4). Un fondateur est
-	 *  NEUTRE sur tous les axes ; un agneau l'hérite des deux parents. */
-	public agents.ai.Genome genome = new agents.ai.Genome();
-
-	/** true = spawné au lancement (adulte d'emblée) ; false = né par
-	 *  reproduction (démarre BÉBÉ et grandit, cf. § 10.1). Le cycle
-	 *  bébé→jeune→adulte ne concerne que les agneaux nés. */
-	public boolean isFounder = true;
-
-	/** Facteur de taille individuel héritable (§ 10.2), clampé [0.8, 1.2] :
-	 *  deux adultes du même stade n'ont pas la même taille. */
-	public double sizeFactor = 1.0;
 
 	/** Parent à suivre tant qu'on est bébé/jeune (§ 10.3). null pour un fondateur
 	 *  ou un orphelin. Le suivi cesse quand le parent meurt ou qu'on devient adulte. */
@@ -299,29 +282,6 @@ public class Mouton extends Agent {
 		if (s != agents.ai.LifeStage.BABY && s != agents.ai.LifeStage.JUVENILE) return false;
 		return parent != null && parent._alive
 				&& world.distance(parent.x, parent.y, x, y) <= FOLLOW_RADIUS;
-	}
-
-	/** Stade de vie courant (§ 10.1). Un fondateur saute l'enfance (ADULTE
-	 *  d'emblée, puis VIEUX en sénescence) ; un agneau parcourt tout le cycle. */
-	public agents.ai.LifeStage currentStage() {
-		agents.ai.LifeStage s = agents.ai.LifeStage.of(getAgeDays(), maxAgeDays);
-		if (isFounder && (s == agents.ai.LifeStage.BABY || s == agents.ai.LifeStage.JUVENILE)) {
-			return agents.ai.LifeStage.ADULT;
-		}
-		return s;
-	}
-
-	/** Échelle de croissance liée à l'âge (§ 10.2) : un fondateur est à pleine
-	 *  taille (1.0) ; un agneau né suit la courbe de Gompertz depuis ~0.40. */
-	public double growthScale() {
-		if (isFounder) return 1.0;
-		return agents.ai.LifeStage.gompertzGrowth(getAgeDays(), maxAgeDays);
-	}
-
-	/** Taille de rendu relative (§ 10.2) : trait individuel × croissance liée à
-	 *  l'âge × léger facteur de Force du génome. Multiplie l'échelle de base. */
-	public double displaySize() {
-		return sizeFactor * growthScale() * genome.strengthSizeFactor();
 	}
 
 	public Mouton( int __x, int __y, World __World )
@@ -579,42 +539,7 @@ public class Mouton extends Agent {
 	/** Rayon (cases) dans lequel un congénère vivant compte comme partenaire de
 	 *  reproduction. La reproduction sexuée exige un tel partenaire à portée. */
 	private static final int REPRO_RADIUS = 3;
-
-	/** Mutation ±MUTATION_RATE appliquée aux traits hérités. */
-	private static final double MUTATION_RATE = 0.1;
-
-	// ===== Héritage du génome (Phase A évolution, § 4) =====
-	/** Source d'aléa pour l'héritage du génome à la naissance. */
-	private static final java.util.Random EVO_RNG = new java.util.Random();
-	/** Proba qu'un axe mute d'un cran à la naissance (§ 4.2). */
-	private static final double TYPE_MUTATION_RATE = 0.05;
-	/** Proba qu'un axe soit hérité d'un grand-parent (§ 4.4). */
-	private static final double GRANDPARENT_PROB = 0.1;
-	/** Malus de longévité des enfants d'un parent INFERTILE (§ 4.3). */
-	private static final double INFERTILE_CHILD_LONGEVITY_MALUS = 0.5;
-
-	/** true si l'agent porte l'axe Fertilité au pôle NÉGATIF (INFERTILE). */
-	private static boolean isInfertile(Mouton m) {
-		return m.genome.get(agents.ai.Axis.FERTILITY) == agents.ai.Pole.NEGATIVE;
-	}
-
-	/** Bornes du facteur de taille individuel (§ 10.2). */
-	private static final double SIZE_FACTOR_MIN = 0.8;
-	private static final double SIZE_FACTOR_MAX = 1.2;
-
-	private static double clampSize(double s) {
-		return Math.max(SIZE_FACTOR_MIN, Math.min(SIZE_FACTOR_MAX, s));
-	}
-
-	private static int mutateInt(int base) {
-		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
-		return Math.max(1, (int) Math.round(base * f));
-	}
-
-	private static double mutateDouble(double base) {
-		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
-		return Math.max(0.1, base * f);
-	}
+	// Héritage du génome + helpers de mutation/taille : factorisés dans Agent (C3).
 
 	/** Partenaire de reproduction le plus proche (Mouton vivant dans REPRO_RADIUS),
 	 *  ou null si aucun. La reproduction sexuée l'exige ; il fournit aussi la

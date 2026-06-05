@@ -86,10 +86,6 @@ public class Loup extends Agent {
 	// uniformément dans postMove, quel que soit l'état (cf. SimulationConfig).
 	public double swimFactor = 0.6;
 
-	// Mort par vieillesse — surchargé par SimulationConfig au spawn et en live.
-	// Valeur ≤ 0 = pas de mort par âge.
-	public double maxAgeDays = -1;
-
 	public int m = 0;// 1 si a manger ce tour
 	public int attaqueNuit = 0;
 
@@ -102,33 +98,8 @@ public class Loup extends Agent {
 	public int lastX;
 	public int lastY;
 
-	// ===== Évolution (Phase I, miroir du Mouton — cf. docs/evolution.txt) =====
-	/** Génome (§ 4) : NEUTRE pour un fondateur, hérité des deux parents. */
-	public agents.ai.Genome genome = new agents.ai.Genome();
-	/** true = spawné (adulte d'emblée) ; false = né (démarre BÉBÉ, § 10.1). */
-	public boolean isFounder = true;
-	/** Facteur de taille individuel héritable (§ 10.2), clampé [0.8, 1.2]. */
-	public double sizeFactor = 1.0;
-
-	/** Stade de vie courant (§ 10.1) — un fondateur saute l'enfance. */
-	public agents.ai.LifeStage currentStage() {
-		agents.ai.LifeStage s = agents.ai.LifeStage.of(getAgeDays(), maxAgeDays);
-		if (isFounder && (s == agents.ai.LifeStage.BABY || s == agents.ai.LifeStage.JUVENILE)) {
-			return agents.ai.LifeStage.ADULT;
-		}
-		return s;
-	}
-
-	/** Échelle de croissance liée à l'âge (§ 10.2). */
-	public double growthScale() {
-		if (isFounder) return 1.0;
-		return agents.ai.LifeStage.gompertzGrowth(getAgeDays(), maxAgeDays);
-	}
-
-	/** Taille de rendu relative (§ 10.2) : trait × croissance × Force du génome. */
-	public double displaySize() {
-		return sizeFactor * growthScale() * genome.strengthSizeFactor();
-	}
+	// Génome, cycle de vie (isFounder/currentStage/growthScale/displaySize) et
+	// taille héritable : factorisés dans Agent (consolidation C3).
 
 	public Loup(int __x, int __y, World __world) {
 		super(__x, __y, __world);
@@ -347,34 +318,7 @@ public class Loup extends Agent {
 
 	/** Rayon dans lequel un congénère vivant compte comme partenaire de repro. */
 	private static final int REPRO_RADIUS = 3;
-	/** Mutation ±MUTATION_RATE des traits hérités. */
-	private static final double MUTATION_RATE = 0.1;
-
-	private static int mutateInt(int base) {
-		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
-		return Math.max(1, (int) Math.round(base * f));
-	}
-
-	private static double mutateDouble(double base) {
-		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
-		return Math.max(0.1, base * f);
-	}
-
-	// ===== Héritage du génome (Phase I, miroir du Mouton, § 4) =====
-	private static final java.util.Random EVO_RNG = new java.util.Random();
-	private static final double TYPE_MUTATION_RATE = 0.05;
-	private static final double GRANDPARENT_PROB = 0.1;
-	private static final double INFERTILE_CHILD_LONGEVITY_MALUS = 0.5;
-	private static final double SIZE_FACTOR_MIN = 0.8;
-	private static final double SIZE_FACTOR_MAX = 1.2;
-
-	private static double clampSize(double s) {
-		return Math.max(SIZE_FACTOR_MIN, Math.min(SIZE_FACTOR_MAX, s));
-	}
-
-	private static boolean isInfertile(Loup l) {
-		return l.genome.get(agents.ai.Axis.FERTILITY) == agents.ai.Pole.NEGATIVE;
-	}
+	// Mutation/taille + héritage du génome : factorisés dans Agent (C3).
 
 	/** Partenaire de reproduction le plus proche (Loup vivant dans REPRO_RADIUS),
 	 *  ou null. Exigé par la reproduction sexuée ; fournit la moitié des gènes. */
