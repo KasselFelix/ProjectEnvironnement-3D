@@ -17,6 +17,19 @@ public class Agent extends UniqueDynamicObject{
 
 	World _world;
 
+	/** Vivant ? Déclaré sur la base commune pour que le monde puisse tester
+	 *  l'occupation des cases sans connaître le type concret de l'agent. */
+	public boolean _alive = true;
+
+	/**
+	 * Cet agent bloque-t-il le déplacement de {@code mover} vers sa case ? Par
+	 * défaut OUI : un agent est un obstacle pour tous les autres (pas de
+	 * superposition). Surchargé par la proie pour laisser entrer son prédateur.
+	 */
+	public boolean blocksMovementOf(UniqueDynamicObject mover) {
+		return true;
+	}
+
 	int 	_x;
 	int 	_y;
 	int		_z;

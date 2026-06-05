@@ -74,8 +74,6 @@ public class Mouton extends Agent {
 		gl.glPopMatrix();
 	}
 
-	public boolean _alive;
-
 	public double PreproD=0;//0.06  reproduction des moutons
 	public double Prepro=PreproD;
 
@@ -343,6 +341,13 @@ public class Mouton extends Agent {
 	public boolean isAlive() { return _alive; }
 
 	@Override public String getTypeName() { return "Mouton"; }
+
+	/** La proie ne bloque pas son prédateur : un Loup peut entrer sur sa case
+	 *  pour la dévorer (chevauchement transitoire). Bloque tous les autres. */
+	@Override
+	public boolean blocksMovementOf(objects.UniqueDynamicObject mover) {
+		return !(mover instanceof Loup);
+	}
 
 	@Override public String getCurrentBehavior() {
 		if (playerControlled) return "Piloté";

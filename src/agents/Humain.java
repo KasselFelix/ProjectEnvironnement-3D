@@ -3,8 +3,6 @@ package agents;
 import worlds.World;
 
 public class Humain extends Agent {
-	
-	public boolean _alive;
 
 	public int energieD=400;//20
 	public int energie=energieD;

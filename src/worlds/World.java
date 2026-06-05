@@ -27,6 +27,20 @@ public abstract class World {
 	public ArrayList<Humain> humains = new ArrayList<Humain>();
 	public ArrayList<Loup> loups = new ArrayList<Loup>();
 	public ArrayList<Mouton> moutons = new ArrayList<Mouton>();
+
+	/**
+	 * La case ({@code x}, {@code y}) est-elle bloquée pour {@code mover} par un
+	 * autre agent ? Les agents sont des obstacles les uns pour les autres (pas de
+	 * superposition) ; la proie laisse toutefois passer son prédateur
+	 * ({@link Agent#blocksMovementOf}). Les cadavres et soi-même ne bloquent pas.
+	 */
+	public boolean cellBlockedByAgent(int x, int y, UniqueDynamicObject mover) {
+		for (Agent a : agents) {
+			if (a == mover || !a._alive) continue;
+			if (a.x == x && a.y == y && a.blocksMovementOf(mover)) return true;
+		}
+		return false;
+	}
 	
 	public ArrayList<Integer> list=new ArrayList<Integer>();
 	int jour=0;// 0:nuit / 1:jour

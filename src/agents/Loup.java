@@ -63,8 +63,6 @@ public class Loup extends Agent {
 		gl.glPopMatrix();
 	}
 
-	public boolean _alive;
-
 	public double PreproD = 0;//0.0009; reproduction des loups
 	public double Prepro = PreproD;
 
