@@ -27,6 +27,17 @@ public class TimeKeeper {
      * @param simulationHz fréquence cible (lue depuis SimulationConfig)
      */
     public int stepsToRun(int simulationHz) {
+        return stepsToRun(simulationHz, MAX_STEPS_PER_FRAME);
+    }
+
+    /**
+     * Variante avec cap explicite : l'accélération (x2/x4/x8) relève le plafond
+     * de steps/frame proportionnellement pour ne pas être bridée par la garde
+     * anti-spirale calibrée pour la vitesse x1.
+     * @param maxStepsPerFrame plafond de steps exécutés cette frame (≥ 1)
+     */
+    public int stepsToRun(int simulationHz, int maxStepsPerFrame) {
+        int cap = Math.max(1, maxStepsPerFrame);
         long now = System.nanoTime();
         if (!initialized) {
             lastNowNs = now;
@@ -39,12 +50,12 @@ public class TimeKeeper {
 
         double tickDurationSec = 1.0 / Math.max(1, simulationHz);
         int steps = 0;
-        while (accumulatorSec >= tickDurationSec && steps < MAX_STEPS_PER_FRAME) {
+        while (accumulatorSec >= tickDurationSec && steps < cap) {
             accumulatorSec -= tickDurationSec;
             steps++;
         }
         // Anti-spirale : si on a accumulé trop, on jette le surplus
-        if (accumulatorSec > tickDurationSec * MAX_STEPS_PER_FRAME) {
+        if (accumulatorSec > tickDurationSec * cap) {
             accumulatorSec = 0;
         }
         return steps;

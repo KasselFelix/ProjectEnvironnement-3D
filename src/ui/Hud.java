@@ -21,7 +21,8 @@ public class Hud {
                      int viewportWidth, int viewportHeight,
                      World world,
                      String dayLabel, String gameTime,
-                     int fps) {
+                     int fps,
+                     String playbackLabel, boolean paused) {
 
         // Fond noir semi-transparent.
         ui.drawQuad(gl, 0, 0, viewportWidth, HEIGHT, 0f, 0f, 0f, 0.55f);
@@ -32,10 +33,17 @@ public class Hud {
         int humains = world.humains.size();
 
         String text = String.format(
-                "Iter:%d  |  %s %s  |  Loups:%d  Moutons:%d  Humains:%d  |  FPS:%d",
+                "Iter:%d  |  %s %s  |  Loups:%d  Moutons:%d  Humains:%d  |  FPS:%d  |  ",
                 iter, dayLabel, gameTime, loups, moutons, humains, fps);
 
         ui.drawText(gl, PADDING_X, TEXT_Y_OFFSET, viewportHeight, text, 1f, 1f, 1f);
+
+        // État de lecture en fin de bandeau : jaune vif en pause (attire l'œil),
+        // vert tendre en lecture. Positionné après le texte principal (largeur
+        // GLUT bitmap ≈ 6 px/char pour Helvetica 12).
+        int labelX = PADDING_X + text.length() * 6;
+        if (paused) ui.drawText(gl, labelX, TEXT_Y_OFFSET, viewportHeight, playbackLabel, 1f, 0.85f, 0.2f);
+        else        ui.drawText(gl, labelX, TEXT_Y_OFFSET, viewportHeight, playbackLabel, 0.6f, 1f, 0.6f);
     }
 
     public int getHeight() {

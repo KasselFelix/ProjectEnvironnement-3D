@@ -43,6 +43,8 @@ public class InGameMenu {
         {"l",       "Eclairage"},
         {"p",       "Eclairage haute qualite"},
         {"n",       "Basculer Jour <-> Nuit"},
+        {"Home",    "Pause / lecture de la simulation"},
+        {"+ / PgUp","Avance rapide (x1->x2->x4->x8)"},
         {"r",       "Eruption volcanique"},
         {"1 / 2",   "+/- amplitude altitude"},
         {"ZQSD",    "Naviguer (ou fleches)"},

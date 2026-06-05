@@ -302,6 +302,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         // Module 1 (refonte 2026-05) : fixed-timestep découplé du framerate.
         // Remplace l'ancien `_myWorld.step()` synchro frame par un loop accumulator.
         private final TimeKeeper timeKeeper = new TimeKeeper();
+        // Contrôle de lecture (pause + vitesse x1/x2/x4/x8), façon lecteur vidéo.
+        private final PlaybackControl playback = new PlaybackControl();
 
         // Menu de lancement (Phase 6 Pass B). Renseigné par le constructeur
         // Landscape(World, SimulationConfig). Si null, on saute toute la logique
@@ -1143,7 +1145,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
          */
         //@Override
         public void display(GLAutoDrawable gLDrawable) {
-           
+
         		// ** compute FPS
         		
         		if ( System.currentTimeMillis() - lastTimeStamp >= 1000 )
@@ -1358,12 +1360,20 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         		// steps selon le temps réel écoulé (fixed-timestep accumulator).
             	if (config == null || !config.awaitingStart) {
             		int hz = (config != null) ? config.simulationHz : 20;
-            		int stepsThisFrame = timeKeeper.stepsToRun(hz);
-            		for (int s = 0; s < stepsThisFrame; s++) {
-            			_myWorld.step();
-            			// Échantillonnage pour le graphe de populations (Phase 9).
-            			if (_myWorld instanceof WorldOfCells) {
-            				populationGraph.sample((WorldOfCells) _myWorld);
+            		int speed = playback.multiplier();
+            		// On consomme l'accumulator chaque frame (clock à jour, pas de
+            		// rafale au sortir de pause) ; l'accélération relève le cap de
+            		// steps/frame d'autant. Les steps ne sont exécutés que si la
+            		// lecture tourne (en pause : world figé, caméra libre).
+            		int stepsThisFrame = timeKeeper.stepsToRun(hz * speed,
+            				TimeKeeper.MAX_STEPS_PER_FRAME * speed);
+            		if (playback.isRunning()) {
+            			for (int s = 0; s < stepsThisFrame; s++) {
+            				_myWorld.step();
+            				// Échantillonnage pour le graphe de populations (Phase 9).
+            				if (_myWorld instanceof WorldOfCells) {
+            					populationGraph.sample((WorldOfCells) _myWorld);
+            				}
             			}
             		}
             	}
@@ -1717,7 +1727,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            		String gameTime = String.format("%02d:%02d", hr, mn);
 
 	            		hud.draw(gl, ui, viewportWidth, viewportHeight,
-	            		         _myWorld, dayLabel, gameTime, lastFpsValue);
+	            		         _myWorld, dayLabel, gameTime, lastFpsValue,
+	            		         playback.statusLabel(), playback.isPaused());
 	            	}
 	            	// Fiche détaillée de l'agent suivi (Phase 8), si présent.
 	            	if (selectedAgent != null) {
@@ -2400,6 +2411,18 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				// Anciennement déclenchée par le clic souris (réservé au picking P8).
 				it += _myWorld.getDureeJour();
 				break;
+			case KeyEvent.VK_HOME:   // touche Début/Home (claviers sans touche Pause)
+			case KeyEvent.VK_PAUSE:
+				// Pause/lecture de la simulation. En pause, le monde est figé mais
+				// la caméra reste libre.
+				playback.togglePause();
+				break;
+			case KeyEvent.VK_ADD:        // pavé num +
+			case KeyEvent.VK_EQUALS:     // '=' / '+' du clavier principal
+			case KeyEvent.VK_PAGE_UP:
+				// Avance rapide : x1 -> x2 -> x4 -> x8 -> x1 (relance si en pause).
+				playback.faster();
+				break;
 			case KeyEvent.VK_F:
 				// Bascule la caméra-follow sur l'agent sélectionné (Phase 8).
 				cameraFollow = !cameraFollow;
@@ -2486,6 +2509,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 						"       [shift] navigate in the landscape\n" +
 						"         [q/d] rotation wrt landscape\n" +
 						"           [r] volcanic eruption\n"+
+						"        [Home] pause / resume the simulation\n"+
+						"    [+ / PgUp] fast-forward (x1->x2->x4->x8)\n"+
 						"           [f] toggle camera-follow on selected agent\n"+
 						"           [c] toggle manual control of selected agent\n"+
 						"           [l] light\n"+
