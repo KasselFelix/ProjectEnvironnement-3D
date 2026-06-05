@@ -19,7 +19,13 @@ public final class Perception {
                                 List<? extends UniqueDynamicObject> prey) {
         final int ax = self.x, ay = self.y;
         final int w = world.getWidth(), h = world.getHeight();
-        final int vision = visionOf(self);
+        // L7 — fumée : un agent entouré de feu/lave voit moins loin (la fumée
+        // brouille la vue). La portée effective est réduite tant qu'il est dans
+        // la fumée.
+        int vision = visionOf(self);
+        if (smokyAround(self, world)) {
+            vision = Math.max(1, (int) Math.round(vision * SMOKE_VISION_FACTOR));
+        }
 
         int predatorDir = -1; double predatorDist = vision + 1;
         int preyDir = -1;     double preyDist = vision + 1;
@@ -169,6 +175,25 @@ public final class Perception {
         int fwd = (b - a + n) % n;          // pas vers l'avant
         int bwd = (a - b + n) % n;          // pas vers l'arrière
         return (fwd <= bwd) ? fwd : -bwd;
+    }
+
+    /** Fraction de la vision conservée quand l'agent est dans la fumée (L7). */
+    static final double SMOKE_VISION_FACTOR = 0.5;
+    /** Rayon (cases) de détection de fumée autour de l'agent (feu ou lave). */
+    static final int SMOKE_RADIUS = 3;
+
+    /** true si du feu (arbre en combustion) ou de la lave se trouve à
+     *  {@link #SMOKE_RADIUS} cases de l'agent → il est dans la fumée (L7). */
+    static boolean smokyAround(objects.UniqueDynamicObject self, World world) {
+        final int w = world.getWidth(), h = world.getHeight();
+        for (int dx = -SMOKE_RADIUS; dx <= SMOKE_RADIUS; dx++)
+            for (int dy = -SMOKE_RADIUS; dy <= SMOKE_RADIUS; dy++) {
+                int i = ((self.x + dx) % w + w) % w;
+                int j = ((self.y + dy) % h + h) % h;
+                if (ForestCA.isTreeOnFire(world.getForestCAValue(i, j))) return true;
+                if (world.getLavaCAValue(i, j) > 0) return true;
+            }
+        return false;
     }
 
     private static int visionOf(objects.UniqueDynamicObject self) {

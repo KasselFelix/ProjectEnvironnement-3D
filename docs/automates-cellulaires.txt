@@ -436,8 +436,13 @@ quand la lave solidifie elle enterre les cendres restantes.
       pour ForestCA (`markAsh` + `ASH_BOOST_FACTOR=3` dans `germinationProb`,
       ~200 ticks ; test `ForestCATest.cendreFertiliseLeSol`) ET pour GrassCA
       (`markAsh` + bonus dans `grassGerminationProb` ; test
-      `GrassCATest.cendreFertiliseLeSolPourLHerbe`). RESTE : le CA fumée réduisant
-      la visibilité des agents.
+      `GrassCATest.cendreFertiliseLeSolPourLHerbe`).
+      [RÉALISÉ 2026-06-06, L7, volet visibilité] La FUMÉE réduit la vision : un
+      agent entouré de feu ou de lave (≤ `SMOKE_RADIUS=3` cases,
+      `Perception.smokyAround`) voit sa portée effective divisée par deux
+      (`SMOKE_VISION_FACTOR=0.5`) dans `Perception.sense` → une cible visible par
+      temps clair disparaît dans la fumée. Test `SmokeVisionTest`. RESTE (visuel,
+      lot 2) : le rendu de la fumée grise elle-même (volet V2).
     * Nouveau CA « eau qui s'écoule » : à chaque tick, l'eau s'écoule
       vers la cellule voisine la plus basse. Permet de simuler les
       rivières et le ruissellement quand la lave bloque un cours.
