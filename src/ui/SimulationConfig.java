@@ -98,6 +98,9 @@ public class SimulationConfig {
     public float  dayFractionRatio   = 14f / 24f;
     /** Durée de la transition aube/crépuscule en secondes (anciennement transitionJour en iter). */
     public float  transitionJourSec  = 5f;
+    /** L5 — durée d'une saison en jours-jeu (un an = 4 × ce nombre). 0 = saisons
+     *  désactivées (été perpétuel). Default 3 ⇒ un an = 12 jours-jeu. */
+    public int    seasonLengthDays   = 3;
 
     // ───── Forêt (cf. ForestCA.java) ───────────────────────────────────────
     public double forestDensite        = 0.1;       // darbre   — densité initiale d'arbres

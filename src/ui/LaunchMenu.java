@@ -98,6 +98,9 @@ public class LaunchMenu {
                 v -> config.dayFractionRatio = (float) v, 0.30, 0.80, 0.05, "%.2f"));
         rows.add(doubleRow("Transition jour (sec)", () -> (double) config.transitionJourSec,
                 v -> config.transitionJourSec = (float) v, 0.5, 30.0, 0.5, "%.1f"));
+        // L5 — durée d'une saison en jours-jeu (0 = été perpétuel, pas de saisons).
+        rows.add(intRow("Saison (jours-jeu)", () -> config.seasonLengthDays,
+                v -> config.seasonLengthDays = v, 0, 30, 1));
 
         rows.add(new Section("FORET"));
         rows.add(doubleRow("Densite initiale",   () -> config.forestDensite,

@@ -407,8 +407,11 @@ l'écosystème.
       peuplements existants. La compétition (`fComp`) ralentit ensuite la croissance
       en zone dense → propagation surtout en lisière (réaliste). Test :
       `ForestCATest.dispersionDeGrainesAugmenteGermination`.
-    * Saisonnalité — coupler la fertilité au cycle jour/nuit ou à une saison
-      lente (croissance ralentie « l'hiver »).
+    * [RÉALISÉ 2026-06-06, L5] Saisonnalité — `World.seasonalFertility()`
+      (cf. `worlds.Season` + `cycle-jour-nuit.txt` §7) multiplie `fertility`
+      (forêt) et `grassGerminationProb` (herbe). Croissance ralentie « l'hiver »
+      (×0.30), explosive au printemps (×1.15). Tests `WorldSeasonTest`. RESTE :
+      la teinte de la végétation suivant la saison (rendu, lot 2).
     * [RÉALISÉ 2026-06-05] Fertilité enrichie par la proximité de l'eau —
       4e facteur `fWater` ajouté à `ForestCA.fertility` (= fAlt × fSoil × fComp ×
       fWater). Modèle de sécheresse : `fWater ∈ [WATER_DRY_MIN=0.55, 1.0]`, valant

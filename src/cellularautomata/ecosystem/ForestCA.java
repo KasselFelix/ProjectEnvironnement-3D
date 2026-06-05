@@ -110,7 +110,10 @@ public class ForestCA extends CellularAutomataInteger {
 			}
 		double fComp = 1.0 - COMP_K * (n / 8.0);
 		if (fComp < 0) fComp = 0;
-		return fAlt * fSoil * fComp * waterProximityFactor(x, y);
+		// L5 — modulation saisonnière : la forêt pousse vite au printemps, à
+		// l'arrêt l'hiver. Multiplie germination ET croissance (fertility est
+		// lue par les deux).
+		return fAlt * fSoil * fComp * waterProximityFactor(x, y) * world.seasonalFertility();
 	}
 
 	/**

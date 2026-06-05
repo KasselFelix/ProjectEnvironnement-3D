@@ -67,6 +67,7 @@ public class GrassCA extends CellularAutomataInteger {
 		double p = pH;
 		if (world.getStoneCAValue(x, y) > 0) p *= STONE_GROWTH_FACTOR;
 		if (ashBoost[x][y] > 0) p *= ASH_BOOST_FACTOR;   // sol cendré récent → repousse accélérée
+		p *= world.seasonalFertility();                  // L5 — l'herbe pousse au rythme des saisons
 		return p;
 	}
 

@@ -359,6 +359,7 @@ public class WorldOfCells extends World {
     @SuppressWarnings("deprecation")
     private void applyConfigToCAs() {
     	if (config == null) return;
+    	setSeasonLengthDays(config.seasonLengthDays);   // L5 — durée de saison (jours-jeu)
     	if (forestCA != null) {
     		forestCA.darbre = config.forestDensite;
     		forestCA.pA     = config.forestProbApparition;

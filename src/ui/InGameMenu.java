@@ -111,6 +111,7 @@ public class InGameMenu {
                 () -> config.humainChasseur == 1 ? "CHASSEUR" : "Berger",
                 () -> config.humainChasseur = 0,
                 () -> config.humainChasseur = 1));
+        paramRows.add(intRow("Saison (jours)",    () -> config.seasonLengthDays, v -> config.seasonLengthDays = v, 0, 30, 1));   // L5 ; 0 = ete perpetuel
         paramRows.add(intRow("Simulation Hz",     () -> config.simulationHz,   v -> config.simulationHz   = v, 10, 60, 5));
         paramRows.add(intRow("Distance de vue",   () -> config.viewDistanceCells, v -> config.viewDistanceCells = v, 10, 200, 5));
         paramRows.add(doubleRow("Sensibilite souris", () -> (double) config.mouseLookSensitivity,

@@ -239,8 +239,19 @@ PARAMS) pour `cycleTotalSec`, `dayFractionRatio`, `transitionJourSec`,
       `humainRentreAuFoyerLaNuit`. Comportements diurnes/nocturnes désormais
       couverts pour les trois espèces (Loup attaqueNuit, Mouton regroupement,
       Humain repli au foyer).
-    * Système de saisons (cycles plus longs affectant la pousse des arbres, la
-      couleur de la végétation…).
+    * [RÉALISÉ 2026-06-06, L5, volet fertilité] Système de saisons. Enum
+      `worlds.Season` {PRINTEMPS, ÉTÉ, AUTOMNE, HIVER} avec un facteur de
+      fertilité (1.15 / 1.0 / 0.65 / 0.30). `World.currentSeason()` avance d'un
+      cran tous les `seasonLengthDays` jours-jeu (`getCurrentDay()` =
+      `iteration / (2·dureeJour)`), en boucle ; `seasonLengthDays=0` → été
+      perpétuel. `World.seasonalFertility()` multiplie `ForestCA.fertility` ET
+      `GrassCA.grassGerminationProb` → la végétation pousse vite au printemps, à
+      l'arrêt l'hiver. Config `SimulationConfig.seasonLengthDays` (défaut 3 ⇒ an =
+      12 jours-jeu) réglable dans LaunchMenu (section TEMPS) + InGameMenu PARAMS,
+      propagée par `applyConfigToCAs`. HUD : libellé saison + numéro de jour.
+      Tests : `WorldSeasonTest` (×4). 186 verts. RESTE (volet visuel, à traiter
+      avec le lot 2) : teinte de la végétation variant avec la saison (verdoyant
+      l'été, jauni l'automne).
 
 --- Long terme ---
 

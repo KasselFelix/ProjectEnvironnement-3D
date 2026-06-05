@@ -192,6 +192,34 @@ public abstract class World {
 		this.transitionJour = transitionJour;
 	}
 
+	// ===== Saisons (L5) =====
+	/** Durée d'une saison en jours-jeu ; ≤ 0 = saisons désactivées (été perpétuel). */
+	int seasonLengthDays = 3;
+
+	public int getSeasonLengthDays() { return seasonLengthDays; }
+	public void setSeasonLengthDays(int d) { this.seasonLengthDays = d; }
+
+	/** Indice du jour-jeu courant (0-based). Un jour = un cycle jour+nuit complet
+	 *  = {@code 2 * dureeJour} itérations. */
+	public int getCurrentDay() {
+		int fullDay = 2 * dureeJour;
+		return fullDay <= 0 ? 0 : iteration / fullDay;
+	}
+
+	/** Saison courante (L5). Avance d'un cran tous les {@code seasonLengthDays}
+	 *  jours-jeu, en boucle PRINTEMPS→ÉTÉ→AUTOMNE→HIVER. Été perpétuel si la durée
+	 *  de saison est ≤ 0. */
+	public Season currentSeason() {
+		if (seasonLengthDays <= 0) return Season.SUMMER;
+		int idx = (getCurrentDay() / seasonLengthDays) % Season.values().length;
+		return Season.values()[idx];
+	}
+
+	/** Multiplicateur de fertilité saisonnier lu par les CA de végétation (L5). */
+	public double seasonalFertility() {
+		return currentSeason().fertilityFactor;
+	}
+
 	public int getBefore() {
 		return before;
 	}
