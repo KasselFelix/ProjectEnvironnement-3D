@@ -363,8 +363,12 @@ public abstract class World {
 
 	/** Fraction de la dénivelée transférée par tick vers le voisin le plus bas. */
 	private static final double WATER_FLOW_RATE = 0.5;
-	/** Évaporation de l'eau de surface sur terre par tick (lente). */
-	private static final double WATER_EVAP = 0.0008;
+	/** Évaporation de l'eau de surface sur terre par tick. Dimensionnée pour qu'une
+	 *  flaque piégée (sans exutoire) sèche en ~15 s (≈300 ticks à 20 Hz) après la
+	 *  pluie — et non en ~1500 ticks (~96 min) comme avec l'ancienne valeur 0.0008,
+	 *  qui laissait le sol bleu en permanence. Reste < débit de pluie (0.02) pour
+	 *  qu'une lame se forme bien pendant l'averse. */
+	private static final double WATER_EVAP = 0.004;
 	/** Eau ajoutée par tick de pluie sur chaque cellule de terre (source L6→L7). */
 	private static final double RAIN_WATER_PER_TICK = 0.02;
 

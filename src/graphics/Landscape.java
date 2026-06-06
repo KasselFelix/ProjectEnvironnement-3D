@@ -264,6 +264,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private static final boolean AUTOSHOT_3D = "3d".equalsIgnoreCase(AUTOSHOT_MODE); // vue perspective centrée volcan
 		private static final boolean AUTOSHOT_SELECT = "select".equalsIgnoreCase(AUTOSHOT_MODE); // suivi agent + halo V3
 		private static final boolean AUTOSHOT_MOON = "moon".equalsIgnoreCase(AUTOSHOT_MODE);   // cadrage lune V1 (balayage azimut)
+		private static final boolean AUTOSHOT_RAIN = "rain".equalsIgnoreCase(AUTOSHOT_MODE);   // pluie : tint d'eau + séchage (L7)
 		private long autoshotStartMs = 0L;   // 0 tant que la 1re frame n'a pas tourné
 		private int  autoshotStep = 0;        // index d'étape franchie
 
@@ -1419,6 +1420,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             if (AUTOSHOT_3D)     { runAutoshot3D(t); return; }
             if (AUTOSHOT_SELECT) { runAutoshotSelect(t); return; }
             if (AUTOSHOT_MOON)   { runAutoshotMoon(t); return; }
+            if (AUTOSHOT_RAIN)   { runAutoshotRain(t); return; }
             switch (autoshotStep) {
                 case 0: if (t >= 3000) { shoot("01-jour");                 autoshotStep = 1; } break;
                 case 1: if (t >= 4000) { LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 2; } break;
@@ -1447,6 +1449,20 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 case 6: if (t >= 12500){ LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 7; } break;
                 case 7: if (t >= 16500){ shoot("3d-04-nuit-eruption");         autoshotStep = 8; } break;
                 case 8: if (t >= 18000){ System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /**
+         * Vérifie le réglage eau/pluie (L7) : force la pluie pour voir le tint
+         * d'eau adouci sur le sol, puis la coupe pour confirmer le séchage rapide.
+         */
+        private void runAutoshotRain(long t) {
+            switch (autoshotStep) {
+                case 0: _myWorld.setRaining(true);  autoshotStep = 1; break;   // averse continue
+                case 1: if (t >= 8000)  { shoot("rain-01-mouille"); autoshotStep = 2; } break; // sol détrempé (tint doux)
+                case 2: if (t >= 9000)  { _myWorld.setRaining(false); autoshotStep = 3; } break; // l'orage cesse
+                case 3: if (t >= 26000) { shoot("rain-02-seche"); autoshotStep = 4; } break;     // ~17 s plus tard → sec
+                case 4: if (t >= 27500) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
             }
         }
 

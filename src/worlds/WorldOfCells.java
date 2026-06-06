@@ -741,7 +741,7 @@ public class WorldOfCells extends World {
      */
     public void applyWaterTint(int vx, int vy, float[] col)
     {
-    	final float WATER_TINT_MAX = 0.75f;
+    	final float WATER_TINT_MAX = 0.40f;   // voile humide, pas un lagon : le sol reste reconnaissable
     	final float WATER_SAT = 1.2f;   // hauteur d'eau (unités) donnant la teinte pleine
     	final float[] BLUE = { 0.15f, 0.35f, 0.75f };
     	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };

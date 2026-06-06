@@ -81,6 +81,43 @@ class WorldWaterTest {
         assertTrue(sum > 0, "la pluie dépose de l'eau de ruissellement sur la terre");
     }
 
+    @Test
+    void uneCuvetteIsoleeSecheParEvaporationEnUnTempsRaisonnable() {
+        WorldOfCells w = AgentTestSupport.buildWorld();
+        int[] c = AgentTestSupport.findLandCell(w, 25, 25);
+        int cx = c[0], cy = c[1];
+        // Vraie cuvette AU-DESSUS du niveau de la mer : plateau haut tout autour,
+        // fond bas mais positif → l'eau du centre n'a aucun voisin plus bas où
+        // s'écouler ET n'est pas absorbée par l'océan : elle ne part QUE par évaporation.
+        for (int dx = -3; dx <= 3; dx++)
+            for (int dy = -3; dy <= 3; dy++)
+                w.setCellHeight(cx + dx, cy + dy, 10.0);  // plateau haut
+        w.setCellHeight(cx, cy, 0.5);                     // fond de cuvette (>0 = terre, pas océan)
+        w.setRaining(false);
+        w.setWaterDepth(cx, cy, 1.2);                // sol détrempé, orage qui vient de cesser
+        // Le sol doit redevenir sec en au plus 30 s (600 ticks), pas ~96 min (1500 ticks).
+        int ticks = 0;
+        while (w.getWaterDepth(cx, cy) > 0.01 && ticks < 5000) { w.stepWater(); ticks++; }
+        assertTrue(ticks <= 600,
+                "une flaque piégée doit sécher en ~30 s (≤600 ticks), pas en heures : " + ticks);
+    }
+
+    @Test
+    void leTintDEauResteDoux() {
+        WorldOfCells w = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        // Sature l'eau sur le bloc échantillonné par applyWaterTint(cx,cy).
+        for (int dx = -1; dx <= 0; dx++)
+            for (int dy = -1; dy <= 0; dy++)
+                w.setWaterDepth(cx + dx, cy + dy, 5.0);
+        float[] col = { 0.20f, 0.60f, 0.20f };   // vert herbe
+        w.applyWaterTint(cx, cy, col);
+        // Même saturée, l'eau ne doit pas noyer la couleur du sol : le canal vert
+        // (couleur dominante de l'herbe) garde la majeure partie de sa valeur.
+        assertTrue(col[1] >= 0.45f,
+                "le tint d'eau doit rester doux (sol reconnaissable), vert=" + col[1]);
+    }
+
     private double totalWaterOnLand(WorldOfCells w) {
         double s = 0;
         for (int x = 0; x < AgentTestSupport.DX; x++)

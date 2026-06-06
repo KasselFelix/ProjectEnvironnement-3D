@@ -469,6 +469,15 @@ quand la lave solidifie elle enterre les cendres restantes.
       `WorldOfCells.stepCellularAutomata`. Rendu : `WorldOfCells.applyWaterTint`
       bleuit les cellules ruisselantes dans `Landscape`. Tests `WorldWaterTest`
       (×4 : écoulement, conservation, drainage océan, source pluie). 211 verts.
+      [AJUSTÉ 2026-06-06] Réglage trop agressif corrigé : la pluie tombant tout un
+      jour-jeu (météo tirée 1×/jour) + `WATER_EVAP=0.0008` (25× plus lent que le
+      débit de pluie) laissait les cuvettes sans exutoire bleues ~96 min après
+      l'averse (~1500 ticks pour vider 1 unité), et `WATER_TINT_MAX=0.75` noyait
+      le sol en bleu lagon. Corrigé : `WATER_EVAP=0.004` (flaque piégée sèche en
+      ~15 s / 300 ticks, restant < débit pluie pour qu'une lame se forme bien) et
+      `WATER_TINT_MAX=0.40` (voile humide, sol reconnaissable). Tests ajoutés
+      `uneCuvetteIsoleeSecheParEvaporationEnUnTempsRaisonnable` (≤600 ticks) et
+      `leTintDEauResteDoux` (canal sol ≥ 0.45). 219 verts.
 
 --- Long terme ---
 
