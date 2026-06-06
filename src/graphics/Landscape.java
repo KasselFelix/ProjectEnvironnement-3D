@@ -1153,6 +1153,30 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             gl.glCallList(starListId);
             gl.glPopMatrix();
 
+            // V1 — la LUNE : disque pâle dans le ciel, à l'OPPOSÉ du soleil (donc
+            // au-dessus de l'horizon la nuit, quand le soleil est sous l'horizon).
+            // Rendu en points lissés (round) additifs hors de la rotation des
+            // étoiles. Un halo plus large et plus doux entoure le coeur. Sa
+            // lumière douce au sol est déjà fournie par applyMoonLights (LIGHT2-7).
+            float mx = -sunDirGL[0] * STAR_RADIUS * 0.92f;
+            float my = -sunDirGL[1] * STAR_RADIUS * 0.92f;
+            float mz = -sunDirGL[2] * STAR_RADIUS * 0.92f;
+            if (mz > 0f) {   // lune au-dessus de l'horizon seulement
+                boolean smoothWas = gl.glIsEnabled(GL2.GL_POINT_SMOOTH);
+                gl.glEnable(GL2.GL_POINT_SMOOTH);
+                float nf = currentNightFactor;
+                // Halo diffus.
+                gl.glPointSize(46f);
+                gl.glColor3f(0.30f * nf, 0.33f * nf, 0.40f * nf);
+                gl.glBegin(GL.GL_POINTS); gl.glVertex3f(mx, my, mz); gl.glEnd();
+                // Coeur de la lune (blanc-bleuté pâle).
+                gl.glPointSize(26f);
+                gl.glColor3f(0.92f * nf, 0.94f * nf, 0.88f * nf);
+                gl.glBegin(GL.GL_POINTS); gl.glVertex3f(mx, my, mz); gl.glEnd();
+                if (!smoothWas) gl.glDisable(GL2.GL_POINT_SMOOTH);
+            }
+            gl.glPointSize(2f);
+
             // Restore exact previous state
             gl.glDepthMask(true);
             gl.glDisable(GL.GL_BLEND);

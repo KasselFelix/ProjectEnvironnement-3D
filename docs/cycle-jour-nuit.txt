@@ -221,10 +221,14 @@ PARAMS) pour `cycleTotalSec`, `dayFractionRatio`, `transitionJourSec`,
 
 --- Court terme ---
 
-    * Couleur du ciel qui varie selon la phase (bleu en plein jour, orange à
-      l'aube et au crépuscule, noir profond la nuit) — aujourd'hui seule la
-      luminosité globale change nettement.
-    * Lune avec son propre cycle et sa lumière douce la nuit.
+    * [RÉALISÉ — déjà en place] Couleur du ciel qui varie selon la phase (bleu
+      plein jour, orange aube/crépuscule, noir nuit) : `updateSunAndSky` interpole
+      SKY_NIGHT/SKY_HORIZON/SKY_NOON selon l'altitude solaire (glClearColor + fog).
+    * [RÉALISÉ 2026-06-06, V1] Lune avec sa lumière douce. Disque pâle rendu dans
+      `Landscape.displayStars` (points lissés additifs : halo large diffus + cœur
+      blanc-bleuté), positionné à l'OPPOSÉ du soleil (`-sunDirGL`) donc au-dessus
+      de l'horizon la nuit, fondu par `currentNightFactor`. La lumière lunaire au
+      sol était déjà assurée par `applyMoonLights` (6 lampes LIGHT2-7 bleutées).
 
 --- Moyen terme ---
 
