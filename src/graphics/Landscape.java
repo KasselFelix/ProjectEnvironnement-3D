@@ -263,6 +263,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private static final boolean AUTOSHOT = (AUTOSHOT_MODE != null);
 		private static final boolean AUTOSHOT_3D = "3d".equalsIgnoreCase(AUTOSHOT_MODE); // vue perspective centrée volcan
 		private static final boolean AUTOSHOT_SELECT = "select".equalsIgnoreCase(AUTOSHOT_MODE); // suivi agent + halo V3
+		private static final boolean AUTOSHOT_MOON = "moon".equalsIgnoreCase(AUTOSHOT_MODE);   // cadrage lune V1 (balayage azimut)
 		private long autoshotStartMs = 0L;   // 0 tant que la 1re frame n'a pas tourné
 		private int  autoshotStep = 0;        // index d'étape franchie
 
@@ -1417,6 +1418,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             long t = now - autoshotStartMs;
             if (AUTOSHOT_3D)     { runAutoshot3D(t); return; }
             if (AUTOSHOT_SELECT) { runAutoshotSelect(t); return; }
+            if (AUTOSHOT_MOON)   { runAutoshotMoon(t); return; }
             switch (autoshotStep) {
                 case 0: if (t >= 3000) { shoot("01-jour");                 autoshotStep = 1; } break;
                 case 1: if (t >= 4000) { LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 2; } break;
@@ -1445,6 +1447,28 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 case 6: if (t >= 12500){ LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 7; } break;
                 case 7: if (t >= 16500){ shoot("3d-04-nuit-eruption");         autoshotStep = 8; } break;
                 case 8: if (t >= 18000){ System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /**
+         * Cadre la LUNE (V1). Cale une nuit modérée (lune à mi-hauteur, pas au
+         * zénith comme à minuit), vise le ciel (pitch négatif) et balaie les 4
+         * azimuts cardinaux — l'un des clichés cadre forcément le disque lunaire.
+         */
+        private void runAutoshotMoon(long t) {
+            switch (autoshotStep) {
+                case 0:
+                    VIEW_FROM_ABOVE = false;
+                    cameraDistance3D = -120;
+                    cameraPitch = -22;                              // regard vers le ciel
+                    it = (int)(_myWorld.getDureeJour() * 1.28);     // nuit modérée (lune à l'est, mi-hauteur)
+                    autoshotStep = 1;
+                    break;
+                case 1: if (t >= 2500) { rotateX = 0;   shoot("moon-yaw000"); autoshotStep = 2; } break;
+                case 2: if (t >= 4000) { rotateX = 90;  shoot("moon-yaw090"); autoshotStep = 3; } break;
+                case 3: if (t >= 5500) { rotateX = 180; shoot("moon-yaw180"); autoshotStep = 4; } break;
+                case 4: if (t >= 7000) { rotateX = 270; shoot("moon-yaw270"); autoshotStep = 5; } break;
+                case 5: if (t >= 8500) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
             }
         }
 
