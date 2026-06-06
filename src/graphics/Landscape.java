@@ -321,6 +321,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         private Agent selectedAgent = null;
         private int   selectedAgentIndex = -1;
         private boolean cameraFollow = false;
+
+        // V3 — survol : position écran du curseur (toujours suivie) et agent
+        // sous le pointeur (calculé chaque frame en 3D), pour la bulle d'info.
+        private int hoverX = -1, hoverY = -1;
+        private Agent hoverAgent = null;
         private final AgentInfoPanel agentInfoPanel = new AgentInfoPanel();
         private final PopulationGraph populationGraph = new PopulationGraph();
         private boolean showPopulationGraph = false;  // masqué au démarrage ; toggle par la touche `g`
@@ -502,6 +507,14 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
          * ou -1 si l'agent est hors frustum (derrière la caméra ou clippé).
          */
         private double projectAndScreenDist(Agent a, double[] mv, double[] proj, int[] view, double[] win) {
+        	return projectScreenDist(a, mv, proj, view, win, pickClickX, pickClickY);
+        }
+
+        /** Distance pixel entre la projection écran de l'agent et le point cible
+         *  ({@code tx},{@code ty}) en coords AWT (origine haut-gauche), ou -1 si
+         *  l'agent est hors frustum. Partagé par le picking (clic) et le survol. */
+        private double projectScreenDist(Agent a, double[] mv, double[] proj, int[] view, double[] win,
+        		double tx, double ty) {
         	int w = _myWorld.getWidth();
         	int h = _myWorld.getHeight();
         	int x2 = ((a.x - (movingX % w)) % w + w) % w;
@@ -518,9 +531,55 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
         	double sx = win[0];
         	double sy = viewportHeight - win[1]; // Y OpenGL bottom-left → AWT top-left
-        	double dx = sx - pickClickX;
-        	double dy = sy - pickClickY;
+        	double dx = sx - tx;
+        	double dy = sy - ty;
         	return Math.sqrt(dx*dx + dy*dy);
+        }
+
+        /**
+         * V3 — détermine l'agent sous le curseur (le plus proche dans une
+         * tolérance), pour la bulle d'info. Doit tourner pendant que MODELVIEW
+         * porte encore la caméra (même contrainte que doPicking). Stocke le
+         * résultat dans {@link #hoverAgent} (null si aucun).
+         */
+        private void computeHoverAgent(GL2 gl) {
+        	hoverAgent = null;
+        	if (hoverX < 0 || !(_myWorld instanceof WorldOfCells)) return;
+        	WorldOfCells wc = (WorldOfCells) _myWorld;
+        	double[] mv = new double[16], proj = new double[16], win = new double[3];
+        	int[] view = new int[] { 0, 0, viewportWidth, viewportHeight };
+        	gl.glGetDoublev(GL2.GL_MODELVIEW_MATRIX, mv, 0);
+        	gl.glGetDoublev(GL2.GL_PROJECTION_MATRIX, proj, 0);
+        	double best = HOVER_TOLERANCE_PX;
+        	for (Agent a : wc.agents) {
+        		double d = projectScreenDist(a, mv, proj, view, win, hoverX, hoverY);
+        		if (d >= 0 && d < best) { best = d; hoverAgent = a; }
+        	}
+        }
+
+        /** Tolérance pixel pour le survol d'agent (bulle d'info). */
+        private static final double HOVER_TOLERANCE_PX = 28.0;
+
+        /** V3 — bulle d'info au survol : nom de l'espèce + énergie, près du curseur. */
+        private void drawHoverTooltip(GL2 gl, Agent a, int mx, int my) {
+        	int e = hoverEnergy(a, false), em = hoverEnergy(a, true);
+        	String txt = a.getTypeName() + "  E:" + e + "/" + em;
+        	int wBox = txt.length() * 6 + 12;
+        	int hBox = 18;
+        	int bx = Math.min(mx + 14, viewportWidth - wBox - 4);
+        	int by = Math.max(2, my - 8);
+        	ui.drawQuad(gl, bx, by, wBox, hBox, 0.05f, 0.07f, 0.10f, 0.88f);
+        	ui.drawBorder(gl, bx, by, wBox, hBox, 0.4f, 0.7f, 1f, 1f);
+        	ui.drawText(gl, bx + 6, by + 13, viewportHeight, txt, 0.85f, 0.95f, 1f);
+        }
+
+        /** Énergie (courante ou max) d'un agent, par espèce. */
+        private int hoverEnergy(Agent a, boolean max) {
+        	if (a instanceof agents.Loup)   return max ? ((agents.Loup) a).getEnergieMax()   : ((agents.Loup) a).getEnergie();
+        	if (a instanceof agents.Mouton) return max ? (int)((agents.Mouton) a).getEnergieMax() : (int)((agents.Mouton) a).getEnergie();
+        	if (a instanceof agents.Humain) return max ? ((agents.Humain) a).getEnergieMax() : ((agents.Humain) a).getEnergie();
+        	if (a instanceof agents.Ours)   return max ? ((agents.Ours) a).getEnergieMax()   : ((agents.Ours) a).getEnergie();
+        	return max ? 1 : 0;
         }
 
         /**
@@ -531,6 +590,46 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
          * son centre est sorti, d'où la marge). {@code win} est un scratch buffer
          * réutilisé entre appels pour éviter d'allouer par mouton.
          */
+        /**
+         * V3 — dessine un cercle pulsant au sol sous l'agent sélectionné. Tracé
+         * en lignes (non affectées par le cull GL_FRONT), lighting/fog/texture
+         * désactivés (couleur émissive pure), état restauré après — même pattern
+         * que le champ d'étoiles. Le cercle suit l'altitude du sommet de la pile.
+         */
+        private void drawSelectionHalo(GL2 gl, Agent a, float offset, float stepX,
+                float stepY, float lenX, float lenY, int movingX, int movingY) {
+        	int w = _myWorld.getWidth();
+        	int h = _myWorld.getHeight();
+        	int x2 = ((a.x - (movingX % w)) % w + w) % w;
+        	int y2 = ((a.y - (movingY % h)) % h + h) % h;
+        	float px = offset + x2 * stepX;
+        	float py = offset + y2 * stepY;
+        	float z  = (float) _myWorld.getCellTopAltitude(a.x, a.y) + 0.6f;
+        	float r  = Math.abs(lenX) * 1.8f;
+
+        	boolean fogWas = gl.glIsEnabled(GL2.GL_FOG);
+        	boolean lightingWas = gl.glIsEnabled(GL2.GL_LIGHTING);
+        	gl.glDisable(GL2.GL_LIGHTING);
+        	gl.glDisable(GL2.GL_FOG);
+        	gl.glDisable(GL.GL_TEXTURE_2D);
+
+        	// Pulsation douce de la luminosité au rythme de l'itération.
+        	float pulse = 0.55f + 0.45f * (float) Math.sin(_myWorld.getIteration() * 0.2);
+        	gl.glColor3f(0.2f, pulse, 1f);
+        	gl.glLineWidth(2.5f);
+        	gl.glBegin(GL.GL_LINE_LOOP);
+        	final int SEG = 32;
+        	for (int k = 0; k < SEG; k++) {
+        		double ang = 2.0 * Math.PI * k / SEG;
+        		gl.glVertex3f(px + (float) Math.cos(ang) * r, py + (float) Math.sin(ang) * r, z);
+        	}
+        	gl.glEnd();
+        	gl.glLineWidth(1f);
+
+        	if (lightingWas) gl.glEnable(GL2.GL_LIGHTING);
+        	if (fogWas) gl.glEnable(GL2.GL_FOG);
+        }
+
         private boolean isAgentOnScreen(Agent a, double[] mv, double[] proj, int[] view, double[] win, double marginPx) {
         	int w = _myWorld.getWidth();
         	int h = _myWorld.getHeight();
@@ -1695,6 +1794,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            			lenX, lenY, normalizeHeightMoutons, dayFactor);
 	            	}
 	            }
+
+	            // V3 — halo de sélection au sol sous l'agent suivi (cercle pulsant).
+	            if (selectedAgent != null && isAgentStillAlive(selectedAgent)) {
+	            	drawSelectionHalo(gl, selectedAgent, offset, stepX, stepY, lenX, lenY, movingX, movingY);
+	            }
                 // Appui long SPACE/SHIFT : translateZ est modifié à chaque frame
             // pour une montée/descente symétriques (AWT n'auto-repeat pas
             // SHIFT, donc le simple key-press ne donnait pas un mouvement
@@ -1718,6 +1822,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	doPicking(gl);
 	            	pickRequested = false;
 	            }
+
+	            // V3 — agent sous le curseur (bulle d'info au survol). Calculé ici,
+	            // tant que MODELVIEW porte encore la caméra (comme le picking).
+	            computeHoverAgent(gl);
 
 	            // Restaurer la projection perspective si on était passé en ortho
 	            // pour la vue de dessus. Doit être fait AVANT begin2D car
@@ -1748,6 +1856,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	if (selectedAgent != null) {
 	            		agentInfoPanel.draw(gl, ui, viewportWidth, viewportHeight,
 	            		                    selectedAgent, selectedAgentIndex, cameraFollow);
+	            	}
+	            	// V3 — bulle d'info au survol (nom + énergie) sans cliquer.
+	            	if (hoverAgent != null && hoverAgent != selectedAgent
+	            			&& isAgentStillAlive(hoverAgent)) {
+	            		drawHoverTooltip(gl, hoverAgent, hoverX, hoverY);
 	            	}
 	            	// Graphe populations (Phase 9) — coin haut-GAUCHE, donc il ne
 	            	// chevauche plus le menu in-game (panneau droit) : on l'affiche
@@ -2057,6 +2170,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 		@Override
 		public void mouseMoved(MouseEvent mouse) {
+			// V3 — position du curseur toujours mémorisée (même hors capture FPS),
+			// pour la bulle d'info de survol d'agent.
+			hoverX = mouse.getX(); hoverY = mouse.getY();
 			// Mouse-look 1ère personne (NEWT). Le pointeur est masqué + confiné dans
 			// la fenêtre. On utilise le delta RELATIF au dernier point (correct quel
 			// que soit le timing du warp), et on recentre seulement PRÈS DES BORDS
