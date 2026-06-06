@@ -270,9 +270,13 @@ PARAMS) pour `cycleTotalSec`, `dayFractionRatio`, `transitionJourSec`,
       (°C) dérivée de la base saisonnière (`Season.baseTemperatureC`) ± le swing
       jour/nuit ± la pluie. `World.coldSpeedFactor()` ∈ [0.7, 1.0] (no-op > 5°C)
       ralentit Loup et Mouton par grand froid (nuits d'hiver). Test
-      `grandFroidRalentitLesAgents`. RESTE : couplage température → solidification
-      de la lave et → zone habitable de l'herbe (la fertilité saisonnière L5
-      couvre déjà partiellement l'herbe l'hiver).
+      `grandFroidRalentitLesAgents`. [RÉALISÉ 2026-06-06] Couplage température →
+      SOLIDIFICATION de la lave : `World.lavaCoolingFactor()` (1.0 à 20°C, jusqu'à
+      1.6 par grand froid, 0.6 par forte chaleur) multiplie le `coolingRate` de
+      `LavaCA` → la lave fige plus vite l'hiver, reste fondue plus longtemps par
+      chaleur. Test `leFroidAccelereLaSolidificationDeLaLave`. RESTE : zone
+      habitable de l'herbe selon T (la fertilité saisonnière L5 la couvre déjà en
+      partie l'hiver).
     * [RÉALISÉ 2026-06-06, V8] Orages déclenchant des feux par la FOUDRE. Pendant
       la pluie (`isRaining()`, L6), `WorldOfCells.strikeLightning()` peut frapper
       (`LIGHTNING_PROB_PER_TICK`) : embrase un arbre vivant au hasard (FIRE_FIRST),
