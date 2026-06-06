@@ -430,6 +430,37 @@ public class WorldOfCells extends World {
     	// L7 — eau qui s'écoule : ruissellement toutes les 5 ticks (compromis
     	// fluidité visuelle / coût du balayage de grille en rendu logiciel).
     	if (getIteration() % 5 == 0) stepWater();
+    	// V8 — orages : pendant la pluie, la foudre peut frapper un arbre et
+    	// l'embraser (la pluie ralentit ensuite la propagation, cf. L6).
+    	if (isRaining() && Math.random() < LIGHTNING_PROB_PER_TICK) strikeLightning();
+    }
+
+    /** Probabilité par tick qu'un éclair frappe pendant un orage (V8). */
+    private static final double LIGHTNING_PROB_PER_TICK = 0.004;
+    /** Durée (ticks) du flash blanc de foudre à l'écran. */
+    private static final int LIGHTNING_FLASH_TICKS = 6;
+
+    /**
+     * V8 — un éclair frappe un arbre vivant au hasard et l'embrase (FIRE_FIRST),
+     * pose un flash écran et une notification. Renvoie true si un arbre a été
+     * frappé (false s'il n'y a aucun arbre). Public pour être testable.
+     */
+    public boolean strikeLightning() {
+    	// Cherche un arbre vivant (state==1) à partir d'une position aléatoire.
+    	int start = (int) (Math.random() * dxCA * dyCA);
+    	int total = dxCA * dyCA;
+    	for (int k = 0; k < total; k++) {
+    		int idx = (start + k) % total;
+    		int x = idx % dxCA, y = idx / dxCA;
+    		if (forestCA.getCellState(x, y) == 1) {
+    			forestCA.setCellState(x, y, cellularautomata.ecosystem.ForestCA.FIRE_FIRST);
+    			events.treesBurned++;
+    			events.notify("Foudre ! un arbre s'embrase", getIteration());
+    			lightningFlash = LIGHTNING_FLASH_TICKS;
+    			return true;
+    		}
+    	}
+    	return false;
     }
     
     protected void stepAgents()

@@ -483,10 +483,12 @@ Moyen terme :
       frame, tant que > 0, un décalage aléatoire décroissant (`amp = mag × ticks/32`)
       est appliqué en eye-space juste après `glLoadIdentity` (avant les transforms
       de vue) → toute la scène tremble ~0.5 s. Déclenché par la touche `r`
-      (éruption manuelle). Build + sanity OK. RESTE : tremblement PRÉCURSEUR avant
-      les éruptions AUTO (`pErruption`) — nécessite d'anticiper le trigger ;
-      bombes de lave rebondissantes (les `TephraProjectile` existent déjà mais ne
-      rebondissent pas) ; lueur de cratère (cf. V2).
+      (éruption manuelle). [RÉALISÉ 2026-06-06] Le shake se déclenche aussi sur le
+      FRONT MONTANT de TOUTE éruption (manuelle ou AUTO via `pErruption`) :
+      `Landscape` surveille `lavaCA.getbErupt()` et appelle `triggerShake` une fois
+      au démarrage (champ `wasErupting`). RESTE : bombes de lave rebondissantes (les
+      `TephraProjectile` existent déjà mais ne rebondissent pas) ; lueur de cratère
+      (cf. V2).
     * [RÉALISÉ 2026-06-05] **Reforestation accélérée sur cendres** : à la
       dispersion des cendres d'un arbre brûlé (`step()` : BURNT+tDispertion → 0),
       `ForestCA.markAsh(i,j)` enrichit le sol pour ASH_BOOST_DURATION=200 ticks.

@@ -30,6 +30,22 @@ class EventLogTest {
     }
 
     @Test
+    void laFoudreEmbraseUnArbreEtPoseUnFlash() {
+        WorldOfCells w = AgentTestSupport.buildWorld();
+        int[] c = AgentTestSupport.findLandCell(w, 25, 25);
+        // Garantit la présence d'un arbre vivant (state 1) quelque part.
+        w.forestCA.setCellState(c[0], c[1], 1);
+
+        int burnedBefore = w.events.treesBurned;
+        boolean struck = w.strikeLightning();
+
+        assertTrue(struck, "la foudre doit trouver un arbre à frapper");
+        assertTrue(w.events.treesBurned > burnedBefore, "l'impact compte un arbre brûlé");
+        assertTrue(w.lightningFlash > 0, "un flash écran est armé");
+        assertTrue(w.events.notificationCount() >= 1, "une notification 'Foudre' est émise");
+    }
+
+    @Test
     void lesNotificationsExpirentParTTL() {
         EventLog log = new EventLog();
         log.notify("test", 100);

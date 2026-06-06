@@ -212,6 +212,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private float shakeMag = 0f;
 		/** Déclenche une secousse caméra d'amplitude {@code mag} (unités-monde). */
 		private void triggerShake(float mag) { shakeTicks = SHAKE_DURATION; shakeMag = mag; }
+		/** V8 — détection de front montant d'éruption (manuelle OU auto) pour la
+		 *  secousse précurseur, et état du flash de foudre. */
+		private boolean wasErupting = false;
 
 		// État appui long des touches caméra-Z. AWT ne déclenche pas d'auto-
 		// repeat sur les modificateurs (SHIFT), donc on convertit SPACE et
@@ -1405,6 +1408,15 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 }
                 gl.glLoadIdentity();
 
+                // V8 — secousse sur FRONT MONTANT d'éruption (manuelle ou AUTO via
+                // pErruption) : déclenche le shake une seule fois au démarrage.
+                if (_myWorld instanceof WorldOfCells) {
+                	boolean erupt = ((WorldOfCells) _myWorld).lavaCA != null
+                			&& ((WorldOfCells) _myWorld).lavaCA.getbErupt() == 1;
+                	if (erupt && !wasErupting) triggerShake(1.6f);
+                	wasErupting = erupt;
+                }
+
                 // V8 — secousse caméra (screen shake) : petit décalage aléatoire
                 // décroissant en eye-space, appliqué avant les transforms de vue
                 // pour faire trembler toute la scène pendant une éruption.
@@ -1946,6 +1958,12 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            }
 
 	            ui.begin2D(gl, viewportWidth, viewportHeight);
+	            // V8 — flash blanc de foudre (bref, plein écran, fondu rapide).
+	            if (_myWorld.lightningFlash > 0) {
+	            	float a = Math.min(0.6f, _myWorld.lightningFlash / 6f * 0.6f);
+	            	ui.drawQuad(gl, 0, 0, viewportWidth, viewportHeight, 1f, 1f, 1f, a);
+	            	_myWorld.lightningFlash--;
+	            }
 	            if (config != null && config.awaitingStart && launchMenu != null) {
 	            	// Menu de lancement opaque : couvre la scène 3D derrière.
 	            	launchMenu.draw(gl, ui, viewportWidth, viewportHeight);

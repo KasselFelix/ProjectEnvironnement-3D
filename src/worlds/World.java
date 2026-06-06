@@ -34,6 +34,10 @@ public abstract class World {
 	/** Journal d'événements (V6) : compteurs de dommages + notifications. */
 	public final EventLog events = new EventLog();
 
+	/** Ticks restants de FLASH de foudre (V8) ; lu par le rendu pour un éclair
+	 *  blanc bref. Posé par un impact de foudre, décrémenté côté rendu. */
+	public int lightningFlash = 0;
+
 	/**
 	 * La case ({@code x}, {@code y}) est-elle bloquée pour {@code mover} par un
 	 * autre agent ? Les agents sont des obstacles les uns pour les autres (pas de

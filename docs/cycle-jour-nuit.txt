@@ -273,8 +273,13 @@ PARAMS) pour `cycleTotalSec`, `dayFractionRatio`, `transitionJourSec`,
       `grandFroidRalentitLesAgents`. RESTE : couplage température → solidification
       de la lave et → zone habitable de l'herbe (la fertilité saisonnière L5
       couvre déjà partiellement l'herbe l'hiver).
-    * Orages occasionnels déclenchant des feux de forêt par la foudre (déjà
-      partiellement modélisé via `pF` dans ForestCA, sans éclair visuel).
+    * [RÉALISÉ 2026-06-06, V8] Orages déclenchant des feux par la FOUDRE. Pendant
+      la pluie (`isRaining()`, L6), `WorldOfCells.strikeLightning()` peut frapper
+      (`LIGHTNING_PROB_PER_TICK`) : embrase un arbre vivant au hasard (FIRE_FIRST),
+      compte un arbre brûlé, émet la notification « Foudre ! » et pose un FLASH
+      blanc plein écran (`World.lightningFlash`, rendu bref dans `Landscape`). La
+      pluie ralentit ensuite la propagation (L6 `fireSpreadFactor`) — tension
+      réaliste allumage/extinction. Test `EventLogTest.laFoudreEmbraseUnArbreEtPoseUnFlash`.
 
 
 ================================================================================
