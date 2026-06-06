@@ -206,6 +206,13 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 		private float translateZ=-44.0f;//hauteur de la camera
 
+		// V8 — secousse caméra (screen shake) déclenchée par une éruption.
+		private int   shakeTicks = 0;
+		private static final int SHAKE_DURATION = 32;
+		private float shakeMag = 0f;
+		/** Déclenche une secousse caméra d'amplitude {@code mag} (unités-monde). */
+		private void triggerShake(float mag) { shakeTicks = SHAKE_DURATION; shakeMag = mag; }
+
 		// État appui long des touches caméra-Z. AWT ne déclenche pas d'auto-
 		// repeat sur les modificateurs (SHIFT), donc on convertit SPACE et
 		// SHIFT en flags persistants appliqués par frame dans display() pour
@@ -1397,6 +1404,17 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                     topDownOrthoPushed = true;
                 }
                 gl.glLoadIdentity();
+
+                // V8 — secousse caméra (screen shake) : petit décalage aléatoire
+                // décroissant en eye-space, appliqué avant les transforms de vue
+                // pour faire trembler toute la scène pendant une éruption.
+                if (shakeTicks > 0) {
+                	float decay = shakeTicks / (float) SHAKE_DURATION;
+                	float amp = shakeMag * decay;
+                	gl.glTranslatef((float)(Math.random()*2-1) * amp,
+                	                (float)(Math.random()*2-1) * amp, 0f);
+                	shakeTicks--;
+                }
 
                 // L'ancien bloc d'affichage FPS / heure était dessiné ici via
                 // glWindowPos2d. Il est remplacé par le HUD overlay 2D, dessiné en
@@ -2638,6 +2656,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				break;
 			case KeyEvent.VK_R:
 				LavaCA.setbErupt(1);
+				triggerShake(1.6f);   // V8 — secousse à l'éruption
 				break;
 			case KeyEvent.VK_L:
 				MY_LIGHT_RENDERING = !MY_LIGHT_RENDERING;

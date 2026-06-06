@@ -478,8 +478,15 @@ Moyen terme :
       (`AgentState.opposite(lavaDir)`) et sprinte (le mouton reste à terre, le
       loup nage). Libellé HUD « Fuit lave ». Tests : `LoupTest.loupFuitLaLaveAVue`,
       `AgentBehaviorTest.moutonFuitLaLave`. 180 tests verts.
-    * **Tremblement précurseur** avant les éruptions auto (`pErruption`) :
-      screen shake léger 5-10 sec avant le trigger.
+    * [RÉALISÉ 2026-06-06, V8, volet shake] **Secousse caméra (screen shake)** à
+      l'éruption. `Landscape.triggerShake(mag)` arme `shakeTicks=32` ; chaque
+      frame, tant que > 0, un décalage aléatoire décroissant (`amp = mag × ticks/32`)
+      est appliqué en eye-space juste après `glLoadIdentity` (avant les transforms
+      de vue) → toute la scène tremble ~0.5 s. Déclenché par la touche `r`
+      (éruption manuelle). Build + sanity OK. RESTE : tremblement PRÉCURSEUR avant
+      les éruptions AUTO (`pErruption`) — nécessite d'anticiper le trigger ;
+      bombes de lave rebondissantes (les `TephraProjectile` existent déjà mais ne
+      rebondissent pas) ; lueur de cratère (cf. V2).
     * [RÉALISÉ 2026-06-05] **Reforestation accélérée sur cendres** : à la
       dispersion des cendres d'un arbre brûlé (`step()` : BURNT+tDispertion → 0),
       `ForestCA.markAsh(i,j)` enrichit le sol pour ASH_BOOST_DURATION=200 ticks.
