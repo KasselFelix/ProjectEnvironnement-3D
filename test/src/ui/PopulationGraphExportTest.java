@@ -29,4 +29,22 @@ class PopulationGraphExportTest {
                 "une ligne d'en-tête + une par échantillon (" + g.sampleCount() + ")");
         assertTrue(g.sampleCount() >= 1, "au moins un échantillon a été pris");
     }
+
+    @Test
+    void exportPngEcritUnFichierNonVide() throws Exception {
+        WorldOfCells w = AgentTestSupport.buildWorld();
+        PopulationGraph g = new PopulationGraph();
+        for (int k = 0; k < 25; k++) { g.sample(w); w.step(); }
+
+        java.nio.file.Path out = java.nio.file.Files.createTempFile("popgraph", ".png");
+        g.exportPng(out);
+        assertTrue(java.nio.file.Files.size(out) > 0, "le PNG exporté n'est pas vide");
+        // En-tête PNG : octets 0x89 'P' 'N' 'G'.
+        byte[] head = java.util.Arrays.copyOf(java.nio.file.Files.readAllBytes(out), 4);
+        assertEquals((byte) 0x89, head[0]);
+        assertEquals('P', head[1]);
+        assertEquals('N', head[2]);
+        assertEquals('G', head[3]);
+        java.nio.file.Files.deleteIfExists(out);
+    }
 }

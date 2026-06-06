@@ -2602,6 +2602,18 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 			}
 		}
 
+		/** V7 — exporte le graphe de populations en PNG dans exports/. */
+		private void exportPopulationsPng() {
+			String ts = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(LocalDateTime.now());
+			Path out = Paths.get("exports", "populations-" + ts + ".png");
+			try {
+				populationGraph.exportPng(out);
+				System.out.println("[V7] graphe PNG exporte -> " + out);
+			} catch (Exception e) {
+				System.out.println("[V7] echec export PNG: " + e.getMessage());
+			}
+		}
+
 		/** V7 — sauvegarde la config courante en preset JSON (presets/preset.json). */
 		private void saveConfigPreset() {
 			if (config == null) return;
@@ -2845,6 +2857,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				break;
 			case KeyEvent.VK_F9:
 				exportPopulationsCsv();   // V7 — export CSV du graphe
+				break;
+			case KeyEvent.VK_F7:
+				exportPopulationsPng();   // V7 — export PNG du graphe
 				break;
 			case KeyEvent.VK_F10:
 				saveConfigPreset();       // V7 — sauvegarde du preset config

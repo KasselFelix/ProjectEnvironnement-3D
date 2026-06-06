@@ -72,6 +72,53 @@ public class PopulationGraph {
         return sb.toString();
     }
 
+    /**
+     * Exporte le graphe en PNG (V7) via {@code BufferedImage}/{@code ImageIO}
+     * (JDK pur, aucune dépendance OpenGL → testable headless). Trace les 4 séries
+     * (ours/loups/moutons/humains) sur fond sombre, échelle Y auto sur le max.
+     */
+    public void exportPng(java.nio.file.Path file) throws java.io.IOException {
+        final int W = 640, H = 240, PAD = 30;
+        java.awt.image.BufferedImage img =
+                new java.awt.image.BufferedImage(W, H, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D g = img.createGraphics();
+        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setColor(new java.awt.Color(20, 25, 32));
+        g.fillRect(0, 0, W, H);
+        g.setColor(new java.awt.Color(70, 80, 100));
+        g.drawRect(PAD, PAD, W - 2 * PAD, H - 2 * PAD);
+
+        int maxVal = 1;
+        for (int i = 0; i < size; i++)
+            maxVal = Math.max(maxVal, Math.max(Math.max(loups[i], moutons[i]),
+                    Math.max(humains[i], ours[i])));
+
+        int[][] series = { ours, loups, moutons, humains };
+        java.awt.Color[] cols = {
+                new java.awt.Color(178, 115, 51), new java.awt.Color(255, 77, 77),
+                new java.awt.Color(242, 242, 242), new java.awt.Color(102, 178, 255) };
+        int plotW = W - 2 * PAD, plotH = H - 2 * PAD;
+        int start = ((head - size) % CAPACITY + CAPACITY) % CAPACITY;
+        for (int s = 0; s < series.length; s++) {
+            g.setColor(cols[s]);
+            int prevX = -1, prevY = -1;
+            for (int k = 0; k < size; k++) {
+                int idx = (start + k) % CAPACITY;
+                int x = PAD + (size <= 1 ? 0 : plotW * k / (size - 1));
+                int y = PAD + plotH - (plotH * series[s][idx] / maxVal);
+                if (prevX >= 0) g.drawLine(prevX, prevY, x, y);
+                prevX = x; prevY = y;
+            }
+        }
+        g.setColor(new java.awt.Color(200, 200, 200));
+        g.drawString("max=" + maxVal + "  echantillons=" + size, PAD + 4, PAD + 14);
+        g.dispose();
+        java.nio.file.Files.createDirectories(file.getParent() == null
+                ? java.nio.file.Paths.get(".") : file.getParent());
+        javax.imageio.ImageIO.write(img, "png", file.toFile());
+    }
+
     public void draw(GL2 gl, UiRenderer ui, int viewportWidth, int viewportHeight) {
         int gx = MARGIN;                       // coin haut-GAUCHE (sous le HUD)
         int gy = HUD_HEIGHT + MARGIN;
