@@ -453,8 +453,15 @@ Court terme (1-2h chacun) :
       résultat physique, la vapeur ajouterait la signature visuelle.
     * **Plume de fumée verticale** visible depuis loin pendant l'éruption
       (cylindre vertical au-dessus du cratère).
-    * **Compteur de dommages dans le HUD** : arbres brûlés, agents
-      morts, volume de lave émis par éruption.
+    * [RÉALISÉ 2026-06-06, V6] **Compteur de dommages + notifications**.
+      `worlds.EventLog` (sur `World.events`) cumule `treesBurned` (incrémenté à
+      chaque ignition d'arbre dans `ForestCA`), `agentDeaths` (compté dans
+      `WorldOfCells.stepAgents`, par espèce) et `lavaEmitted` (volume injecté au
+      cratère dans `LavaCA.injectAtCrater`). Le HUD affiche une 2e ligne
+      « Degats | Arbres brules / Agents morts / Lave emise ». Les morts émettent
+      des NOTIFICATIONS transitoires groupées (« 12 moutons morts ! »),
+      horodatées à l'itération, affichées en fondu (TTL 120 ticks) puis purgées
+      via `EventLog.activeNotifications`. Tests `EventLogTest` (×3). 203 verts.
 
 Moyen terme :
 

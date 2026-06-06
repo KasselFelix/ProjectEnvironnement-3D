@@ -312,6 +312,7 @@ public class LavaCA extends CellularAutomataInteger {
 
 	private void injectAtCrater(Eruption e) {
 		float volume = e.pressure * BASE_FLOW;
+		world.events.lavaEmitted += (long) volume;   // V6 — volume de lave émis (cumulé)
 		// Injection avec équilibre hydrostatique par POIDS (refonte 2026-05-27).
 		//
 		// PRINCIPE PHYSIQUE :

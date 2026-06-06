@@ -31,6 +31,9 @@ public abstract class World {
 	/** Super-prédateurs (L4) : chassent les loups. */
 	public ArrayList<Ours> ours = new ArrayList<Ours>();
 
+	/** Journal d'événements (V6) : compteurs de dommages + notifications. */
+	public final EventLog events = new EventLog();
+
 	/**
 	 * La case ({@code x}, {@code y}) est-elle bloquée pour {@code mover} par un
 	 * autre agent ? Les agents sont des obstacles les uns pour les autres (pas de

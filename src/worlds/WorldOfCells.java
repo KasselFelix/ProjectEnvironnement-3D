@@ -441,12 +441,15 @@ public class WorldOfCells extends World {
     			uniqueDynamicObjects.remove(i);
     		}
     	}
+    	// V6 — comptage des morts de ce step par espèce (pour les notifications).
+    	int deadHumains = 0, deadLoups = 0, deadMoutons = 0, deadOurs = 0;
     	for ( int i = 0 ; i < humains.size() ; i++ ){
 			if(humains.get(i)._alive == false) {
 				this.uniqueDynamicObjects.remove((UniqueDynamicObject)this.humains.get(i));
 				this.humains.remove(this.humains.get(i));
 				this.humains.remove(i);
 				nbhumains--;
+				deadHumains++;
 			}
     	}
     	for ( int i = 0 ; i < loups.size() ; i++ ){
@@ -455,6 +458,7 @@ public class WorldOfCells extends World {
 				this.agents.remove(this.loups.get(i));
 				this.loups.remove(i);
 				nbloups--;
+				deadLoups++;
 			}
     	}
     	for ( int i = 0 ; i < moutons.size() ; i++ ){
@@ -463,6 +467,7 @@ public class WorldOfCells extends World {
 				this.agents.remove(this.moutons.get(i));
 				this.moutons.remove(i);
 				nbmoutons--;
+				deadMoutons++;
 			}
     	}
     	for ( int i = 0 ; i < ours.size() ; i++ ){        // L4 — purge des ours morts
@@ -471,7 +476,18 @@ public class WorldOfCells extends World {
 				this.agents.remove(this.ours.get(i));
 				this.ours.remove(i);
 				nbours--;
+				deadOurs++;
 			}
+    	}
+    	// V6 — compteur cumulé + notifications groupées par espèce.
+    	int totalDead = deadHumains + deadLoups + deadMoutons + deadOurs;
+    	if (totalDead > 0) {
+    		events.agentDeaths += totalDead;
+    		int it = getIteration();
+    		if (deadMoutons > 0) events.notify(deadMoutons + " mouton" + (deadMoutons > 1 ? "s morts" : " mort") + " !", it);
+    		if (deadLoups   > 0) events.notify(deadLoups   + " loup"   + (deadLoups   > 1 ? "s morts" : " mort") + " !", it);
+    		if (deadOurs    > 0) events.notify(deadOurs    + " ours mort" + (deadOurs > 1 ? "s" : "") + " !", it);
+    		if (deadHumains > 0) events.notify(deadHumains + " humain" + (deadHumains > 1 ? "s morts" : " mort") + " !", it);
     	}
     	int w = getWidth();
     	int h = getHeight();

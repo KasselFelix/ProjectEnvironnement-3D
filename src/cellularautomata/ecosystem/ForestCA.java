@@ -314,6 +314,7 @@ public class ForestCA extends CellularAutomataInteger {
 	    					} else {
 	    						this.setCellState(i,j, FIRE_FIRST);
 	    						NbArbreSaint-=1;
+	    						world.events.treesBurned++;   // V6
 	    					}
 						}else{
 		    				// check if neighbors are burning (any fire sub-state)
@@ -334,12 +335,14 @@ public class ForestCA extends CellularAutomataInteger {
 		    				{
 		    					this.setCellState(i,j, FIRE_FIRST);
 		    					NbArbreSaint-=1;
+		    					world.events.treesBurned++;   // V6 — compteur de dommages
 		    				}
 		    				else
 		    					if ( Math.random() < pF * world.fireSpreadFactor() ) // spontaneously take fire ?
 		    					{
 		    						this.setCellState(i,j, FIRE_FIRST);
 		    						NbArbreSaint-=1;
+		    						world.events.treesBurned++;   // V6
 		    					}
 		    					else
 		    					{

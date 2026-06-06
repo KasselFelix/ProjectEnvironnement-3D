@@ -50,7 +50,29 @@ public class Hud {
         int labelX = PADDING_X + text.length() * 6;
         if (paused) ui.drawText(gl, labelX, TEXT_Y_OFFSET, viewportHeight, playbackLabel, 1f, 0.85f, 0.2f);
         else        ui.drawText(gl, labelX, TEXT_Y_OFFSET, viewportHeight, playbackLabel, 0.6f, 1f, 0.6f);
+
+        // V6 — seconde ligne : compteurs de dommages cumulés.
+        worlds.EventLog ev = world.events;
+        String dmg = String.format(
+                "Degats  |  Arbres brules:%d   Agents morts:%d   Lave emise:%d",
+                ev.treesBurned, ev.agentDeaths, ev.lavaEmitted);
+        ui.drawQuad(gl, 0, HEIGHT, viewportWidth, 18, 0f, 0f, 0f, 0.40f);
+        ui.drawText(gl, PADDING_X, HEIGHT + 14, viewportHeight, dmg, 1f, 0.7f, 0.5f);
+
+        // V6 — notifications transitoires (« 12 moutons morts ! »), empilées
+        // sous le bandeau, en fondu sur leur durée de vie.
+        int ny = HEIGHT + 18 + 22;
+        for (worlds.EventLog.Notif n : ev.activeNotifications(iter, NOTIF_TTL)) {
+            float age = (iter - n.iteration) / (float) NOTIF_TTL;     // 0 → 1
+            float k = Math.max(0.25f, 1f - age);   // fondu par assombrissement (drawText sans alpha)
+            ui.drawText(gl, PADDING_X + 4, ny, viewportHeight, n.message, 1f * k, 0.85f * k, 0.2f * k);
+            ny += 18;
+            if (ny > viewportHeight - 40) break;   // garde-fou
+        }
     }
+
+    /** Durée de vie d'une notification, en ticks de simulation (V6). */
+    private static final int NOTIF_TTL = 120;
 
     public int getHeight() {
         return HEIGHT;
