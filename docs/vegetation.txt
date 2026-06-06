@@ -389,9 +389,13 @@ l'écosystème.
 
 --- Court terme ---
 
-    * Stades visuels distincts — au-delà de l'échelle continue, basculer le
-      mesh GLB (pousse → arbuste → arbre adulte) à des seuils de g pour un rendu
-      encore plus lisible.
+    * [RÉALISÉ 2026-06-06, V5] Stades visuels distincts des arbres. En plus de
+      l'échelle continue (déjà pilotée par `growth`), `Tree.displayTreeAt` applique
+      désormais un facteur de HAUTEUR (Z) par STADE : pousse (g < 0.33) trapue
+      (zStretch 0.65, silhouette de buisson bas), arbuste (0.33–0.66) ramassé
+      (0.85), adulte (> 0.66) élancé (1.0). La silhouette change donc nettement
+      pousse → arbuste → adulte, sans nécessiter de nouveaux meshes GLB.
+      RESTE (optionnel) : vrais meshes distincts par stade (assets Blender).
     * [RÉALISÉ 2026-06-06, V4] Brunissement de l'herbe broutée. `GrassCA` porte
       une grille `grazed[][]` : quand un Mouton broute (`Mouton.postMove` →
       `grassCA.markGrazed`), la cellule passe en herbe RASE (état 0) ET son
