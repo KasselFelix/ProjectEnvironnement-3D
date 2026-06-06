@@ -700,6 +700,49 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         	if (lightingWas) gl.glEnable(GL2.GL_LIGHTING);
         }
 
+        /**
+         * V2 — lueur orangée pulsante au cratère pendant l'éruption : quelques
+         * gros points additifs lissés au-dessus du conduit, qui éclairent
+         * visuellement le panache. Position = `LavaCA.sourceX/sourceY`. État GL
+         * sauvé/restauré (additif, lighting/fog off, non affecté par le cull).
+         */
+        private void displayCraterGlow(GL2 gl, float offset, float stepX, float stepY,
+                float lenX, int movingX, int movingY) {
+        	if (VIEW_FROM_ABOVE) return;
+        	int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+        	int cx = cellularautomata.ecosystem.LavaCA.sourceX;
+        	int cy = cellularautomata.ecosystem.LavaCA.sourceY;
+        	int x2 = ((cx - (movingX % w)) % w + w) % w;
+        	int y2 = ((cy - (movingY % h)) % h + h) % h;
+        	float px = offset + x2 * stepX;
+        	float py = offset + y2 * stepY;
+        	float z  = (float) _myWorld.getCellTopAltitude(cx, cy) + 2f;
+
+        	boolean fogWas = gl.glIsEnabled(GL2.GL_FOG);
+        	boolean lightingWas = gl.glIsEnabled(GL2.GL_LIGHTING);
+        	boolean smoothWas = gl.glIsEnabled(GL2.GL_POINT_SMOOTH);
+        	gl.glDisable(GL2.GL_LIGHTING);
+        	gl.glDisable(GL2.GL_FOG);
+        	gl.glDisable(GL.GL_TEXTURE_2D);
+        	gl.glEnable(GL.GL_BLEND);
+        	gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE);
+        	gl.glEnable(GL2.GL_POINT_SMOOTH);
+        	gl.glDepthMask(false);
+        	float pulse = 0.55f + 0.45f * (float) Math.sin(_myWorld.getIteration() * 0.25);
+        	gl.glPointSize(60f);
+        	gl.glColor4f(1f, 0.45f, 0.08f, 0.35f * pulse);   // halo orange
+        	gl.glBegin(GL.GL_POINTS); gl.glVertex3f(px, py, z); gl.glEnd();
+        	gl.glPointSize(34f);
+        	gl.glColor4f(1f, 0.75f, 0.25f, 0.55f * pulse);   // coeur incandescent
+        	gl.glBegin(GL.GL_POINTS); gl.glVertex3f(px, py, z + Math.abs(lenX)); gl.glEnd();
+        	gl.glPointSize(2f);
+        	gl.glDepthMask(true);
+        	gl.glDisable(GL.GL_BLEND);
+        	if (!smoothWas) gl.glDisable(GL2.GL_POINT_SMOOTH);
+        	if (fogWas) gl.glEnable(GL2.GL_FOG);
+        	if (lightingWas) gl.glEnable(GL2.GL_LIGHTING);
+        }
+
         private boolean isAgentOnScreen(Agent a, double[] mv, double[] proj, int[] view, double[] win, double marginPx) {
         	int w = _myWorld.getWidth();
         	int h = _myWorld.getHeight();
@@ -1919,6 +1962,12 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            // V2 — fumée / plume au-dessus de la lave fraîche (et vapeur si eau).
 	            if (DISPLAY_OBJECTS) {
 	            	displayLavaSmoke(gl, offset, stepX, stepY, lenX, movingX, movingY, xWin, yWin);
+	            	// V2 — lueur orangée pulsante au cratère pendant l'éruption.
+	            	if (_myWorld instanceof WorldOfCells
+	            			&& ((WorldOfCells) _myWorld).lavaCA != null
+	            			&& ((WorldOfCells) _myWorld).lavaCA.getbErupt() == 1) {
+	            		displayCraterGlow(gl, offset, stepX, stepY, lenX, movingX, movingY);
+	            	}
 	            }
                 // Appui long SPACE/SHIFT : translateZ est modifié à chaque frame
             // pour une montée/descente symétriques (AWT n'auto-repeat pas

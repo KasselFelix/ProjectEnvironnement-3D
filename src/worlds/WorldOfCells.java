@@ -667,6 +667,13 @@ public class WorldOfCells extends World {
     	}
     	if (cover <= 0f) return;
     	float ar = tr/cover, ag = tg/cover, ab = tb/cover;        // couleur d'état moyenne
+    	// L5 — teinte saisonnière du feuillage : verdoyant l'été, jauni l'automne,
+    	// terne l'hiver. On blende la couleur d'état vers la teinte de la saison.
+    	float[] st = currentSeason().foliageTint;
+    	final float SEASON_BLEND = 0.5f;
+    	ar = ar*(1f-SEASON_BLEND) + st[0]*SEASON_BLEND;
+    	ag = ag*(1f-SEASON_BLEND) + st[1]*SEASON_BLEND;
+    	ab = ab*(1f-SEASON_BLEND) + st[2]*SEASON_BLEND;
     	float strength = Math.min(1f, cover/4f) * GROUND_TINT_MAX; // couverture 0..1 × force max
     	col[0] = col[0]*(1f-strength) + ar*strength;
     	col[1] = col[1]*(1f-strength) + ag*strength;

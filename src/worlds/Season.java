@@ -9,10 +9,11 @@ package worlds;
  * jauni l'automne, terne l'hiver).
  */
 public enum Season {
-    SPRING(1.15, "Printemps", 0.30,  8.0),
-    SUMMER(1.00, "Ete",       0.10, 22.0),
-    AUTUMN(0.65, "Automne",   0.45, 10.0),
-    WINTER(0.30, "Hiver",     0.35, -2.0);
+    //      fert   label        rain  tempC   teinte feuillage (R,G,B)
+    SPRING(1.15, "Printemps", 0.30,  8.0,  new float[]{0.55f, 0.95f, 0.45f}),  // vert tendre
+    SUMMER(1.00, "Ete",       0.10, 22.0,  new float[]{0.20f, 0.70f, 0.20f}),  // vert profond
+    AUTUMN(0.65, "Automne",   0.45, 10.0,  new float[]{0.85f, 0.55f, 0.15f}),  // jaune-orangé
+    WINTER(0.30, "Hiver",     0.35, -2.0,  new float[]{0.55f, 0.58f, 0.50f});  // terne / dégarni
 
     /** Multiplicateur de fertilité appliqué aux CA de végétation. */
     public final double fertilityFactor;
@@ -23,11 +24,16 @@ public enum Season {
     /** Température de base de la saison en °C, à mi-journée (L6). Modulée par le
      *  cycle jour/nuit et la pluie dans {@code World.getTemperature()}. */
     public final double baseTemperatureC;
+    /** Teinte de feuillage de la saison (V5/L5) : la végétation est blendée vers
+     *  cette couleur au rendu (verdoyant l'été, jauni l'automne, terne l'hiver). */
+    public final float[] foliageTint;
 
-    Season(double fertilityFactor, String label, double rainProbability, double baseTemperatureC) {
+    Season(double fertilityFactor, String label, double rainProbability,
+           double baseTemperatureC, float[] foliageTint) {
         this.fertilityFactor = fertilityFactor;
         this.label = label;
         this.rainProbability = rainProbability;
         this.baseTemperatureC = baseTemperatureC;
+        this.foliageTint = foliageTint;
     }
 }

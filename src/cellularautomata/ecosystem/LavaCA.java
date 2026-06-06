@@ -940,6 +940,7 @@ public class LavaCA extends CellularAutomataInteger {
 					tx, ty,
 					lavaThickness, lavaApex, TEPHRA_FLIGHT_TICKS,
 					Material.LAVA, projectileLineage);
+			p.bouncesLeft = 1;   // V8 — les bombes de lave rebondissent une fois
 			world.uniqueDynamicObjects.add(p);
 		}
 	}

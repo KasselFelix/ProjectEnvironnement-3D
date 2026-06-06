@@ -41,6 +41,9 @@ public class TephraProjectile extends UniqueDynamicObject {
     private final LavaLineage lineage;
     public int ticksElapsed = 0;
     public boolean _alive = true;
+    /** V8 — rebonds restants : une bombe de lave > 0 rebondit en avant (hop plus
+     *  court, apex réduit) avant de se poser définitivement. 0 = pas de rebond. */
+    public int bouncesLeft = 0;
 
     /** Constructeur historique : projectile BASALT (tephra solide). */
     public TephraProjectile(World world,
@@ -88,6 +91,25 @@ public class TephraProjectile extends UniqueDynamicObject {
         y = ((int) Math.round(py) % h + h) % h;
 
         if (ticksElapsed >= ticksTotal) {
+            // V8 — REBOND d'une bombe de lave : pose une fine éclaboussure ici et
+            // relance un projectile-enfant qui repart en avant (hop plus court,
+            // apex réduit), jusqu'à épuisement des rebonds.
+            if (bouncesLeft > 0 && landMaterial == Material.LAVA) {
+                world.pushLayer(targetCellX, targetCellY, Material.LAVA, thickness * 0.3f, 1, lineage);
+                float ddx = dx - sx, ddy = dy - sy;
+                float len = (float) Math.sqrt(ddx * ddx + ddy * ddy);
+                if (len < 0.001f) { len = 1f; ddx = 1f; ddy = 0f; }
+                float hop = Math.max(2f, len * 0.4f);
+                float nx = dx + ddx / len * hop, ny = dy + ddy / len * hop;
+                int ncx = ((Math.round(nx)) % w + w) % w, ncy = ((Math.round(ny)) % h + h) % h;
+                TephraProjectile child = new TephraProjectile(world, dx, dy, dz, nx, ny, dz,
+                        ncx, ncy, thickness, apex * 0.5f, Math.max(4, ticksTotal / 2),
+                        landMaterial, lineage);
+                child.bouncesLeft = bouncesLeft - 1;
+                world.uniqueDynamicObjects.add(child);
+                _alive = false;
+                return;
+            }
             if (landMaterial == Material.LAVA && lineage != null) {
                 // Projection de lave : pose LAVA fraîche (state=1) avec lineage hérité.
                 world.pushLayer(targetCellX, targetCellY, Material.LAVA, thickness, 1, lineage);
