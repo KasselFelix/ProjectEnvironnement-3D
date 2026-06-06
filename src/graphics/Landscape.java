@@ -252,6 +252,19 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		// Demande de capture d'écran (F12). Écrit depuis l'AWT EDT (keyPressed),
 		// lu par le thread GL (display). volatile pour la visibilité cross-thread.
 		private volatile boolean screenshotRequested = false;
+		// Étiquette optionnelle du prochain fichier de capture (autoshot). Null → nom horodaté.
+		private volatile String screenshotLabel = null;
+
+		// ===== Mode autoshot (-Dautoshot) : validation visuelle non interactive =====
+		// Démarre la sim, déroule un scénario chronométré (jour → éruption → nuit →
+		// nuit+éruption), capture une PNG à chaque étape puis halt(0). Réutilisable
+		// pour valider le Lot 2 réalisme sans piloter le clavier à la main.
+		private static final String  AUTOSHOT_MODE = System.getProperty("autoshot");      // null, "true"/"top", ou "3d"
+		private static final boolean AUTOSHOT = (AUTOSHOT_MODE != null);
+		private static final boolean AUTOSHOT_3D = "3d".equalsIgnoreCase(AUTOSHOT_MODE); // vue perspective centrée volcan
+		private static final boolean AUTOSHOT_SELECT = "select".equalsIgnoreCase(AUTOSHOT_MODE); // suivi agent + halo V3
+		private long autoshotStartMs = 0L;   // 0 tant que la 1re frame n'a pas tourné
+		private int  autoshotStep = 0;        // index d'étape franchie
 
 		// Texture de bruit grayscale tileable, modulée par la couleur de cellule
 		// (sable/montagne/eau via getCellColorValue). Null si chargement échoué.
@@ -1386,6 +1399,81 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
          *
          */
         //@Override
+        /**
+         * Scénario de captures non interactif (mode {@code -Dautoshot}). Déroule
+         * jour → éruption(jour) → nuit(lune) → nuit+éruption, une PNG par étape
+         * dans {@code screenshots/}, puis {@code halt(0)}. Chaque étape franchie
+         * une seule fois via {@link #autoshotStep}. Tolérant au FPS (piloté au
+         * temps réel, pas au numéro de frame).
+         */
+        private void runAutoshot() {
+            long now = System.currentTimeMillis();
+            if (autoshotStartMs == 0L) {
+                autoshotStartMs = now;
+                if (config != null) config.awaitingStart = false; // démarre la sim
+                System.out.println("[autoshot] démarrage du scénario de captures");
+                return;
+            }
+            long t = now - autoshotStartMs;
+            if (AUTOSHOT_3D)     { runAutoshot3D(t); return; }
+            if (AUTOSHOT_SELECT) { runAutoshotSelect(t); return; }
+            switch (autoshotStep) {
+                case 0: if (t >= 3000) { shoot("01-jour");                 autoshotStep = 1; } break;
+                case 1: if (t >= 4000) { LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 2; } break;
+                case 2: if (t >= 8000) { shoot("02-eruption-jour");        autoshotStep = 3; } break;
+                case 3: if (t >= 9000) { it += _myWorld.getDureeJour();    autoshotStep = 4; } break; // → nuit
+                case 4: if (t >= 11500){ shoot("03-nuit-lune");            autoshotStep = 5; } break;
+                case 5: if (t >= 12000){ LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 6; } break;
+                case 6: if (t >= 16000){ shoot("04-nuit-eruption");        autoshotStep = 7; } break;
+                case 7: if (t >= 17500){ System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /** Variante vue 3D perspective centrée sur le volcan (lune, panaches, relief, arbres). */
+        private void runAutoshot3D(long t) {
+            // Recentre en continu la caméra sur le cratère (l'épicentre est figé en init).
+            int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+            movingX = ((LavaCA.sourceX - dxView / 2) % w + w) % w;
+            movingY = ((LavaCA.sourceY - dyView / 2) % h + h) % h;
+            switch (autoshotStep) {
+                case 0: VIEW_FROM_ABOVE = false; cameraDistance3D = -110; cameraPitch = 32; autoshotStep = 1; break; // bascule 3D, regard plongeant
+                case 1: if (t >= 3500) { shoot("3d-01-jour");                  autoshotStep = 2; } break;
+                case 2: if (t >= 4200) { LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 3; } break;
+                case 3: if (t >= 8500) { shoot("3d-02-eruption-jour");         autoshotStep = 4; } break;
+                case 4: if (t >= 9200) { it += _myWorld.getDureeJour();        autoshotStep = 5; } break; // → nuit
+                case 5: if (t >= 12000){ shoot("3d-03-nuit-lune");             autoshotStep = 6; } break;
+                case 6: if (t >= 12500){ LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 7; } break;
+                case 7: if (t >= 16500){ shoot("3d-04-nuit-eruption");         autoshotStep = 8; } break;
+                case 8: if (t >= 18000){ System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /** Sélectionne un mouton et le suit en 3D pour exposer le halo de sélection (V3). */
+        private void runAutoshotSelect(long t) {
+            switch (autoshotStep) {
+                case 0:
+                    if (!_myWorld.moutons.isEmpty()) {
+                        setSelectedAgent(_myWorld.moutons.get(0), 0);
+                        cameraFollow = true;
+                        VIEW_FROM_ABOVE = false;
+                        orbitRadius = 14;   // gros plan 3e personne
+                    }
+                    autoshotStep = 1;
+                    break;
+                case 1: if (t >= 3500) { shoot("select-01-halo-jour"); autoshotStep = 2; } break;
+                case 2: if (t >= 4200) { it += _myWorld.getDureeJour(); autoshotStep = 3; } break; // nuit
+                case 3: if (t >= 7000) { shoot("select-02-halo-nuit"); autoshotStep = 4; } break;
+                case 4: if (t >= 8500) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /** Programme une capture étiquetée (lue par le bloc screenshot de display()). */
+        private void shoot(String label) {
+            screenshotLabel = label;
+            screenshotRequested = true;
+            System.out.println("[autoshot] capture " + label + " (t=" + (System.currentTimeMillis() - autoshotStartMs) + "ms)");
+        }
+
         public void display(GLAutoDrawable gLDrawable) {
 
         		// ** compute FPS
@@ -1399,7 +1487,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
         			lastFpsValue = fps;
         		}
-        		
+
+        		if (AUTOSHOT) runAutoshot();
+
         		// ** clean screen
 
         		final GL2 gl = gLDrawable.getGL().getGL2();
@@ -2074,12 +2164,14 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
                 if (screenshotRequested) {
                     screenshotRequested = false;
+                    String label = screenshotLabel; screenshotLabel = null;
                     try {
                         File dir = new File("screenshots");
                         if (!dir.exists()) dir.mkdirs();
-                        String name = "screenshot-"
-                            + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date())
-                            + ".png";
+                        String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date());
+                        String name = (label != null)
+                            ? "autoshot-" + label + "-" + stamp + ".png"
+                            : "screenshot-" + stamp + ".png";
                         File file = new File(dir, name);
                         Screenshot.writeToFile(file, gLDrawable.getWidth(), gLDrawable.getHeight());
                         System.out.println("Screenshot saved: " + file.getAbsolutePath());
