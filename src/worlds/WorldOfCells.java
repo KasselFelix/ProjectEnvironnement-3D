@@ -427,6 +427,9 @@ public class WorldOfCells extends World {
     	// L7 — neige : varie lentement, mise à jour 1×/sec (20 ticks) pour épargner
     	// le balayage complet de la grille à chaque tick.
     	if (getIteration() % 20 == 0) stepSnow();
+    	// L7 — eau qui s'écoule : ruissellement toutes les 5 ticks (compromis
+    	// fluidité visuelle / coût du balayage de grille en rendu logiciel).
+    	if (getIteration() % 5 == 0) stepWater();
     }
     
     protected void stepAgents()
@@ -690,6 +693,33 @@ public class WorldOfCells extends World {
     	col[0] = col[0]*(1f-strength) + BROWN[0]*strength;
     	col[1] = col[1]*(1f-strength) + BROWN[1]*strength;
     	col[2] = col[2]*(1f-strength) + BROWN[2]*strength;
+    }
+
+    /**
+     * Teinte un sommet de terrain en BLEU là où de l'eau de RUISSELLEMENT (L7)
+     * s'accumule (ruisseaux, flaques posés par la pluie). Force ∝ hauteur d'eau
+     * moyenne des 4 cellules adjacentes, plafonnée. Appelé entre la teinte herbe
+     * broutée et la neige.
+     */
+    public void applyWaterTint(int vx, int vy, float[] col)
+    {
+    	final float WATER_TINT_MAX = 0.75f;
+    	final float WATER_SAT = 1.2f;   // hauteur d'eau (unités) donnant la teinte pleine
+    	final float[] BLUE = { 0.15f, 0.35f, 0.75f };
+    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	float sum = 0; int n = 0;
+    	for (int[] c : cells) {
+    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
+    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    		sum += (float) getWaterDepth(cxm, cym);
+    		n++;
+    	}
+    	if (n == 0) return;
+    	float strength = Math.min(1f, (sum / n) / WATER_SAT) * WATER_TINT_MAX;
+    	if (strength <= 0f) return;
+    	col[0] = col[0]*(1f-strength) + BLUE[0]*strength;
+    	col[1] = col[1]*(1f-strength) + BLUE[1]*strength;
+    	col[2] = col[2]*(1f-strength) + BLUE[2]*strength;
     }
 
     public int getGrassCAValue(int x, int y)

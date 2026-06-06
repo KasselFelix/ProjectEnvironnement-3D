@@ -120,6 +120,8 @@ public abstract class World {
 
     	// Grille de neige (L7) : surface-state des sommets, vide au départ.
     	this.snowDepth = new double[__dxCA][__dyCA];
+    	// Grille d'eau de ruissellement (L7) : vide au départ, alimentée par la pluie.
+    	this.waterDepth = new double[__dxCA][__dyCA];
 
     	int cpt=0;
     	
@@ -336,6 +338,90 @@ public abstract class World {
 			for (int y = 0; y < dyCA; y++) {
 				double hN = getCellHeight(x, y) / maxH;
 				snowDepth[x][y] = nextSnowDepth(snowDepth[x][y], t, hN, SNOW_LINE_FRAC);
+			}
+	}
+
+	// ===== Eau qui s'écoule (L7) : ruissellement / rivières =====
+	/** Hauteur d'eau de surface par cellule (en UNITÉS DE HAUTEUR de cellule,
+	 *  comme getCellHeight) qui ruisselle vers les voisins plus bas. Distincte de
+	 *  l'océan (cellHeight < 0) : c'est l'eau MOBILE posée sur la terre. */
+	protected double[][] waterDepth;
+	private double[][] waterScratch;
+
+	/** Fraction de la dénivelée transférée par tick vers le voisin le plus bas. */
+	private static final double WATER_FLOW_RATE = 0.5;
+	/** Évaporation de l'eau de surface sur terre par tick (lente). */
+	private static final double WATER_EVAP = 0.0008;
+	/** Eau ajoutée par tick de pluie sur chaque cellule de terre (source L6→L7). */
+	private static final double RAIN_WATER_PER_TICK = 0.02;
+
+	public double getWaterDepth(int x, int y) {
+		return waterDepth == null ? 0.0 : waterDepth[x % dxCA][y % dyCA];
+	}
+	public void setWaterDepth(int x, int y, double d) {
+		if (waterDepth != null) waterDepth[x % dxCA][y % dyCA] = Math.max(0.0, d);
+	}
+	public void addWater(int x, int y, double d) {
+		if (waterDepth != null) {
+			int i = x % dxCA, j = y % dyCA;
+			waterDepth[i][j] = Math.max(0.0, waterDepth[i][j] + d);
+		}
+	}
+
+	/**
+	 * Un pas d'écoulement de l'eau de surface (L7). Pour chaque cellule portant de
+	 * l'eau, on transfère une fraction du surplus d'altitude (terrain + eau) vers
+	 * le voisin cardinal le plus BAS — l'eau coule donc des crêtes vers les
+	 * cuvettes, formant ruisseaux et flaques. Calcul en deux temps (deltas dans un
+	 * scratch, puis application) pour être indépendant de l'ordre de balayage.
+	 * L'eau qui atteint l'océan (cellHeight &lt; 0) est absorbée ; l'eau sur terre
+	 * s'évapore lentement. Couplé à la pluie (L6) comme source quand il pleut.
+	 */
+	public void stepWater() {
+		if (waterDepth == null) return;
+		if (waterScratch == null) waterScratch = new double[dxCA][dyCA];
+
+		// Source : la pluie alimente le ruissellement sur la terre ferme.
+		if (isRaining()) {
+			for (int x = 0; x < dxCA; x++)
+				for (int y = 0; y < dyCA; y++)
+					if (getCellHeight(x, y) >= 0) waterDepth[x][y] += RAIN_WATER_PER_TICK;
+		}
+
+		for (int x = 0; x < dxCA; x++)
+			for (int y = 0; y < dyCA; y++) waterScratch[x][y] = 0.0;
+
+		final int[] dxs = { 0, 0, 1, -1 };
+		final int[] dys = { -1, 1, 0, 0 };
+		for (int x = 0; x < dxCA; x++)
+			for (int y = 0; y < dyCA; y++) {
+				double water = waterDepth[x][y];
+				if (water <= 0.0) continue;
+				double totalHere = getCellHeight(x, y) + water;
+				// voisin cardinal le plus bas (terrain + eau), tore-aware.
+				int bestNx = -1, bestNy = -1;
+				double bestTotal = totalHere;
+				for (int k = 0; k < 4; k++) {
+					int nx = ((x + dxs[k]) % dxCA + dxCA) % dxCA;
+					int ny = ((y + dys[k]) % dyCA + dyCA) % dyCA;
+					double tn = getCellHeight(nx, ny) + waterDepth[nx][ny];
+					if (tn < bestTotal) { bestTotal = tn; bestNx = nx; bestNy = ny; }
+				}
+				if (bestNx < 0) continue;   // cuvette locale : l'eau reste (flaque)
+				// Transfert : moitié de la dénivelée, borné à l'eau disponible.
+				double move = Math.min(water, (totalHere - bestTotal) * 0.5) * WATER_FLOW_RATE;
+				if (move <= 0) continue;
+				waterScratch[x][y]       -= move;
+				waterScratch[bestNx][bestNy] += move;
+			}
+
+		// Application + drainage océan + évaporation terre.
+		for (int x = 0; x < dxCA; x++)
+			for (int y = 0; y < dyCA; y++) {
+				double d = waterDepth[x][y] + waterScratch[x][y];
+				if (getCellHeight(x, y) < 0) d = 0.0;          // absorbé par l'océan
+				else d = Math.max(0.0, d - WATER_EVAP);        // évaporation lente
+				waterDepth[x][y] = d;
 			}
 	}
 

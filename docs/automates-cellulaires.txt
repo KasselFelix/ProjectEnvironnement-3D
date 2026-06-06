@@ -457,6 +457,18 @@ quand la lave solidifie elle enterre les cendres restantes.
       blanchit les sommets enneigés (par-dessus la teinte forêt) dans
       `Landscape`. Couplé à la température L6 (cf. cycle-jour-nuit.txt). Tests :
       `WorldSnowTest` (×5). 195 verts.
+    * [RÉALISÉ 2026-06-06, L7] Eau qui s'écoule (ruissellement / rivières). Grille
+      `World.waterDepth` (eau MOBILE de surface, en unités de hauteur de cellule,
+      distincte de l'océan `cellHeight < 0`). `stepWater()` (double-buffer pour
+      l'indépendance à l'ordre) : pour chaque cellule portant de l'eau, transfère
+      `(dénivelée terrain+eau)/2 × WATER_FLOW_RATE` vers le voisin cardinal le plus
+      bas → l'eau coule des crêtes vers les cuvettes (ruisseaux, flaques).
+      L'eau qui atteint l'océan est absorbée ; sur terre elle s'évapore lentement
+      (`WATER_EVAP`). SOURCE : la pluie L6 dépose `RAIN_WATER_PER_TICK` sur la
+      terre quand `isRaining()`. Cadence : toutes les 5 ticks depuis
+      `WorldOfCells.stepCellularAutomata`. Rendu : `WorldOfCells.applyWaterTint`
+      bleuit les cellules ruisselantes dans `Landscape`. Tests `WorldWaterTest`
+      (×4 : écoulement, conservation, drainage océan, source pluie). 211 verts.
 
 --- Long terme ---
 
