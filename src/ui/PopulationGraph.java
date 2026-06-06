@@ -48,6 +48,30 @@ public class PopulationGraph {
         if (size < CAPACITY) size++;
     }
 
+    /** Nombre d'échantillons actuellement mémorisés (V7 — export). */
+    public int sampleCount() { return size; }
+
+    /**
+     * Exporte l'historique des populations en CSV (V7), du plus ancien au plus
+     * récent. En-tête : {@code sample,ours,loups,moutons,humains}. L'index
+     * {@code sample} est l'ordre chronologique (0 = plus ancien échantillon
+     * encore en mémoire). Pur (aucune dépendance OpenGL).
+     */
+    public String exportCsv() {
+        StringBuilder sb = new StringBuilder("sample,ours,loups,moutons,humains\n");
+        // Le plus ancien échantillon est à (head - size) modulo CAPACITY.
+        int start = ((head - size) % CAPACITY + CAPACITY) % CAPACITY;
+        for (int k = 0; k < size; k++) {
+            int idx = (start + k) % CAPACITY;
+            sb.append(k).append(',')
+              .append(ours[idx]).append(',')
+              .append(loups[idx]).append(',')
+              .append(moutons[idx]).append(',')
+              .append(humains[idx]).append('\n');
+        }
+        return sb.toString();
+    }
+
     public void draw(GL2 gl, UiRenderer ui, int viewportWidth, int viewportHeight) {
         int gx = MARGIN;                       // coin haut-GAUCHE (sous le HUD)
         int gy = HUD_HEIGHT + MARGIN;

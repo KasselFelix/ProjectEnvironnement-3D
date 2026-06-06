@@ -26,6 +26,7 @@ import ui.Hud;
 import ui.InGameMenu;
 import ui.LaunchMenu;
 import ui.PopulationGraph;
+import ui.ConfigPresets;
 import ui.SimulationConfig;
 import ui.UiRenderer;
 
@@ -2296,6 +2297,45 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		 * crust qui ne descend pas, etc.). Ne dépend d'aucun thread GL — peut
 		 * être appelée directement depuis l'EDT keyPressed.
 		 */
+		/** V7 — exporte l'historique du graphe de populations en CSV dans exports/. */
+		private void exportPopulationsCsv() {
+			String ts = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(LocalDateTime.now());
+			Path out = Paths.get("exports", "populations-" + ts + ".csv");
+			try {
+				Files.createDirectories(out.getParent());
+				Files.writeString(out, populationGraph.exportCsv());
+				System.out.println("[V7] populations exportees -> " + out);
+			} catch (Exception e) {
+				System.out.println("[V7] echec export CSV: " + e.getMessage());
+			}
+		}
+
+		/** V7 — sauvegarde la config courante en preset JSON (presets/preset.json). */
+		private void saveConfigPreset() {
+			if (config == null) return;
+			Path out = Paths.get("presets", "preset.json");
+			try {
+				Files.createDirectories(out.getParent());
+				ConfigPresets.save(config, out);
+				System.out.println("[V7] preset sauvegarde -> " + out);
+			} catch (Exception e) {
+				System.out.println("[V7] echec sauvegarde preset: " + e.getMessage());
+			}
+		}
+
+		/** V7 — recharge le preset JSON et applique à chaud (presets/preset.json). */
+		private void loadConfigPreset() {
+			if (config == null) return;
+			Path in = Paths.get("presets", "preset.json");
+			try {
+				ConfigPresets.load(in, config);
+				if (_myWorld instanceof WorldOfCells) ((WorldOfCells) _myWorld).applyLiveConfig();
+				System.out.println("[V7] preset recharge <- " + in);
+			} catch (Exception e) {
+				System.out.println("[V7] echec rechargement preset: " + e.getMessage());
+			}
+		}
+
 		private void dumpStacksAroundCrater() {
 			int sx = cellularautomata.ecosystem.LavaCA.sourceX;
 			int sy = cellularautomata.ecosystem.LavaCA.sourceY;
@@ -2509,6 +2549,15 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				break;
 			case KeyEvent.VK_F11:
 				dumpStacksAroundCrater();
+				break;
+			case KeyEvent.VK_F9:
+				exportPopulationsCsv();   // V7 — export CSV du graphe
+				break;
+			case KeyEvent.VK_F10:
+				saveConfigPreset();       // V7 — sauvegarde du preset config
+				break;
+			case KeyEvent.VK_F8:
+				loadConfigPreset();       // V7 — rechargement du preset
 				break;
 			case KeyEvent.VK_H:
 				System.out.println(
