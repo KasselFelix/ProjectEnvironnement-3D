@@ -17,6 +17,7 @@ public final class AgentTestSupport {
         world.nbloups = 0;
         world.nbmoutons = 0;
         world.nbhumains = 0;
+        world.nbours = 0;
         double[][] landscape = PerlinNoiseLandscapeGenerator
                 .generatePerlinNoiseLandscape(DX_VIEW, DY_VIEW, 0.7, 0.4, 4);
         world.init(DX, DY, landscape);

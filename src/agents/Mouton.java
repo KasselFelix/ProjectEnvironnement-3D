@@ -327,7 +327,9 @@ public class Mouton extends Agent {
 		//Broute
 		if(energie<(energieMAX*0.75) &&fuite==0) {
 			if(world.getGrassCAValue( x, y)==1){
-				world.setGrassCAValue( x, y, 0);
+				// V4 — broutage : la cellule passe en herbe RASE (markGrazed) au lieu
+				// de disparaître net → repousse différée + rendu « tondu » visible.
+				((worlds.WorldOfCells) world).grassCA.markGrazed(x, y);
 				energie+=energieMAX/100;
 				m=1;
 				//System.out.println("broute");

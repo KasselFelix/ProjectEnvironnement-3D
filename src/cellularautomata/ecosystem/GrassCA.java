@@ -31,16 +31,36 @@ public class GrassCA extends CellularAutomataInteger {
 	private static final double ASH_BOOST_FACTOR = 3.0;
 	/** Durée (ticks) de l'effet fertilisant de la cendre. */
 	private static final int ASH_BOOST_DURATION = 200;
-	
+
+	/** Tours restants d'état « herbe rase » après broutage (V4) : la cellule
+	 *  reste tondue (pas de repousse) pendant ce délai → couplage agent→CA
+	 *  visible (le rendu la dessine plus courte/brune). */
+	private int[][] grazed;
+	/** Durée (ticks) de l'état rase après broutage avant que la repousse reparte. */
+	public static final int GRAZED_DURATION = 60;
+
 	public GrassCA ( World __world, int __dx , int __dy, CellularAutomataDouble cellsHeightValuesCA )
 	{
 		super(__dx,__dy,false ); // buffering must be true.
-		
+
 		_cellsHeightValuesCA = cellsHeightValuesCA;
 
 		this.world = __world;
 		this.ashBoost = new int[_dx][_dy];
+		this.grazed   = new int[_dx][_dy];
 	}
+
+	/** V4 — marque la cellule comme broutée : l'herbe disparaît (état 0) et reste
+	 *  RASE pendant GRAZED_DURATION ticks (pas de repousse immédiate). Appelé par
+	 *  le Mouton quand il broute. */
+	public void markGrazed(int x, int y) {
+		setCellState(x, y, 0);
+		grazed[x % _dx][y % _dy] = GRAZED_DURATION;
+	}
+
+	/** Tours restants d'état rase pour la cellule (V4) ; 0 = herbe normale.
+	 *  Lu par le rendu pour brunir/raccourcir l'herbe broutée. */
+	public int getGrazed(int x, int y) { return grazed[x % _dx][y % _dy]; }
 	
 	/**
 	 * Invariant d'altitude de l'herbe : elle ne pousse que dans une bande
@@ -102,14 +122,16 @@ public class GrassCA extends CellularAutomataInteger {
     		int i=world.list.get(d)%_dx;
 			int j=world.list.get(d)/_dy;
 			if (ashBoost[i][j] > 0) ashBoost[i][j]--;   // l'enrichissement cendre s'épuise (1×/cellule/tick)
+			if (grazed[i][j] > 0) grazed[i][j]--;       // V4 — l'état rase s'estompe (repousse ensuite)
     			if (this.getCellState(i, j)>=0 &&  this.getCellState(i,j)<= 3+tDispertion)
-    			{	
+    			{
     				// Pour une case sans herbe. Pas de germination sur la lave
     				// en refroidissement (top = LAVA tant que state < solidifyEnd).
     				// Sur la pierre (volcan refroidi), germination autorisée
     				// mais avec proba réduite (sol minéral peu fertile).
+    				// V4 : une cellule encore RASE (récemment broutée) ne repousse pas.
     				if ( this.getCellState(i,j) == 0
-    						&& world.getLavaCAValue(i, j)==0){
+    						&& world.getLavaCAValue(i, j)==0 && grazed[i][j]==0){
     					if(Math.random() < grassGerminationProb(i, j) && canGrowGrass(i, j)){
     						this.setCellState(i,j,1);
     						/*solid[x][y][]=1;*/

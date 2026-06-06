@@ -649,6 +649,33 @@ public class WorldOfCells extends World {
     	col[2] = col[2]*(1f-strength) + 1f*strength;
     }
 
+    /**
+     * Brunit un sommet de terrain là où l'herbe a été récemment BROUTÉE (V4) :
+     * tant que le compteur `grazed` d'une cellule adjacente n'est pas retombé à
+     * 0, le sol prend une teinte « tondu » (brun fauve), proportionnelle à la
+     * fraction de compteur restante. Appelé après applyForestTint, avant la neige.
+     */
+    public void applyGrazedTint(int vx, int vy, float[] col)
+    {
+    	if (grassCA == null) return;
+    	final float GRAZED_TINT_MAX = 0.45f;
+    	final float[] BROWN = { 0.50f, 0.40f, 0.20f };
+    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	float sum = 0; int n = 0;
+    	for (int[] c : cells) {
+    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
+    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    		sum += grassCA.getGrazed(cxm, cym) / (float) cellularautomata.ecosystem.GrassCA.GRAZED_DURATION;
+    		n++;
+    	}
+    	if (n == 0) return;
+    	float strength = (sum / n) * GRAZED_TINT_MAX;
+    	if (strength <= 0f) return;
+    	col[0] = col[0]*(1f-strength) + BROWN[0]*strength;
+    	col[1] = col[1]*(1f-strength) + BROWN[1]*strength;
+    	col[2] = col[2]*(1f-strength) + BROWN[2]*strength;
+    }
+
     public int getGrassCAValue(int x, int y)
     {
     	return grassCA.getCellState(x%dxCA,y%dyCA);

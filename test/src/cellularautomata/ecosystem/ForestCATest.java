@@ -18,7 +18,7 @@ class ForestCATest {
 
     private WorldOfCells buildWorld() {
         WorldOfCells w = new WorldOfCells();
-        w.nbloups = 0; w.nbmoutons = 0; w.nbhumains = 0;
+        w.nbloups = 0; w.nbmoutons = 0; w.nbhumains = 0; w.nbours = 0;
         double[][] ls = PerlinNoiseLandscapeGenerator
                 .generatePerlinNoiseLandscape(DX_VIEW, DY_VIEW, 0.7, 0.4, 4);
         w.init(DX, DY, ls);

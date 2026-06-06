@@ -17,7 +17,7 @@ class GrassCATest {
 
     private WorldOfCells buildWorld() {
         WorldOfCells w = new WorldOfCells();
-        w.nbloups = 0; w.nbmoutons = 0; w.nbhumains = 0;
+        w.nbloups = 0; w.nbmoutons = 0; w.nbhumains = 0; w.nbours = 0;
         double[][] ls = PerlinNoiseLandscapeGenerator
                 .generatePerlinNoiseLandscape(DX_VIEW, DY_VIEW, 0.7, 0.4, 4);
         w.init(DX, DY, ls);
@@ -69,6 +69,32 @@ class GrassCATest {
         assertTrue(after > before,
                 "la cendre récente doit accélérer la repousse de l'herbe ("
                 + after + " > " + before + ")");
+    }
+
+    /**
+     * V4 — Broutage : une cellule broutée passe en herbe RASE (état 0) et NE
+     * repousse PAS tant que le compteur `grazed` n'est pas retombé à 0 (couplage
+     * agent→CA visible : récupération différée du pâturage).
+     */
+    @Test
+    void broutageMetLHerbeRaseEtDiffereLaRepousse() {
+        WorldOfCells w = buildWorld();
+        int x = 20, y = 20;
+        double maxH = w.getMaxEverHeight();
+        w.setCellHeight(x, y, maxH * 0.4);   // dans la bande → repousse possible
+        w.grassCA.pH = 1.0;                  // germination quasi certaine si autorisée
+
+        w.grassCA.setCellState(x, y, 1);     // herbe en place
+        w.grassCA.markGrazed(x, y);
+        assertEquals(0, w.grassCA.getCellState(x, y), "après broutage la cellule est tondue (0)");
+        assertTrue(w.grassCA.getGrazed(x, y) > 0, "le compteur d'herbe rase est armé");
+
+        // Pendant l'état rase, malgré pH=1, l'herbe ne repousse pas.
+        for (int k = 0; k < 5; k++) w.grassCA.step();
+        assertEquals(0, w.grassCA.getCellState(x, y),
+                "l'herbe ne repousse pas tant que la cellule est rase (récupération différée)");
+        assertTrue(w.grassCA.getGrazed(x, y) < GrassCA.GRAZED_DURATION,
+                "le compteur d'herbe rase décroît à chaque tick");
     }
 
     /** L'eau (altitude négative) est toujours hors-bande → jamais d'herbe. */
