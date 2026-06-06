@@ -384,7 +384,7 @@ public class Mouton extends Agent {
 			if( world.getCellHeight(lastX, lastY) > world.getCellHeight(x, y)){
 				energie--;
 			}
-			energie--;
+			energie -= metabolicCost(1.0);   // L8 — coût métabolique modulé par l'activité
 		}
 		if(energie<10 && vitesse>=vcourse){
 			vitesse=vcourse/2;

@@ -182,7 +182,7 @@ public class Ours extends Agent {
         if (energie <= 0) { _alive = false; }
         else {
             if (world.getCellHeight(x, y) < 0) energie -= 2;
-            energie--;
+            energie -= metabolicCost(1.0);   // L8 — coût métabolique modulé par l'activité
         }
         if (world.getCellHeight(x, y) < 0) vitesse *= swimFactor;
         vitesse *= world.coldSpeedFactor();   // L6

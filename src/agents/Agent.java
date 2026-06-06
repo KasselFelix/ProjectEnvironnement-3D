@@ -123,6 +123,38 @@ public class Agent extends UniqueDynamicObject{
 		mind = agents.ai.Mind.fromGenome(genome);
 	}
 
+	// ----- Économie métabolique / faim variable (L8) -----
+	/** Reliquat fractionnaire de coût métabolique reporté d'un tick à l'autre
+	 *  (l'énergie est entière, le coût est continu). */
+	protected double metabolicDebt = 0.0;
+
+	/** Facteur de dépense énergétique selon l'ACTIVITÉ du tick (L8) : se reposer
+	 *  coûte moins (0.5), errer un peu moins (0.8), sprinter/fuir/chasser coûte
+	 *  plus (1.3). Sert à moduler le coût métabolique de base. NB : l'ÉQUILIBRE
+	 *  Lotka-Volterra qui en résulte se règle/observe EN SIMULATION (graphe), pas
+	 *  en test unitaire — cf. plan L8. */
+	public double activityEnergyFactor() {
+		switch (currentState) {
+			case REST:           return 0.5;
+			case WANDER:         return 0.8;
+			case HUNT:
+			case FLEE_PREDATOR:
+			case FLEE_LAVA:
+			case ON_FIRE:        return 1.3;
+			default:             return 1.0;
+		}
+	}
+
+	/** Coût métabolique ENTIER à retrancher ce tick pour une dépense de base
+	 *  {@code base}, modulé par l'activité (L8). Le reliquat fractionnaire est
+	 *  reporté via {@link #metabolicDebt} pour conserver la dépense moyenne. */
+	protected int metabolicCost(double base) {
+		metabolicDebt += base * activityEnergyFactor();
+		int whole = (int) Math.floor(metabolicDebt);
+		metabolicDebt -= whole;
+		return whole;
+	}
+
 	/** Niveau d'activité cognitive du tick (§ 6.2) : 1.0 pour les états de
 	 *  survie/décision (qui entraînent l'esprit), 0.0 pour le repos et l'errance. */
 	public double activityLevel() {

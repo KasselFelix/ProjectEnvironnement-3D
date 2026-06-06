@@ -339,8 +339,16 @@ Idées d'extensions classées par effort estimé.
       (`if (maxAgeDays > 0 && getAgeDays() > maxAgeDays) _alive = false`),
       câblée via `config.loupMaxAgeDays` / `moutonMaxAgeDays`. Test :
       `LoupTest.loupMeurtParVieillesse`.
-    * Système de faim variable selon l'activité (chasser coûte plus que
-      marcher) pour rendre la dynamique plus riche.
+    * [RÉALISÉ 2026-06-06, L8] Faim variable / économie métabolique. `Agent`
+      expose `activityEnergyFactor()` (repos 0.5, errance 0.8, normal 1.0,
+      sprint/fuite/chasse 1.3) et `metabolicCost(base)` qui retranche un coût
+      ENTIER modulé par l'activité, en reportant le reliquat fractionnaire
+      (`metabolicDebt`) pour conserver la dépense moyenne. Câblé dans le bloc
+      énergie de `Mouton`, `Loup` et `Ours` (le `energie--` de base devient
+      `energie -= metabolicCost(1.0)`). Tests `MetabolismTest` (×2 : ordre des
+      facteurs, report fractionnaire). NB conforme au plan : l'ÉQUILIBRE
+      Lotka-Volterra résultant se règle/observe EN SIMULATION (graphe des
+      populations), pas en test unitaire.
 
 --- Moyen terme ---
 
