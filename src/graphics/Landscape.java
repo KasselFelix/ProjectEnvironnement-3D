@@ -630,6 +630,66 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         	if (fogWas) gl.glEnable(GL2.GL_FOG);
         }
 
+        /**
+         * V2 — fumée grise au-dessus de la lave fraîche : un panache vertical de
+         * points additifs montant au-dessus de chaque cellule LAVA visible. La
+         * lave la plus CHAUDE (state bas) fume le plus ; la lave immergée produit
+         * une VAPEUR (teinte plus claire). Rendu en points lissés additifs, état
+         * GL sauvé/restauré (non affecté par le cull). Plumes plafonnées pour le
+         * coût (rendu logiciel). Animation par l'itération.
+         */
+        private void displayLavaSmoke(GL2 gl, float offset, float stepX, float stepY,
+                float lenX, int movingX, int movingY, int[] xWin, int[] yWin) {
+        	if (VIEW_FROM_ABOVE) return;
+        	final int MAX_PLUMES = 90;
+        	int drawn = 0;
+        	int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+        	int it = _myWorld.getIteration();
+
+        	boolean fogWas = gl.glIsEnabled(GL2.GL_FOG);
+        	boolean lightingWas = gl.glIsEnabled(GL2.GL_LIGHTING);
+        	boolean smoothWas = gl.glIsEnabled(GL2.GL_POINT_SMOOTH);
+        	gl.glDisable(GL2.GL_LIGHTING);
+        	gl.glDisable(GL2.GL_FOG);
+        	gl.glDisable(GL.GL_TEXTURE_2D);
+        	gl.glEnable(GL.GL_BLEND);
+        	gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE);   // additif pondéré
+        	gl.glEnable(GL2.GL_POINT_SMOOTH);
+        	gl.glDepthMask(false);
+        	gl.glPointSize(16f);   // taille fixe : glPointSize interdit dans un glBegin
+        	gl.glBegin(GL.GL_POINTS);
+        	for (int x = xWin[0]; x < xWin[1] && drawn < MAX_PLUMES; x++) {
+        		for (int y = yWin[0]; y < yWin[1] && drawn < MAX_PLUMES; y++) {
+        			int cx = (x + movingX) % w, cy = (y + movingY) % h;
+        			int lava = _myWorld.getLavaCAValue(cx, cy);
+        			if (lava <= 0) continue;
+        			boolean submerged = _myWorld.getCellHeight(cx, cy) < 0;
+        			int x2 = ((x % w) + w) % w, y2 = ((y % h) + h) % h;
+        			float px = offset + x2 * stepX;
+        			float py = offset + y2 * stepY;
+        			float zBase = (float) _myWorld.getCellTopAltitude(cx, cy) + 1.5f;
+        			// Colonne de 5 bouffées montantes, jitter horizontal animé.
+        			for (int s = 0; s < 5; s++) {
+        				float t = (s + ((it * 0.05f + (cx * 7 + cy * 3)) % 1f));
+        				float rise = t * Math.abs(lenX) * 2.2f;
+        				float jit = (float) Math.sin(it * 0.1f + s + cx) * Math.abs(lenX) * 0.4f;
+        				float a = Math.max(0f, 0.5f - t * 0.09f);   // s'estompe en montant
+        				if (submerged) gl.glColor4f(0.85f, 0.88f, 0.95f, a);   // vapeur claire
+        				else           gl.glColor4f(0.32f, 0.30f, 0.28f, a);   // fumée grise
+        				gl.glVertex3f(px + jit, py + jit * 0.5f, zBase + rise);
+        			}
+        			drawn++;
+        		}
+        	}
+        	gl.glEnd();
+        	gl.glPointSize(2f);
+        	gl.glDepthMask(true);
+        	gl.glDisable(GL.GL_BLEND);
+        	if (!smoothWas) gl.glDisable(GL2.GL_POINT_SMOOTH);
+        	if (fogWas) gl.glEnable(GL2.GL_FOG);
+        	if (lightingWas) gl.glEnable(GL2.GL_LIGHTING);
+        }
+
         private boolean isAgentOnScreen(Agent a, double[] mv, double[] proj, int[] view, double[] win, double marginPx) {
         	int w = _myWorld.getWidth();
         	int h = _myWorld.getHeight();
@@ -1822,6 +1882,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            // V3 — halo de sélection au sol sous l'agent suivi (cercle pulsant).
 	            if (selectedAgent != null && isAgentStillAlive(selectedAgent)) {
 	            	drawSelectionHalo(gl, selectedAgent, offset, stepX, stepY, lenX, lenY, movingX, movingY);
+	            }
+
+	            // V2 — fumée / plume au-dessus de la lave fraîche (et vapeur si eau).
+	            if (DISPLAY_OBJECTS) {
+	            	displayLavaSmoke(gl, offset, stepX, stepY, lenX, movingX, movingY, xWin, yWin);
 	            }
                 // Appui long SPACE/SHIFT : translateZ est modifié à chaque frame
             // pour une montée/descente symétriques (AWT n'auto-repeat pas

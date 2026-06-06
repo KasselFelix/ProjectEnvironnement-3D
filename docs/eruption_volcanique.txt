@@ -443,16 +443,20 @@ Ce qui DIFFÉRENCIE notre système d'une « animation de lave » classique :
 
 Court terme (1-2h chacun) :
 
-    * **Fumée grise** au-dessus de la lave fraîche (particules ou cylindre
-      semi-transparent qui montent et s'estompent en altitude).
-    * **Lueur d'éruption** : GL_LIGHT2 placée au cratère pendant
-      l'éruption, qui éclaire dynamiquement le ciel et le terrain. Effet
-      spectaculaire surtout en cycle nuit.
-    * **Vapeur d'eau** quand la lave touche une cellule sous-marine
-      (cellH < 0) — nuage blanc qui monte. OBSIDIAN existe déjà comme
-      résultat physique, la vapeur ajouterait la signature visuelle.
-    * **Plume de fumée verticale** visible depuis loin pendant l'éruption
-      (cylindre vertical au-dessus du cratère).
+    * [RÉALISÉ 2026-06-06, V2] **Fumée grise + vapeur + plume verticale** au-dessus
+      de la lave fraîche. `Landscape.displayLavaSmoke` balaie la fenêtre de rendu,
+      et pour chaque cellule LAVA visible émet un panache vertical de 5 bouffées
+      de points lissés additifs (blend SRC_ALPHA/ONE) montant et s'estompant en
+      altitude, jitter horizontal animé par l'itération. Lave émergée → fumée
+      GRISE ; lave sous le niveau de la mer (`cellH < 0`) → VAPEUR blanc-bleuté.
+      Le panache monte sur ~2.2 cellules → plume verticale visible de loin.
+      Plumes plafonnées à 90 (coût rendu logiciel), état GL sauvé/restauré.
+      Build + sanity launch OK.
+    * **Lueur d'éruption** : GL_LIGHT2 placée au cratère pendant l'éruption.
+      RESTE — note : LIGHT2-7 sont déjà les lampes lunaires (`applyMoonLights`) ;
+      une lueur de cratère passera plutôt par de l'émission (la lave est déjà
+      émissive via `LavaBlock`) ou une lampe dédiée à n'allumer que pendant
+      l'éruption. À traiter avec V8 (effets spectaculaires).
     * [RÉALISÉ 2026-06-06, V6] **Compteur de dommages + notifications**.
       `worlds.EventLog` (sur `World.events`) cumule `treesBurned` (incrémenté à
       chaque ignition d'arbre dans `ForestCA`), `agentDeaths` (compté dans
