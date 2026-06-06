@@ -64,12 +64,14 @@ public class InGameMenu {
         final Supplier<String> value;
         final Runnable dec;
         final Runnable inc;
+        String help = "";   // V7 — bulle d'aide affichée pour la ligne sélectionnée
         Row(String label, Supplier<String> value, Runnable dec, Runnable inc) {
             this.label = label;
             this.value = value;
             this.dec   = dec;
             this.inc   = inc;
         }
+        Row withHelp(String h) { this.help = h; return this; }
     }
 
     private static final int ROW_HEIGHT = 16;
@@ -93,7 +95,8 @@ public class InGameMenu {
     }
 
     private void buildParamRows() {
-        paramRows.add(intRow("Vision loup",       () -> config.loupVision,     v -> config.loupVision     = v, 1, 50, 1));
+        paramRows.add(intRow("Vision loup",       () -> config.loupVision,     v -> config.loupVision     = v, 1, 50, 1)
+                .withHelp("Portee de detection du loup (cases)"));
         paramRows.add(intRow("EnergieMax loup",   () -> config.loupEnergieMax, v -> config.loupEnergieMax = v, 50, 5000, 50));
         paramRows.add(doubleRow("Prepro loup",     () -> config.loupPrepro,
                 v -> config.loupPrepro = v, 0.0, 0.05, 0.0005, "%.4f"));
@@ -110,8 +113,10 @@ public class InGameMenu {
         paramRows.add(new Row("Humain mode",
                 () -> config.humainChasseur == 1 ? "CHASSEUR" : "Berger",
                 () -> config.humainChasseur = 0,
-                () -> config.humainChasseur = 1));
-        paramRows.add(intRow("Saison (jours)",    () -> config.seasonLengthDays, v -> config.seasonLengthDays = v, 0, 30, 1));   // L5 ; 0 = ete perpetuel
+                () -> config.humainChasseur = 1)
+                .withHelp("Berger garde le troupeau / Chasseur traque les loups"));
+        paramRows.add(intRow("Saison (jours)",    () -> config.seasonLengthDays, v -> config.seasonLengthDays = v, 0, 30, 1)
+                .withHelp("Duree d'une saison en jours-jeu ; 0 = ete perpetuel"));
         paramRows.add(intRow("Simulation Hz",     () -> config.simulationHz,   v -> config.simulationHz   = v, 10, 60, 5));
         paramRows.add(intRow("Distance de vue",   () -> config.viewDistanceCells, v -> config.viewDistanceCells = v, 10, 200, 5));
         paramRows.add(doubleRow("Sensibilite souris", () -> (double) config.mouseLookSensitivity,
@@ -430,6 +435,15 @@ public class InGameMenu {
             ui.drawText(gl, px + pw - 12 - textW, rowY, viewportHeight,
                     val, 1f, 1f, 0.7f);
             rowY += ROW_HEIGHT;
+        }
+        // V7 — bulle d'aide de la ligne sélectionnée, en bas du panneau.
+        if (selectedIndex >= 0 && selectedIndex < paramRows.size()) {
+            String help = paramRows.get(selectedIndex).help;
+            if (help != null && !help.isEmpty()) {
+                int hy = y + ph - 8;
+                ui.drawQuad(gl, px + 4, hy - 12, pw - 8, 16, 0.10f, 0.13f, 0.18f, 0.95f);
+                ui.drawText(gl, px + 8, hy, viewportHeight, help, 0.7f, 0.85f, 1f);
+            }
         }
     }
 

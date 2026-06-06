@@ -339,6 +339,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         private final AgentInfoPanel agentInfoPanel = new AgentInfoPanel();
         private final PopulationGraph populationGraph = new PopulationGraph();
         private boolean showPopulationGraph = false;  // masqué au démarrage ; toggle par la touche `g`
+        private final ui.Minimap minimap = new ui.Minimap();   // V7
+        private boolean showMinimap = false;                   // toggle par F6
 
         // Focus clavier du menu in-game. Découplé d'`isOpen()` : le menu peut
         // rester visible (parqué, plus transparent) tout en laissant les
@@ -2044,6 +2046,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	if (showPopulationGraph) {
 	            		populationGraph.draw(gl, ui, viewportWidth, viewportHeight);
 	            	}
+	            	// V7 — minimap (toggle F6), coin haut-droite sous le HUD.
+	            	if (showMinimap && _myWorld instanceof WorldOfCells) {
+	            		minimap.draw(gl, ui, (WorldOfCells) _myWorld,
+	            		             viewportWidth, viewportHeight, hud.getHeight());
+	            	}
 	            	// Menu in-game (Phase 7) : panneau latéral semi-transparent
 	            	// au-dessus du HUD. L'alpha varie selon `menuFocused` —
 	            	// indication visuelle que le clavier est rendu au jeu.
@@ -2860,6 +2867,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				break;
 			case KeyEvent.VK_F7:
 				exportPopulationsPng();   // V7 — export PNG du graphe
+				break;
+			case KeyEvent.VK_F6:
+				showMinimap = !showMinimap;   // V7 — minimap
 				break;
 			case KeyEvent.VK_F10:
 				saveConfigPreset();       // V7 — sauvegarde du preset config
