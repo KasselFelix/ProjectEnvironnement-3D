@@ -276,6 +276,15 @@ public abstract class World {
 		return raining ? RAIN_FIRE_DAMP : 1.0;
 	}
 
+	/** Facteur de refroidissement de la lave lié à la température ambiante (L6) :
+	 *  référence 1.0 à 20°C ; par grand froid la lave fige plus vite (jusqu'à 1.6
+	 *  vers -10°C), par forte chaleur elle reste fondue plus longtemps (jusqu'à
+	 *  0.6 vers 40°C). Borné [0.6, 1.6]. Multiplie le coolingRate de LavaCA. */
+	public double lavaCoolingFactor() {
+		double f = 1.0 + (20.0 - getTemperature()) * 0.02;
+		return Math.max(0.6, Math.min(1.6, f));
+	}
+
 	/** Facteur de vitesse lié au froid (L6) : 1.0 au-dessus de 5°C, descend
 	 *  linéairement jusqu'à 0.7 à -10°C (les agents s'engourdissent par grand
 	 *  froid). Borné [0.7, 1.0]. */

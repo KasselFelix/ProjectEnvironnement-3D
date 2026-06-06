@@ -47,6 +47,25 @@ class WorldWeatherTest {
     }
 
     @Test
+    void leFroidAccelereLaSolidificationDeLaLave() {
+        WorldOfCells w = AgentTestSupport.buildWorld();
+        // Été, jour, sec → tiède (~26°C) → lave fige plus lentement (< 1.0).
+        w.setSeasonLengthDays(0);
+        w.setJour(1); w.setRaining(false);
+        double chaud = w.lavaCoolingFactor();
+        assertTrue(chaud < 1.0, "par temps chaud la lave reste fondue plus longtemps (" + chaud + ")");
+
+        // Atteint l'hiver, nuit, pluie → glacial → fige plus vite (> chaud, borné 1.6).
+        w.setDureeJour(1); w.setSeasonLengthDays(1);
+        int guard = 0;
+        while (w.getCurrentDay() < 3 && guard++ < 100) w.step();
+        w.setJour(0); w.setRaining(true);
+        double froid = w.lavaCoolingFactor();
+        assertTrue(froid > chaud, "le froid accélère la solidification (" + froid + " > " + chaud + ")");
+        assertTrue(froid <= 1.6, "facteur borné à 1.6");
+    }
+
+    @Test
     void grandFroidRalentitLesAgents() {
         WorldOfCells w = AgentTestSupport.buildWorld();
         // Été, jour, sec → tiède → pas de ralentissement.

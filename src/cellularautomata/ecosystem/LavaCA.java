@@ -540,7 +540,9 @@ public class LavaCA extends CellularAutomataInteger {
 					float neighborFactor = 1f
 							+ COOLING_COLD_NEIGHBOR_WEIGHT * coldN
 							- COOLING_HOT_NEIGHBOR_WEIGHT * hotN;
-					coolingRate = thicknessFactor * neighborFactor;
+					// L6 — modulation par la température ambiante : la lave fige plus
+					// vite par grand froid, reste fondue plus longtemps par chaleur.
+					coolingRate = thicknessFactor * neighborFactor * (float) world.lavaCoolingFactor();
 					if (coolingRate < COOLING_RATE_MIN) coolingRate = COOLING_RATE_MIN;
 					if (coolingRate > COOLING_RATE_MAX) coolingRate = COOLING_RATE_MAX;
 				}
