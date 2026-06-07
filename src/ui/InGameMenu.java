@@ -120,6 +120,7 @@ public class InGameMenu {
                 .withHelp("Berger garde le troupeau / Chasseur traque les loups"));
         paramRows.add(intRow("Saison (jours)",    () -> config.seasonLengthDays, v -> config.seasonLengthDays = v, 0, 30, 1)
                 .withHelp("Duree d'une saison en jours-jeu ; 0 = ete perpetuel"));
+        // VENT
         paramRows.add(new Row("Vent actif",
                 () -> config.windEnabled ? "Oui" : "Non",
                 () -> config.windEnabled = false,
