@@ -55,7 +55,8 @@ public class Humain extends Agent {
 
 	@Override
 	protected boolean isMyTurn() {
-		return world.getIteration() % (int)((1.0 / vitesse) * 28) == 0;
+		// Math.max(1, …) : garde-fou anti division par zero (diviseur 0 si vitesse > 28).
+		return world.getIteration() % Math.max(1, (int)((1.0 / vitesse) * 28)) == 0;
 	}
 
 	@Override
@@ -143,7 +144,7 @@ public class Humain extends Agent {
 		// Mécanique feu : extinction au contact de l'eau + perte d'énergie + mort.
 		if (_fireState == 1) {
 			if (world.getCellHeight(x, y) < 0) _fireState = 0;
-			if (world.getIteration() % 20 == 0) energie -= energieD / 10;
+			if (world.getIteration() % ticksPerGameSecond() == 0) energie -= energieD / 10;
 			if (energie <= 0) _alive = false;
 		}
 

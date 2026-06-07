@@ -73,7 +73,9 @@ public class Ours extends Agent {
 
     @Override
     protected boolean isMyTurn() {
-        return world.getIteration() % (int) ((1.0 / vitesse) * 28) == 0;
+        // Math.max(1, …) : garde-fou anti division par zero (vitesse evolutive non
+        // bornee → diviseur 0 si vitesse > 28 ; au-dela l'ours agit chaque tick).
+        return world.getIteration() % Math.max(1, (int) ((1.0 / vitesse) * 28)) == 0;
     }
 
     @Override
@@ -238,6 +240,12 @@ public class Ours extends Agent {
 
     @Override
     protected void postTick() {
+        // Mecanique feu (parite Loup/Mouton/Humain) : perte d'energie + mort.
+        // L'extinction au contact de l'eau est geree dans resetTickFlags().
+        if (_fireState == 1) {
+            if (world.getIteration() % ticksPerGameSecond() == 0) energie -= energieD / 10;
+            if (energie <= 0) _alive = false;
+        }
         trainMindAndCharacter();   // L1
     }
 

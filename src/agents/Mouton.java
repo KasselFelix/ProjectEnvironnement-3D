@@ -275,7 +275,9 @@ public class Mouton extends Agent {
 
 	@Override
 	protected boolean isMyTurn() {
-		return world.getIteration() % (int)((1.0/vitesse)*28) == 0;
+		// Math.max(1, …) : garde-fou anti division par zero (vitesse evolutive non
+		// bornee → diviseur 0 si vitesse > 28 ; au-dela l'agent agit chaque tick).
+		return world.getIteration() % Math.max(1, (int)((1.0/vitesse)*28)) == 0;
 	}
 
 	@Override
@@ -465,7 +467,7 @@ public class Mouton extends Agent {
 
 	@Override
 	protected void postTick() {
-		if ( world.getIteration() % 20 == 0 )if(_fireState==1)energie-=energieMAX/10;
+		if ( world.getIteration() % ticksPerGameSecond() == 0 )if(_fireState==1)energie-=energieMAX/10;
 
 		// Entraînement cérébral (§ 6.2) + émergence du caractère (§ 7) :
 		// centralisés dans Agent.trainMindAndCharacter() (L1).

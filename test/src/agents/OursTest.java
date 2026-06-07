@@ -186,6 +186,31 @@ class OursTest {
         assertTrue(worst >= 15, "même au pire, l'ours ne reste pas figé (min = " + worst + ").");
     }
 
+    /** Correctif d'audit (2026-06-07) : l'ours subit desormais des degats de feu
+     *  (parite avec Loup/Mouton/Humain) — auparavant il etait immunise. */
+    @Test
+    void oursSubitLeFeuEtPeutEnMourir() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        AgentTestSupport.flattenLandArea(world, cx, cy, 4);   // terre seche
+        world.setJour(1);
+
+        Ours o = new Ours(cx, cy, world);
+        o.energie = o.energieD;
+        world.ours.add(o); world.agents.add(o); world.uniqueDynamicObjects.add(o);
+        o.setOnFire();
+        assertTrue(o.isOnFire(), "l'ours est en feu");
+
+        // A l'iteration 0, le drain « horaire » se declenche a chaque postTick
+        // (0 % ticksPerGameSecond() == 0) ; energieD/10 par declenchement.
+        int before = o.energie;
+        o.postTick();
+        assertTrue(o.energie < before, "le feu fait perdre de l'energie a l'ours");
+
+        for (int i = 0; i < 12 && o._alive; i++) o.postTick();
+        assertFalse(o._alive, "un ours qui brule sans atteindre l'eau finit par mourir");
+    }
+
     /** Reconstruit la liste de menaces vue par le loup (humains + ours), comme
      *  le fait Loup.predators() en interne. */
     private static java.util.List<objects.UniqueDynamicObject> loup_predators(WorldOfCells w) {

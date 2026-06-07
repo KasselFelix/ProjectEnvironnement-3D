@@ -158,7 +158,10 @@ public class Loup extends Agent {
 
 	@Override
 	protected boolean isMyTurn() {
-		return world.getIteration() % (int) ((1.0 / vitesse) * 28) == 0;
+		// Math.max(1, …) : garde-fou anti division par zero. La vitesse evolue sans
+		// borne haute (cf. but de la simulation) → le diviseur peut tomber a 0
+		// (vitesse > 28). Au-dela de 28 l'agent agit simplement a chaque tick.
+		return world.getIteration() % Math.max(1, (int) ((1.0 / vitesse) * 28)) == 0;
 	}
 
 	@Override
@@ -333,7 +336,7 @@ public class Loup extends Agent {
 
 	@Override
 	protected void postTick() {
-		if ( world.getIteration() % 20 == 0 )if(_fireState==1)energie-=energieD/10;
+		if ( world.getIteration() % ticksPerGameSecond() == 0 )if(_fireState==1)energie-=energieD/10;
 
 		// L1 — entraînement cérébral (§ 6.2) + émergence du caractère de meute (§ 7).
 		trainMindAndCharacter();

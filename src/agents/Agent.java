@@ -817,6 +817,18 @@ public class Agent extends UniqueDynamicObject{
 
 	public boolean isOnFire() { return _fireState == 1; }
 
+	/** Période (en ticks) équivalant à ~1 seconde-jeu, pour les drains « horaires »
+	 *  comme le feu. Suit simulationHz pour rester cohérente quel que soit le Hz de
+	 *  simulation (sinon un `% 20` codé en dur change la létalité du feu quand on
+	 *  règle le Hz). Fallback 20 si la config n'est pas disponible (tests). */
+	protected int ticksPerGameSecond() {
+		if (world instanceof worlds.WorldOfCells) {
+			ui.SimulationConfig c = ((worlds.WorldOfCells) world).config;
+			if (c != null) return Math.max(1, c.simulationHz);
+		}
+		return 20;
+	}
+
 	/**
 	 * Vecteur unitaire (udx, udy) de la dernière direction de déplacement.
 	 * Renvoie (0, 1) = Nord si l'agent n'a pas encore bougé (lastDx/Dy
