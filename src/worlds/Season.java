@@ -6,7 +6,8 @@ package worlds;
  * saison module la FERTILITÉ des automates de végétation (ForestCA / GrassCA) :
  * la croissance ralentit fortement l'hiver, explose au printemps. Elle porte
  * aussi un facteur de teinte pour le rendu de la végétation (verdoyant l'été,
- * jauni l'automne, terne l'hiver).
+ * jauni l'automne, terne l'hiver) et un facteur de force du vent (plus fort en
+ * automne/hiver, calme l'été).
  */
 public enum Season {
     //      fert   label        rain  tempC   teinte feuillage (R,G,B)                  wind
