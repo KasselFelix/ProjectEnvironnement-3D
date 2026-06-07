@@ -188,7 +188,11 @@ public class Agent extends UniqueDynamicObject{
 	 *  cognition. Centralisé ici pour éviter la duplication Mouton/Loup. */
 	protected void trainMindAndCharacter() {
 		double lifespan = maxAgeDays > 0 ? maxAgeDays : agents.ai.LifeStage.REFERENCE_LIFESPAN_DAYS;
-		mind.train(activityLevel(), getAgeDays() / lifespan, genome.longevityFactor());
+		// dt = 1 tick exprimé en jours-jeu (getAgeDays = age / (2*dureeJour)).
+		// On intègre les taux PAR JOUR de Mind sur ce dt → l'évolution de
+		// l'intelligence se mesure en jours, plus en ticks.
+		double dtDays = 1.0 / (2.0 * Math.max(1, world.getDureeJour()));
+		mind.train(activityLevel(), getAgeDays() / lifespan, genome.longevityFactor(), dtDays);
 		character.observe(isIsolated(), satisfaction());
 		int sessionTicks = Math.max(1, (int) (CHARACTER_SESSION_DAYS * 2 * world.getDureeJour()));
 		if (world.getIteration() > 0 && world.getIteration() % sessionTicks == 0) {

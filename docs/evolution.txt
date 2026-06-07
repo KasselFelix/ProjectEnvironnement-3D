@@ -266,13 +266,22 @@ DÉPART de ce score ; le vécu le fait évoluer.
 Avec l'âge, le score d'intelligence subit une DÉGÉNÉRESCENCE (pente liée à l'axe
 Longévité et au stade VIEUX § 10). L'ENTRAÎNEMENT — c.-à-d. le fait d'utiliser
 activement ses capacités (résoudre des situations : chasser, fuir intelligemment,
-naviguer) — RALENTIT cette pente. Modèle proposé :
+naviguer) — RALENTIT cette pente. Modèle (taux PAR JOUR-JEU, intégrés sur le pas
+de temps dt pour être indépendants de la fréquence d'appel) :
 
-    intelligence(t+1) = intelligence(t) − DEGEN_RATE(âge) + TRAIN_GAIN·activité
+    intelligence += ( TRAIN_PER_DAY·activité − DEGEN_PER_DAY·ageFrac/longévité ) · dt
 
-où `activité` mesure le nombre de décisions « cognitives » prises dans la
-fenêtre récente. Un agent qui ne fait qu'errer dégénère ; un agent qui chasse et
-résout des problèmes garde l'esprit vif plus longtemps.
+où `activité ∈ [0,1]` mesure la part de décisions « cognitives » (survie/décision
+= 1, repos/errance = 0) et `dt` = durée du tick en jours-jeu (= 1/(2·dureeJour)).
+IMPORTANT : train() est appelé À CHAQUE tick (postTick) ; sans l'intégration sur
+dt, des taux par-appel feraient saturer ou s'effondrer le score en quelques
+secondes (bug corrigé 2026-06-07 : l'intelligence tombait à 0 en une journée).
+Comme DEGEN_PER_DAY (0.25) > TRAIN_PER_DAY (0.20), la courbe de vie est une
+CLOCHE : montée en jeunesse, pic en pleine maturité (~vers la fraction de vie
+TRAIN/DEGEN), érosion au grand âge — et un agent à plus longue espérance de vie
+(ageFrac plus petit au même âge absolu) décline plus lentement. Un agent qui ne
+fait qu'errer dégénère ; un agent qui chasse et résout des problèmes garde
+l'esprit vif plus longtemps. (Mesuré : MoutonMindTest trace la courbe sur 12 j.)
 
 
 ================================================================================
@@ -583,9 +592,11 @@ helper AgentTestSupport.buildWorld()). Mouton d'abord (§ 3).
         Tests : un agent « actif » dégénère moins qu'un agent « inactif » à âge
         égal ; intelligence haute → apprentissage plus rapide.
         FAIT : agents.ai.Mind (score 0..1, startScore depuis axe Intelligence
-        BASE 0.5 ± 0.2 ; train(activity, ageFraction, longevityFactor) :
-        +TRAIN_GAIN 0.02 × activité − DEGEN_BASE 0.03 × ageFrac / longévité,
-        borné [0,1] ; learningRate = 0.5 + score, centré 1.0). Mouton : champ
+        BASE 0.5 ± 0.2 ; train(activity, ageFraction, longevityFactor, dtDays),
+        taux PAR JOUR intégrés sur dt : +(TRAIN_PER_DAY 0.20 × activité
+        − DEGEN_PER_DAY 0.25 × ageFrac / longévité) × dtDays, borné [0,1] ;
+        learningRate = 0.5 + score, centré 1.0 ; courbe de vie en cloche cf § 6.2
+        — correctif cadence 2026-06-07). Mouton : champ
         mind, initMind (fondateur + agneau depuis génome), activityLevel
         (survie/décision 1.0, repos/errance 0.0), train en postTick,
         refreshMemoryCapacity × learningRate (esprit vif → plus de mémoire).

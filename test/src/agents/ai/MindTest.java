@@ -10,6 +10,11 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class MindTest {
 
+    /** Pas de temps de test : 1/20e de jour-jeu par appel (les taux de Mind sont
+     *  désormais PAR JOUR, intégrés sur ce dt — cf. correctif cadence). Assez petit
+     *  pour que les comparaisons qualitatives ne saturent pas toutes à 0/1. */
+    private static final double DT = 0.05;
+
     /** Score de départ (§ 6.1) : INTELLIGENT > NEUTRE > STUPIDE. */
     @Test
     void scoreDeDepartSelonLAxeIntelligence() {
@@ -37,8 +42,8 @@ class MindTest {
         Mind inactif = new Mind(0.5);
         double ageFraction = 0.9;            // vieux : forte dégénérescence
         for (int i = 0; i < 20; i++) {
-            actif.train(1.0, ageFraction, 1.0);   // activité maximale
-            inactif.train(0.0, ageFraction, 1.0); // aucune activité
+            actif.train(1.0, ageFraction, 1.0, DT);   // activité maximale
+            inactif.train(0.0, ageFraction, 1.0, DT); // aucune activité
         }
         assertTrue(actif.score() > inactif.score(),
                 "l'esprit actif dégénère moins vite que l'inactif");
@@ -51,8 +56,8 @@ class MindTest {
         Mind longeve = new Mind(0.8);
         Mind degenere = new Mind(0.8);
         for (int i = 0; i < 20; i++) {
-            longeve.train(0.0, 0.9, 1.4);    // longevityFactor élevé
-            degenere.train(0.0, 0.9, 0.6);   // longevityFactor faible
+            longeve.train(0.0, 0.9, 1.4, DT);    // longevityFactor élevé
+            degenere.train(0.0, 0.9, 0.6, DT);   // longevityFactor faible
         }
         assertTrue(longeve.score() > degenere.score(),
                 "une forte longévité ralentit la dégénérescence cognitive");
@@ -69,11 +74,11 @@ class MindTest {
     @Test
     void scoreBorneEntreZeroEtUn() {
         Mind m = new Mind(0.99);
-        for (int i = 0; i < 100; i++) m.train(1.0, 0.0, 1.4);   // que de l'entraînement
+        for (int i = 0; i < 100; i++) m.train(1.0, 0.0, 1.4, DT);   // que de l'entraînement
         assertTrue(m.score() <= 1.0 + 1e-9 && m.score() >= 0.0);
 
         Mind d = new Mind(0.01);
-        for (int i = 0; i < 100; i++) d.train(0.0, 1.0, 0.6);   // que de la dégénérescence
+        for (int i = 0; i < 100; i++) d.train(0.0, 1.0, 0.6, DT);   // que de la dégénérescence
         assertTrue(d.score() >= 0.0 && d.score() <= 1.0);
     }
 }
