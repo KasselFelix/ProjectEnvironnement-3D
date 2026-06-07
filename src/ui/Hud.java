@@ -39,8 +39,9 @@ public class Hud {
         String saison = world.currentSeason().label;
         String meteo  = world.isRaining() ? "Pluie" : "Sec";
         String climat = String.format(java.util.Locale.US,
-                "Saison:%s J%d  |  Temp:%.0fC  |  Meteo:%s",
-                saison, world.getCurrentDay(), world.getTemperature(), meteo);
+                "Saison:%s J%d  |  Temp:%.0fC  |  Meteo:%s  |  %s",
+                saison, world.getCurrentDay(), world.getTemperature(), meteo,
+                windLabel(world.getWindDirRad(), world.getWindForce()));
 
         String text = String.format(
                 "Iter:%d  |  %s %s  |  %s  |  Ours:%d  Loups:%d  Moutons:%d  Humains:%d  |  FPS:%d  |  ",
@@ -82,6 +83,16 @@ public class Hud {
 
     /** Durée de vie d'une notification, en ticks de simulation (V6). */
     private static final int NOTIF_TTL = 120;
+
+    /**
+     * Convertit la direction du vent (radians, 0=Est, CCW) et sa force (m/s)
+     * en libelle ASCII pour le HUD. Ex: "Vent:NO 3m/s".
+     */
+    private static String windLabel(double dirRad, double force) {
+        String[] dirs = {"E","NE","N","NO","O","SO","S","SE"};
+        int idx = (int) Math.round(dirRad / (Math.PI / 4)) & 7;
+        return "Vent:" + dirs[idx] + " " + Math.round(force) + "m/s";
+    }
 
     public int getHeight() {
         return HEIGHT;
