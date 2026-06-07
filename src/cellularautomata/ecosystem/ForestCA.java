@@ -242,15 +242,35 @@ public class ForestCA extends CellularAutomataInteger {
 	/** Durée (secondes-jeu) de l'effet fertilisant de la cendre (→ ticks via hz). */
 	private static final double ASH_SEC = 10.0;
 
+	/** Cellules ayant pris feu CE tick : exclues du voisinage enflammé pour borner
+	 *  la propagation à ~1 case/tick (Option 2, 2026-06-07). Reset en début de step().
+	 *  Le reste du CA reste asynchrone in-place — seul le feu est « borné ». */
+	private final boolean[][] ignitedThisTick;
+	/** Proba de base d'ignition par voisin CARDINAL en feu (par tick, à sec / 20 Hz). */
+	private static final double FIRE_P_CARD = 0.55;
+	/** Idem voisin DIAGONAL (plus faible : distance √2 → front rond, pas carré). */
+	private static final double FIRE_P_DIAG = 0.22;
+
+	/** Poids de propagation du feu par direction (Option 2) : cardinal > diagonal →
+	 *  vitesse ~isotrope (front rond). POINT D'ACCROCHE VENT : multiplier ce poids
+	 *  par un facteur directionnel selon l'orientation/force du vent. */
+	private static double dirSpreadWeight(int dx, int dy) {
+		return (dx == 0 || dy == 0) ? FIRE_P_CARD : FIRE_P_DIAG;
+	}
+
 	public ForestCA ( World __world, int __dx , int __dy, CellularAutomataDouble cellsHeightValuesCA )
 	{
-		super(__dx,__dy,false ); // buffering must be true.
+		// Asynchrone in-place (mono-buffer) DÉLIBÉRÉ : germination/croissance n'ont
+		// pas de problème de chaînage. Le SEUL mécanisme sensible (le feu) est borné
+		// à ~1 case/tick via `ignitedThisTick` (Option 2), pas via un double-buffer.
+		super(__dx,__dy,false );
 		
 		_cellsHeightValuesCA = cellsHeightValuesCA;// reference to height CA
 
 		this.world = __world;
 		this.growth = new double[_dx][_dy];
 		this.ashBoost = new int[_dx][_dy];
+		this.ignitedThisTick = new boolean[_dx][_dy];
 		this.tDispertion = secToTicks(3.0);   // 3 s de cycle cendre
 	}
 	
@@ -292,6 +312,7 @@ public class ForestCA extends CellularAutomataInteger {
 	{
 		//MISE a jour asynchrone randomiser
     	Collections.shuffle(world.list);
+    	for (boolean[] row : ignitedThisTick) java.util.Arrays.fill(row, false);  // Option 2 : borne le feu à 1 case/tick
     	for(int d=0;d<world.list.size();d++){
     		int c=world.list.get(d);                 // encodage World : c = x*_dy + y
 			int i=c/_dy;                             // x
@@ -331,34 +352,46 @@ public class ForestCA extends CellularAutomataInteger {
 	    						NbArbreSaint-=1;
 	    					} else {
 	    						this.setCellState(i,j, FIRE_FIRST);
+	    						ignitedThisTick[i][j] = true;
 	    						NbArbreSaint-=1;
 	    						world.events.treesBurned++;   // V6
 	    					}
 						}else{
-		    				// check if neighbors are burning (any fire sub-state)
-		    				// L6 — la pluie ralentit la propagation : un voisin en feu
-		    				// n'embrase l'arbre qu'avec proba fireSpreadFactor (1.0 à sec).
-		    				// La lave adjacente, elle, embrase toujours (chaleur directe).
+		    				// Propagation du feu — Option 2 (2026-06-07) : 8-connexe
+		    				// PROBABILISTE, bornée par tick.
+		    				//  - 8 voisins ; les diagonaux (√2) moins probables que les
+		    				//    cardinaux (dirSpreadWeight) → vitesse ~isotrope → front ROND.
+		    				//  - ignitedThisTick : un arbre allumé CE tick ne propage pas
+		    				//    avant le suivant → front borné ~1 case/tick (équivalent
+		    				//    synchrone sans double-buffer ; le CA reste async ailleurs).
+		    				//  - lave adjacente = chaleur directe → embrase toujours.
+		    				//  - pluie (fireSpreadFactor) et hz (tickRateScale) modulent.
 		    				boolean lavaAdj =
 		    						world.getLavaCAValue( (i+_dx-1)%(_dx) , j ) != 0 ||
 		    						world.getLavaCAValue( (i+_dx+1)%(_dx) , j ) != 0 ||
 		    						world.getLavaCAValue( i , (j+_dy+1)%(_dy) ) != 0 ||
 		    						world.getLavaCAValue( i , (j+_dy-1)%(_dy) ) != 0;
-		    				boolean fireAdj =
-		    						isTreeOnFire(this.getCellState( (i+_dx-1)%(_dx) , j )) ||
-		    						isTreeOnFire(this.getCellState( (i+_dx+1)%(_dx) , j )) ||
-		    						isTreeOnFire(this.getCellState( i , (j+_dy+1)%(_dy) )) ||
-		    						isTreeOnFire(this.getCellState( i , (j+_dy-1)%(_dy) ));
-		    				if ( lavaAdj || (fireAdj && Math.random() < world.fireSpreadFactor() * tickRateScale()) )
+		    				double envFactor = world.fireSpreadFactor() * tickRateScale();
+		    				double qNoCatch = 1.0;   // proba de NE PAS s'enflammer ce tick
+		    				for (int wx = -1; wx <= 1; wx++)
+		    					for (int wy = -1; wy <= 1; wy++) {
+		    						if (wx == 0 && wy == 0) continue;
+		    						int nx = (i+wx+_dx)%_dx, ny = (j+wy+_dy)%_dy;
+		    						if (isTreeOnFire(this.getCellState(nx, ny)) && !ignitedThisTick[nx][ny])
+		    							qNoCatch *= 1.0 - dirSpreadWeight(wx, wy) * envFactor;
+		    					}
+		    				if ( lavaAdj || Math.random() < 1.0 - qNoCatch )
 		    				{
 		    					this.setCellState(i,j, FIRE_FIRST);
+		    					ignitedThisTick[i][j] = true;
 		    					NbArbreSaint-=1;
 		    					world.events.treesBurned++;   // V6 — compteur de dommages
 		    				}
 		    				else
-		    					if ( Math.random() < pF * world.fireSpreadFactor() * tickRateScale() ) // spontaneously take fire ?
+		    					if ( Math.random() < pF * envFactor ) // feu spontané
 		    					{
 		    						this.setCellState(i,j, FIRE_FIRST);
+		    						ignitedThisTick[i][j] = true;
 		    						NbArbreSaint-=1;
 		    						world.events.treesBurned++;   // V6
 		    					}

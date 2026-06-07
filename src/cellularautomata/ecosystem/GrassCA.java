@@ -44,13 +44,16 @@ public class GrassCA extends CellularAutomataInteger {
 
 	public GrassCA ( World __world, int __dx , int __dy, CellularAutomataDouble cellsHeightValuesCA )
 	{
-		super(__dx,__dy,false ); // buffering must be true.
+		// Asynchrone in-place (mono-buffer) DÉLIBÉRÉ ; le feu est borné à ~1 case/tick
+		// via `ignitedThisTick` (Option 2), pas via un double-buffer. Cf. ForestCA.
+		super(__dx,__dy,false );
 
 		_cellsHeightValuesCA = cellsHeightValuesCA;
 
 		this.world = __world;
 		this.ashBoost = new int[_dx][_dy];
 		this.grazed   = new int[_dx][_dy];
+		this.ignitedThisTick = new boolean[_dx][_dy];
 		this.tDispertion = secToTicks(1.0);   // 1 s de cycle cendre
 	}
 
@@ -83,6 +86,16 @@ public class GrassCA extends CellularAutomataInteger {
 	/** Convertit une durée en secondes-jeu en ticks via simulationHz (≥ 1). */
 	private static int secToTicks(double sec) {
 		return Math.max(1, (int) Math.round(sec * SimulationConfig.getInstance().simulationHz));
+	}
+
+	/** Cellules ayant pris feu CE tick : exclues du voisinage enflammé → feu borné
+	 *  à ~1 case/tick (Option 2). Reset en début de step(). */
+	private boolean[][] ignitedThisTick;
+	/** Proba d'ignition par voisin herbe en feu : cardinal > diagonal → front rond. */
+	private static final double FIRE_P_CARD = 0.55, FIRE_P_DIAG = 0.22;
+	/** Poids de propagation par direction. POINT D'ACCROCHE VENT (cf. ForestCA). */
+	private static double dirSpreadWeight(int dx, int dy) {
+		return (dx == 0 || dy == 0) ? FIRE_P_CARD : FIRE_P_DIAG;
 	}
 
 	public boolean canGrowGrass(int x, int y) {
@@ -134,6 +147,7 @@ public class GrassCA extends CellularAutomataInteger {
 	{
 		//MISE a jour asynchrone randomiser
     	Collections.shuffle(world.list);
+    	for (boolean[] row : ignitedThisTick) java.util.Arrays.fill(row, false);  // Option 2 : borne le feu à 1 case/tick
     	for(int d=0;d<world.list.size();d++){
     		int c=world.list.get(d);                 // encodage World : c = x*_dy + y
 			int i=c/_dy;                             // x
@@ -168,12 +182,10 @@ public class GrassCA extends CellularAutomataInteger {
 	    					// consumée instantanément, pas de phase visible de combustion.
 	    					this.setCellState(i,j,0);
 						}else{
-		    				// check if neighbors are burning
-		    				if ( 
-		    						this.getCellState( (i+_dx-1)%(_dx) , j ) == 2 ||
-		    						this.getCellState( (i+_dx+1)%(_dx) , j ) == 2 ||
-		    						this.getCellState( i , (j+_dy+1)%(_dy) ) == 2 ||
-		    						this.getCellState( i , (j+_dy-1)%(_dy) ) == 2 ||
+		    				// Propagation — Option 2 : herbe→herbe 8-connexe probabiliste
+		    				// bornée par tick (ignitedThisTick) ; sources de chaleur EXTERNES
+		    				// (lave / arbre en feu adjacents) = ignition immédiate.
+		    				boolean extHeat =
 		    						world.getLavaCAValue( (i+_dx-1)%(_dx) , j ) != 0 ||
 		    						world.getLavaCAValue( (i+_dx+1)%(_dx) , j ) != 0 ||
 		    						world.getLavaCAValue( i , (j+_dy+1)%(_dy) ) != 0 ||
@@ -181,16 +193,27 @@ public class GrassCA extends CellularAutomataInteger {
 		    						ForestCA.isTreeOnFire(world.getForestCAValue( (i+_dx-1)%(_dx) , j )) ||
 		    						ForestCA.isTreeOnFire(world.getForestCAValue( (i+_dx+1)%(_dx) , j )) ||
 		    						ForestCA.isTreeOnFire(world.getForestCAValue( i , (j+_dy+1)%(_dy) )) ||
-		    						ForestCA.isTreeOnFire(world.getForestCAValue( i , (j+_dy-1)%(_dy) ))
-		    					)
+		    						ForestCA.isTreeOnFire(world.getForestCAValue( i , (j+_dy-1)%(_dy) ));
+		    				double envFactor = world.fireSpreadFactor() * tickRateScale();
+		    				double qNoCatch = 1.0;
+		    				for (int wx = -1; wx <= 1; wx++)
+		    					for (int wy = -1; wy <= 1; wy++) {
+		    						if (wx == 0 && wy == 0) continue;
+		    						int nx = (i+wx+_dx)%_dx, ny = (j+wy+_dy)%_dy;
+		    						if (this.getCellState(nx, ny) == 2 && !ignitedThisTick[nx][ny])
+		    							qNoCatch *= 1.0 - dirSpreadWeight(wx, wy) * envFactor;
+		    					}
+		    				if ( extHeat || Math.random() < 1.0 - qNoCatch )
 		    				{
 		    					this.setCellState(i,j,2);
+		    					ignitedThisTick[i][j] = true;
 		    					NbHerbe-=1;
 		    				}
 		    				else
-		    					if ( Math.random() < pF * tickRateScale() ) // spontaneously take fire ?
+		    					if ( Math.random() < pF * tickRateScale() ) // feu spontané
 		    					{
 		    						this.setCellState(i,j,2);
+		    						ignitedThisTick[i][j] = true;
 		    						NbHerbe-=1;
 		    					}
 		    					else
