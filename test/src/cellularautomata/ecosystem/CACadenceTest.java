@@ -306,4 +306,37 @@ class CACadenceTest {
             if (g[x][y] == 1 && neighborBurning(g, x, y)) g[x][y] = 2;
         }
     }
+
+    @Test
+    void feuSEtireSousLeVent() {
+        WorldOfCells w = new WorldOfCells();
+        w.nbloups = 0; w.nbmoutons = 0; w.nbhumains = 0; w.nbours = 0;
+        double[][] ls = PerlinNoiseLandscapeGenerator.generatePerlinNoiseLandscape(31, 31, 0.7, 0.4, 4);
+        w.init(30, 30, ls);
+        int W = w.getWidth(), H = w.getHeight(), cx = W / 2, cy = H / 2, R = 12;
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++)
+                if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) <= R) {
+                    w.setCellHeight(x, y, 1.0); w.setForestCAValue(x, y, 1);
+                }
+        w.forestCA.pF = 0.0;                          // pas d'ignition spontanée
+        w.setWindEnabled(true);
+        w.setWindVector(0.0, 15.0);                   // vent fort vers +X (Est)
+        w.setForestCAValue(cx, cy, ForestCA.FIRE_FIRST);
+
+        int target = 120;
+        java.util.Set<Long> ever = new java.util.HashSet<>();
+        for (int k = 0; k < 200 && ever.size() < target; k++) {
+            w.forestCA.step();
+            for (int x = 0; x < W; x++) for (int y = 0; y < H; y++) {
+                int s = w.getForestCAValue(x, y);
+                if (s >= ForestCA.FIRE_FIRST && s <= ForestCA.BURNT) ever.add(((long) x << 20) | y);
+            }
+        }
+        long sumX = 0; int n = 0;
+        for (long key : ever) { sumX += (int) (key >> 20); n++; }
+        double meanX = sumX / (double) Math.max(1, n);
+        System.out.println("[Wind] feu sous vent +X : centre de masse X=" + meanX + " (foyer cx=" + cx + ")");
+        assertTrue(meanX > cx + 1.0, "le feu s'étend davantage sous le vent (Est) : meanX=" + meanX + " > cx=" + cx);
+    }
 }
