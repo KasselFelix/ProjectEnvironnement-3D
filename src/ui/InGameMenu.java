@@ -204,7 +204,17 @@ public class InGameMenu {
     // Le highlight rect ligne 0 est dessiné à (rowY-11, ROW_HEIGHT-2) =
     // (y+9, 14). Donc la zone cliquable de la ligne 0 commence à y+9.
     private static final int AGENT_LIST_TOP_OFFSET = 9;
-    private static final int VISIBLE_AGENT_ROWS = 22;
+    private static final int VISIBLE_AGENT_ROWS = 22;   // capacite par defaut (avant 1er rendu)
+
+    /** Nb de lignes agent reellement affichables : calcule depuis la hauteur du
+     *  panneau a chaque frame dans drawAgents, puis lu par rowAt / clampAgentSelection
+     *  / moveSelection. Remplace le cap fixe pour exploiter toute la hauteur du panneau. */
+    private int agentRowCapacity = VISIBLE_AGENT_ROWS;
+
+    /** Dernier agent suivi pour lequel on a auto-deplie son espece. Permet de ne
+     *  deplier qu'au CHANGEMENT de suivi : sinon l'utilisateur ne pourrait jamais
+     *  replier l'espece de l'agent qu'il suit (re-depliee a chaque frame). */
+    private Agent lastAutoExpanded = null;
 
     /**
      * Retourne l'onglet sous le point écran (x, y), ou null si pas sur un
@@ -251,7 +261,7 @@ public class InGameMenu {
         int firstRowY = contentY + AGENT_LIST_TOP_OFFSET;
         if (y < firstRowY) return -1;
         int visualRow = (y - firstRowY) / ROW_HEIGHT;
-        if (visualRow < 0 || visualRow >= VISIBLE_AGENT_ROWS) return -1;
+        if (visualRow < 0 || visualRow >= agentRowCapacity) return -1;
         int idx = agentScroll + visualRow;
         int rowCount = new AgentRoster(world).visibleRows(expanded).size();
         if (idx >= rowCount) return -1;
@@ -369,8 +379,8 @@ public class InGameMenu {
         // Petit auto-scroll dans la vue Agents.
         if (activeTab == Tab.AGENTS) {
             if (selectedIndex < agentScroll) agentScroll = selectedIndex;
-            if (selectedIndex >= agentScroll + VISIBLE_AGENT_ROWS)
-                agentScroll = selectedIndex - VISIBLE_AGENT_ROWS + 1;
+            if (selectedIndex >= agentScroll + agentRowCapacity)
+                agentScroll = selectedIndex - agentRowCapacity + 1;
         }
     }
 
@@ -470,9 +480,11 @@ public class InGameMenu {
         AgentRoster roster = new AgentRoster(world);
         autoExpandFollowed(roster);
         java.util.List<AgentRoster.Row> rows = roster.visibleRows(expanded);
+        // Capacite = ce que la hauteur du panneau permet (1ere ligne a y+20).
+        agentRowCapacity = Math.max(1, (ph - 20) / ROW_HEIGHT);
         clampAgentSelection(rows.size());
 
-        int visible = Math.min(VISIBLE_AGENT_ROWS, Math.max(0, rows.size() - agentScroll));
+        int visible = Math.min(agentRowCapacity, Math.max(0, rows.size() - agentScroll));
         int rowY = y + 20;
         for (int vr = 0; vr < visible; vr++) {
             int idx = agentScroll + vr;
@@ -500,9 +512,12 @@ public class InGameMenu {
         }
     }
 
-    /** Garantit que l'espece de l'agent suivi est depliee (on voit toujours qui on suit). */
+    /** Deplie l'espece de l'agent suivi UNE SEULE FOIS, au changement de suivi
+     *  (on voit qui on suit, sans empecher l'utilisateur de replier ensuite). */
     private void autoExpandFollowed(AgentRoster roster) {
         Agent sel = landscape.getSelectedAgent();
+        if (sel == lastAutoExpanded) return;   // deja traite -> laisse l'utilisateur replier
+        lastAutoExpanded = sel;
         if (sel == null) return;
         AgentRoster.Species sp = AgentRoster.speciesOf(sel);
         if (sp != null) expanded[sp.ordinal()] = true;
@@ -514,9 +529,9 @@ public class InGameMenu {
         if (rowCount <= 0) { selectedIndex = 0; agentScroll = 0; return; }
         if (selectedIndex >= rowCount) selectedIndex = rowCount - 1;
         if (selectedIndex < 0) selectedIndex = 0;
-        int maxScroll = Math.max(0, rowCount - VISIBLE_AGENT_ROWS);
+        int maxScroll = Math.max(0, rowCount - agentRowCapacity);
         if (agentScroll > maxScroll) agentScroll = maxScroll;
         if (selectedIndex < agentScroll) agentScroll = selectedIndex;
-        else if (selectedIndex >= agentScroll + VISIBLE_AGENT_ROWS) agentScroll = selectedIndex - VISIBLE_AGENT_ROWS + 1;
+        else if (selectedIndex >= agentScroll + agentRowCapacity) agentScroll = selectedIndex - agentRowCapacity + 1;
     }
 }
