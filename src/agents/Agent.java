@@ -322,6 +322,17 @@ public class Agent extends UniqueDynamicObject{
 	/** Composante Y (N/S) du vecteur unitaire d'une orientation cardinale. */
 	protected static int orientDy(int o) { return (o == 0) ? -1 : (o == 2) ? 1 : 0; }
 
+	/** Facteur de traînée du vent pour CET agent, dans la direction où il se
+	 *  déplace ({@code _orient}) et selon sa taille. >1 dos au vent, <1 face au
+	 *  vent, 1 si vent nul/désactivé. Dans {@code postMove}, chaque espèce
+	 *  l'applique DEUX fois : {@code vitesse *= windDragFactor()} (le vent change la
+	 *  cadence/distance) ET {@code metabolicCost(1.0 / windF)} (le vent fournit la
+	 *  propulsion → l'énergie/temps reste invariante : dos au vent on va plus loin
+	 *  pour la même énergie, face au vent moins loin pour la même énergie). */
+	protected double windDragFactor() {
+		return world.windSpeedFactor(orientDx(_orient), orientDy(_orient), sizeFactor);
+	}
+
 	// ===== Pilotage anti-obstacle (partagé Loup/Ours, recherche & errance) =====
 	// Évite que l'agent s'entête à foncer dans un mur d'arbres, un congénère ou
 	// l'eau : un comportement (spirale, errance…) propose un cap dans `_orient`,

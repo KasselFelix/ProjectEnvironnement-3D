@@ -253,6 +253,10 @@ public class Loup extends Agent {
 			vitesse = vcourse;
 		}
 
+		// Traînée du vent : calculée une fois, appliquée à la cadence (plus bas) ET
+		// au coût métabolique (le vent propulse → énergie/temps invariante au vent).
+		double windF = windDragFactor();
+
 		// mise a jour energie
 		if (energie <= 0) {
 			_alive = false;
@@ -261,7 +265,7 @@ public class Loup extends Agent {
 			if( world.getCellHeight(lastX, lastY) > world.getCellHeight(x, y)){
 				energie--;
 			}
-			energie -= metabolicCost(1.0);   // L8 — coût métabolique modulé par l'activité
+			energie -= metabolicCost(1.0 / windF);   // L8 — coût métabolique modulé par l'activité ; ÷windF = effort propre constant
 		}
 		if (energie < 10 && vitesse >= vcourse) {
 			vitesse = vcourse / 2;
@@ -280,7 +284,7 @@ public class Loup extends Agent {
 
 		// L6 — grand froid (nuits d'hiver) : l'agent s'engourdit (no-op si > 5°C).
 		vitesse *= world.coldSpeedFactor();
-		vitesse *= world.windSpeedFactor(orientDx(_orient), orientDy(_orient), sizeFactor);   // traînée vent
+		vitesse *= windF;   // traînée vent (même facteur que le décompte d'énergie ci-dessus)
 
 
 		// si dans la lave

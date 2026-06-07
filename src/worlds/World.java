@@ -184,6 +184,11 @@ public abstract class World {
     {
     	return this.iteration;
     }
+
+    /** TEST-only : fixe le compteur d'iterations pour piloter la cadence des
+     *  agents (isMyTurn) sans dérouler tout {@code step()} (qui ferait aussi
+     *  évoluer le vent/les CAs). */
+    public void setIteration(int it) { this.iteration = it; }
     
     public int getJour() {
 		return jour;

@@ -199,15 +199,19 @@ public class Ours extends Agent {
             }
         }
 
+        // Traînée du vent : une fois, pour la cadence ET le coût métabolique
+        // (le vent propulse → énergie/temps invariante au vent).
+        double windF = windDragFactor();
+
         // Énergie.
         if (energie <= 0) { _alive = false; }
         else {
             if (world.getCellHeight(x, y) < 0) energie -= 2;
-            energie -= metabolicCost(1.0);   // L8 — coût métabolique modulé par l'activité
+            energie -= metabolicCost(1.0 / windF);   // L8 — coût métabolique modulé par l'activité ; ÷windF = effort propre constant
         }
         if (world.getCellHeight(x, y) < 0) vitesse *= swimFactor;
         vitesse *= world.coldSpeedFactor();   // L6
-        vitesse *= world.windSpeedFactor(orientDx(_orient), orientDy(_orient), sizeFactor);   // traînée vent
+        vitesse *= windF;   // traînée vent (même facteur que le décompte d'énergie ci-dessus)
 
         // Mort dans la lave.
         if (world.getLavaCAValue(x, y) > 0) _alive = false;
