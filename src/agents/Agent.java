@@ -769,12 +769,16 @@ public class Agent extends UniqueDynamicObject{
 	}
 
 	/** Libellé cardinal de l'orientation courante. */
+	/** Libellé cardinal ORIENTÉ ÉCRAN. Les entiers _orient sont une énumération
+	 *  interne (cf. orientDx/orientDy) : orient 0 = grille −Y, orient 2 = grille +Y.
+	 *  Or au rendu (vue de dessus, sans rotation) grille +Y = HAUT = Nord et −Y =
+	 *  BAS = Sud. Donc orient 0 (−Y) s'affiche « Sud » et orient 2 (+Y) « Nord ». */
 	public String getOrientLabel() {
 		switch (_orient) {
-			case 0: return "Nord";
-			case 1: return "Est";
-			case 2: return "Sud";
-			case 3: return "Ouest";
+			case 0: return "Sud";    // grille −Y → bas de l'écran
+			case 1: return "Est";    // grille +X → droite
+			case 2: return "Nord";   // grille +Y → haut de l'écran
+			case 3: return "Ouest";  // grille −X → gauche
 			default: return "?";
 		}
 	}

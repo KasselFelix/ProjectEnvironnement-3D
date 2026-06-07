@@ -2574,8 +2574,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 			int fwd    = (ctrlFwd ? 1 : 0)   - (ctrlBack ? 1 : 0);
 			int strafe = (ctrlRight ? 1 : 0) - (ctrlLeft ? 1 : 0);
 
-			// Vecteur monde désiré (x = Est+, y = Sud+). Vue de dessus : avancer = +Y,
-			// droite = +X. Vue 3D : relatif au regard (rotateX, formule caméra libre).
+			// Vecteur monde désiré. Au rendu : +X = Est (droite écran), +Y = Nord (HAUT
+			// écran — vue de dessus sans rotation). Vue de dessus : avancer = +Y (monte
+			// vers le Nord), droite = +X. Vue 3D : relatif au regard (rotateX).
 			double wx, wy;
 			if (VIEW_FROM_ABOVE) {
 				wx = strafe;
@@ -2613,8 +2614,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 			return r < -1 ? -1 : (r > 1 ? 1 : r);
 		}
 
-		/** Yaw (deg) d'une orientation cardinale, cohérent avec cardinalFromDelta(sinθ,cosθ) :
-		 *  Sud(2)→0, Est(1)→90, Nord(0)→180, Ouest(3)→270. */
+		/** Yaw (deg) d'un entier d'orientation, cohérent avec cardinalFromDelta(sinθ,cosθ).
+		 *  Entiers ↔ libellés écran (cf. Agent.getOrientLabel) : 2=Nord(+Y)→0,
+		 *  1=Est(+X)→90, 0=Sud(−Y)→180, 3=Ouest(−X)→270. */
 		private static float orientYaw(int o) {
 			switch (o) { case 2: return 0f; case 1: return 90f; case 0: return 180f; default: return 270f; }
 		}
@@ -2629,8 +2631,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		 *  rattraper le regard (sinon le joueur regarde librement sans tourner l'agent). */
 		private static final float BODY_TURN_THRESHOLD_DEG = 100f;
 
-		/** Vecteur monde → orientation cardinale dominante (0=N/1=E/2=S/3=O), -1 si nul.
-		 *  Convention : +X = Est, +Y = Sud. */
+		/** Vecteur monde → entier d'orientation interne (cf. Agent.orientDx/orientDy) :
+		 *  0 = grille −Y, 1 = +X, 2 = grille +Y, 3 = −X ; -1 si nul. Au rendu, +X = Est
+		 *  (droite) et +Y = Nord (HAUT écran), donc l'entier 2 (+Y) s'affiche « Nord »
+		 *  et l'entier 0 (−Y) « Sud » via Agent.getOrientLabel. */
 		private static int cardinalFromDelta(double wx, double wy) {
 			int rx = (int) Math.round(wx);
 			int ry = (int) Math.round(wy);
