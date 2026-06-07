@@ -157,8 +157,9 @@ public class LavaCA extends CellularAutomataInteger {
 		int s = 0;
 		Collections.shuffle(world.list);
 		for (int d = 0; d < world.list.size(); d++) {
-			int x = world.list.get(d) % _dx;
-			int y = world.list.get(d) / _dy;
+			int c = world.list.get(d);   // encodage World : c = x*_dy + y
+			int x = c / _dy;
+			int y = c % _dy;
 			float height = (float) world.getCellHeight(x, y);
 			if (height <= world.getMinEverHeight() + stepZ * 100
 					&& height >= world.getMinEverHeight() + stepZ * 90 && s == 0) {
@@ -241,6 +242,18 @@ public class LavaCA extends CellularAutomataInteger {
 		}
 	}
 
+	/** Hz de référence pour lequel les débits/probas PAR TICK (BASE_FLOW,
+	 *  pErruption) ont été calibrés (cadence historique, 20 Hz). */
+	private static final int REF_HZ = 20;
+	/** Échelle des taux PAR TICK → indépendants de simulationHz (1 à hz=REF_HZ) :
+	 *  garde constant le VOLUME total d'une éruption (= durationSec×volume/sec) et
+	 *  la fréquence d'éruption spontanée, quel que soit le Hz. */
+	private static double tickRateScale() {
+		SimulationConfig c = currentConfig();
+		int hz = (c != null) ? c.simulationHz : REF_HZ;
+		return (double) REF_HZ / hz;
+	}
+
 	// ===== Boucle principale =====
 
 	public void step() {
@@ -264,7 +277,7 @@ public class LavaCA extends CellularAutomataInteger {
 		}
 
 		// Éruption spontanée (proba pErruption)
-		if (Math.random() < pErruption && activeEruptions.isEmpty()) {
+		if (Math.random() < pErruption * tickRateScale() && activeEruptions.isEmpty()) {
 			triggerEruption();
 		}
 
@@ -311,7 +324,7 @@ public class LavaCA extends CellularAutomataInteger {
 	// ===== Helpers physiques =====
 
 	private void injectAtCrater(Eruption e) {
-		float volume = e.pressure * BASE_FLOW;
+		float volume = e.pressure * BASE_FLOW * (float) tickRateScale();
 		world.events.lavaEmitted += (long) volume;   // V6 — volume de lave émis (cumulé)
 		// Injection avec équilibre hydrostatique par POIDS (refonte 2026-05-27).
 		//
@@ -417,8 +430,9 @@ public class LavaCA extends CellularAutomataInteger {
 		int props = 0;
 		Collections.shuffle(world.list);
 		for (int d = 0; d < world.list.size() && props < maxProps; d++) {
-			int x = world.list.get(d) % _dx;
-			int y = world.list.get(d) / _dy;
+			int c = world.list.get(d);   // encodage World : c = x*_dy + y
+			int x = c / _dy;
+			int y = c % _dy;
 			Layer top = world.topLayer(x, y);
 			if (top == null || top.material != Material.LAVA) continue;
 			if (top.lineage == null) continue;

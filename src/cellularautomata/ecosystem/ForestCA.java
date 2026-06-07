@@ -20,7 +20,7 @@ public class ForestCA extends CellularAutomataInteger {
 	public double darbre = 0.1;// densite arbre// 0.6 test fire
 	public double pF=0.00003;//probabilite de prendre feu pour les arbres
 	public double pA=0.000006;// 0.00006// probabilite d'apparition des arbres
-	int tDispertion=60;// temps avant dispertion des cendres — augmenté pour que la combustion soit visible plus longtemps (3 sec à 20 Hz)
+	int tDispertion;// temps (ticks) avant dispersion des cendres — calculé hz-scalé au constructeur (3 s)
 
 	// ── Système de states (refonte 2026-05-28) ──────────────────────────────
 	// 0       = vide
@@ -41,6 +41,22 @@ public class ForestCA extends CellularAutomataInteger {
 	private static double stateAdvanceProbability() {
 		int hz = SimulationConfig.getInstance().simulationHz;
 		return 1.0 / (TREE_STATE_DURATION_SEC * hz);
+	}
+
+	/** Hz de référence pour lequel les probabilités/débits PAR TICK ont été
+	 *  calibrés (= la cadence historique, 20 Hz). */
+	private static final int REF_HZ = 20;
+
+	/** Échelle à appliquer aux taux PAR TICK (germination, ignition) pour les
+	 *  rendre indépendants de simulationHz : vaut 1 à hz=REF_HZ (comportement
+	 *  inchangé), 20/hz sinon → mêmes taux PAR SECONDE quel que soit le Hz. */
+	private static double tickRateScale() {
+		return (double) REF_HZ / SimulationConfig.getInstance().simulationHz;
+	}
+
+	/** Convertit une durée en secondes-jeu en ticks via simulationHz (≥ 1). */
+	private static int secToTicks(double sec) {
+		return Math.max(1, (int) Math.round(sec * SimulationConfig.getInstance().simulationHz));
 	}
 
 	/** True si le state correspond à un arbre en feu (n'importe quel sub-state). */
@@ -175,7 +191,7 @@ public class ForestCA extends CellularAutomataInteger {
 	 *  fertile booste la germination pendant ASH_BOOST_DURATION ticks. Appelé à
 	 *  la dispersion des cendres d'un arbre brûlé. */
 	public void markAsh(int x, int y) {
-		ashBoost[x][y] = ASH_BOOST_DURATION;
+		ashBoost[x][y] = secToTicks(ASH_SEC);
 	}
 
 	/** Valeur de croissance de la cellule après un tick, bornée à 1. Fonction pure. */
@@ -223,8 +239,8 @@ public class ForestCA extends CellularAutomataInteger {
 	private final int[][] ashBoost;
 	/** Facteur multiplicatif de germination sur sol cendré récent. */
 	private static final double ASH_BOOST_FACTOR = 3.0;
-	/** Durée (ticks) de l'effet fertilisant de la cendre après dispersion. */
-	private static final int ASH_BOOST_DURATION = 200;
+	/** Durée (secondes-jeu) de l'effet fertilisant de la cendre (→ ticks via hz). */
+	private static final double ASH_SEC = 10.0;
 
 	public ForestCA ( World __world, int __dx , int __dy, CellularAutomataDouble cellsHeightValuesCA )
 	{
@@ -235,6 +251,7 @@ public class ForestCA extends CellularAutomataInteger {
 		this.world = __world;
 		this.growth = new double[_dx][_dy];
 		this.ashBoost = new int[_dx][_dy];
+		this.tDispertion = secToTicks(3.0);   // 3 s de cycle cendre
 	}
 	
 	public void init()
@@ -276,8 +293,9 @@ public class ForestCA extends CellularAutomataInteger {
 		//MISE a jour asynchrone randomiser
     	Collections.shuffle(world.list);
     	for(int d=0;d<world.list.size();d++){
-    		int i=world.list.get(d)%_dx;
-			int j=world.list.get(d)/_dy;
+    		int c=world.list.get(d);                 // encodage World : c = x*_dy + y
+			int i=c/_dy;                             // x
+			int j=c%_dy;                             // y
 			if (ashBoost[i][j] > 0) ashBoost[i][j]--;   // l'enrichissement cendre s'épuise (1×/cellule/tick)
     			if (this.getCellState(i, j)>=0 &&  this.getCellState(i,j)<= BURNT+tDispertion)
     			{	
@@ -290,7 +308,7 @@ public class ForestCA extends CellularAutomataInteger {
     				//   - sol au-dessus du niveau de la mer (height >= 0).
     				if ( this.getCellState(i,j) == 0
     						&& world.getLavaCAValue(i, j)==0){
-    					if(Math.random() < germinationProb(i, j) && world.getCellHeight(i,j) >= 0){
+    					if(Math.random() < germinationProb(i, j) * tickRateScale() && world.getCellHeight(i,j) >= 0){
     						this.setCellState(i,j,1);
     						NbArbreSaint+=1;
     					}
@@ -331,14 +349,14 @@ public class ForestCA extends CellularAutomataInteger {
 		    						isTreeOnFire(this.getCellState( (i+_dx+1)%(_dx) , j )) ||
 		    						isTreeOnFire(this.getCellState( i , (j+_dy+1)%(_dy) )) ||
 		    						isTreeOnFire(this.getCellState( i , (j+_dy-1)%(_dy) ));
-		    				if ( lavaAdj || (fireAdj && Math.random() < world.fireSpreadFactor()) )
+		    				if ( lavaAdj || (fireAdj && Math.random() < world.fireSpreadFactor() * tickRateScale()) )
 		    				{
 		    					this.setCellState(i,j, FIRE_FIRST);
 		    					NbArbreSaint-=1;
 		    					world.events.treesBurned++;   // V6 — compteur de dommages
 		    				}
 		    				else
-		    					if ( Math.random() < pF * world.fireSpreadFactor() ) // spontaneously take fire ?
+		    					if ( Math.random() < pF * world.fireSpreadFactor() * tickRateScale() ) // spontaneously take fire ?
 		    					{
 		    						this.setCellState(i,j, FIRE_FIRST);
 		    						NbArbreSaint-=1;

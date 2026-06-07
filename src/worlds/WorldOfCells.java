@@ -71,8 +71,8 @@ public class WorldOfCells extends World {
     	wolfHome=-1;
     	int testFRACTTREE=0;
     	while(d<this.list.size() ){
-    		int x=this.list.get(d)%__dxCA;
-			int y=this.list.get(d)/__dyCA;
+    		int x=this.list.get(d)/__dyCA;   // encodage World : c = x*dyCA + y
+			int y=this.list.get(d)%__dyCA;
 			if(this.getCellHeight(x, y)==this.getMaxEverHeight() && testFRACTTREE==0){
 				uniqueObjects.add(new FractalTree(x,y,this));
 				testFRACTTREE=1;
@@ -722,7 +722,7 @@ public class WorldOfCells extends World {
     	for (int[] c : cells) {
     		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
     		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
-    		sum += grassCA.getGrazed(cxm, cym) / (float) cellularautomata.ecosystem.GrassCA.GRAZED_DURATION;
+    		sum += grassCA.getGrazed(cxm, cym) / (float) grassCA.getGrazedDuration();
     		n++;
     	}
     	if (n == 0) return;

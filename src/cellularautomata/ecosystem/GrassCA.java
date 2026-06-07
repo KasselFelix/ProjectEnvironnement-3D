@@ -5,6 +5,7 @@ import java.util.Collections;
 
 import cellularautomata.CellularAutomataDouble;
 import cellularautomata.CellularAutomataInteger;
+import ui.SimulationConfig;
 import worlds.World;
 
 public class GrassCA extends CellularAutomataInteger {
@@ -16,7 +17,7 @@ public class GrassCA extends CellularAutomataInteger {
 	public double dherbe = 0.55; //0.55; // densite herbe
 	public double pF=0.0000003;//probabilite de prendre feu pour les herbes
 	public double pH=0.000006;// 0.00006// probabilite d'appHrition des herbes
-	int tDispertion=20;// temps avant dispertion des cendres
+	int tDispertion;// temps (ticks) avant dispersion des cendres — calculé hz-scalé au constructeur (1 s)
 	int NbHerbe=0;
 
 	/**
@@ -29,15 +30,17 @@ public class GrassCA extends CellularAutomataInteger {
 	private int[][] ashBoost;
 	/** Facteur multiplicatif de germination de l'herbe sur sol cendré récent. */
 	private static final double ASH_BOOST_FACTOR = 3.0;
-	/** Durée (ticks) de l'effet fertilisant de la cendre. */
-	private static final int ASH_BOOST_DURATION = 200;
+	/** Durée (secondes-jeu) de l'effet fertilisant de la cendre (→ ticks via hz). */
+	private static final double ASH_SEC = 10.0;
 
 	/** Tours restants d'état « herbe rase » après broutage (V4) : la cellule
 	 *  reste tondue (pas de repousse) pendant ce délai → couplage agent→CA
 	 *  visible (le rendu la dessine plus courte/brune). */
 	private int[][] grazed;
-	/** Durée (ticks) de l'état rase après broutage avant que la repousse reparte. */
-	public static final int GRAZED_DURATION = 60;
+	/** Durée (secondes-jeu) de l'état rase après broutage (→ ticks via hz). */
+	private static final double GRAZED_SEC = 3.0;
+	/** Durée en ticks de l'état rase, calculée depuis simulationHz (hz-invariant). */
+	public int getGrazedDuration() { return secToTicks(GRAZED_SEC); }
 
 	public GrassCA ( World __world, int __dx , int __dy, CellularAutomataDouble cellsHeightValuesCA )
 	{
@@ -48,6 +51,7 @@ public class GrassCA extends CellularAutomataInteger {
 		this.world = __world;
 		this.ashBoost = new int[_dx][_dy];
 		this.grazed   = new int[_dx][_dy];
+		this.tDispertion = secToTicks(1.0);   // 1 s de cycle cendre
 	}
 
 	/** V4 — marque la cellule comme broutée : l'herbe disparaît (état 0) et reste
@@ -55,7 +59,7 @@ public class GrassCA extends CellularAutomataInteger {
 	 *  le Mouton quand il broute. */
 	public void markGrazed(int x, int y) {
 		setCellState(x, y, 0);
-		grazed[x % _dx][y % _dy] = GRAZED_DURATION;
+		grazed[x % _dx][y % _dy] = getGrazedDuration();
 	}
 
 	/** Tours restants d'état rase pour la cellule (V4) ; 0 = herbe normale.
@@ -69,6 +73,18 @@ public class GrassCA extends CellularAutomataInteger {
 	 * (positive) implique aussi « terre ferme ». Prédicat pur, partagé par
 	 * `init()` et `step()`.
 	 */
+	/** Hz de référence pour lequel pH/pF (taux par tick) ont été calibrés. */
+	private static final int REF_HZ = 20;
+	/** Échelle des taux PAR TICK → indépendants de simulationHz (1 à hz=REF_HZ). */
+	private static double tickRateScale() {
+		return (double) REF_HZ / SimulationConfig.getInstance().simulationHz;
+	}
+
+	/** Convertit une durée en secondes-jeu en ticks via simulationHz (≥ 1). */
+	private static int secToTicks(double sec) {
+		return Math.max(1, (int) Math.round(sec * SimulationConfig.getInstance().simulationHz));
+	}
+
 	public boolean canGrowGrass(int x, int y) {
 		double maxH = world.getMaxEverHeight();
 		double h = world.getCellHeight(x, y);
@@ -78,7 +94,7 @@ public class GrassCA extends CellularAutomataInteger {
 	/** Marque la cellule comme enrichie par la cendre : booste pH pendant
 	 *  ASH_BOOST_DURATION ticks (succession après incendie). */
 	public void markAsh(int x, int y) {
-		ashBoost[x][y] = ASH_BOOST_DURATION;
+		ashBoost[x][y] = secToTicks(ASH_SEC);
 	}
 
 	/** Probabilité de germination de l'herbe sur la case (x,y) : pH de base,
@@ -119,8 +135,9 @@ public class GrassCA extends CellularAutomataInteger {
 		//MISE a jour asynchrone randomiser
     	Collections.shuffle(world.list);
     	for(int d=0;d<world.list.size();d++){
-    		int i=world.list.get(d)%_dx;
-			int j=world.list.get(d)/_dy;
+    		int c=world.list.get(d);                 // encodage World : c = x*_dy + y
+			int i=c/_dy;                             // x
+			int j=c%_dy;                             // y
 			if (ashBoost[i][j] > 0) ashBoost[i][j]--;   // l'enrichissement cendre s'épuise (1×/cellule/tick)
 			if (grazed[i][j] > 0) grazed[i][j]--;       // V4 — l'état rase s'estompe (repousse ensuite)
     			if (this.getCellState(i, j)>=0 &&  this.getCellState(i,j)<= 3+tDispertion)
@@ -132,7 +149,7 @@ public class GrassCA extends CellularAutomataInteger {
     				// V4 : une cellule encore RASE (récemment broutée) ne repousse pas.
     				if ( this.getCellState(i,j) == 0
     						&& world.getLavaCAValue(i, j)==0 && grazed[i][j]==0){
-    					if(Math.random() < grassGerminationProb(i, j) && canGrowGrass(i, j)){
+    					if(Math.random() < grassGerminationProb(i, j) * tickRateScale() && canGrowGrass(i, j)){
     						this.setCellState(i,j,1);
     						/*solid[x][y][]=1;*/
     						NbHerbe+=1;
@@ -171,7 +188,7 @@ public class GrassCA extends CellularAutomataInteger {
 		    					NbHerbe-=1;
 		    				}
 		    				else
-		    					if ( Math.random() < pF ) // spontaneously take fire ?
+		    					if ( Math.random() < pF * tickRateScale() ) // spontaneously take fire ?
 		    					{
 		    						this.setCellState(i,j,2);
 		    						NbHerbe-=1;

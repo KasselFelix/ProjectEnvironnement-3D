@@ -93,7 +93,7 @@ class GrassCATest {
         for (int k = 0; k < 5; k++) w.grassCA.step();
         assertEquals(0, w.grassCA.getCellState(x, y),
                 "l'herbe ne repousse pas tant que la cellule est rase (récupération différée)");
-        assertTrue(w.grassCA.getGrazed(x, y) < GrassCA.GRAZED_DURATION,
+        assertTrue(w.grassCA.getGrazed(x, y) < w.grassCA.getGrazedDuration(),
                 "le compteur d'herbe rase décroît à chaque tick");
     }
 
