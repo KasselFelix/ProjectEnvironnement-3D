@@ -84,14 +84,18 @@ public class Hud {
     /** Durée de vie d'une notification, en ticks de simulation (V6). */
     private static final int NOTIF_TTL = 120;
 
+    /** Secteurs cardinaux indexes par round(dirRad / (PI/4)) & 7. */
+    private static final String[] WIND_DIRS = {"E","NE","N","NO","O","SO","S","SE"};
+
     /**
      * Convertit la direction du vent (radians, 0=Est, CCW) et sa force (m/s)
-     * en libelle ASCII pour le HUD. Ex: "Vent:NO 3m/s".
+     * en libelle ASCII pour le HUD. Ex: "Vent:NO 3m/s". NB : dirRad est la
+     * direction VERS laquelle souffle le vent (convention du modele), pas la
+     * provenance de la convention meteo classique.
      */
     private static String windLabel(double dirRad, double force) {
-        String[] dirs = {"E","NE","N","NO","O","SO","S","SE"};
         int idx = (int) Math.round(dirRad / (Math.PI / 4)) & 7;
-        return "Vent:" + dirs[idx] + " " + Math.round(force) + "m/s";
+        return "Vent:" + WIND_DIRS[idx] + " " + Math.round(force) + "m/s";
     }
 
     public int getHeight() {
