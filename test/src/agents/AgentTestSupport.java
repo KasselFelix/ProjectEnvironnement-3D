@@ -21,6 +21,7 @@ public final class AgentTestSupport {
         double[][] landscape = PerlinNoiseLandscapeGenerator
                 .generatePerlinNoiseLandscape(DX_VIEW, DY_VIEW, 0.7, 0.4, 4);
         world.init(DX, DY, landscape);
+        world.setWindEnabled(false);   // déterminisme : pas de vent dans les tests agents génériques
         return world;
     }
 
