@@ -346,6 +346,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         // Sélection d'agent (Phase 8). Mis à jour par le menu in-game (Enter sur
         // l'onglet AGENTS) ou par le picking 3D (clic souris).
         private Agent selectedAgent = null;
+        // Index LOCAL dans l'espece de l'agent selectionne (etiquette d'affichage AgentInfoPanel),
+        // PAS un index global dans world.agents.
         private int   selectedAgentIndex = -1;
         private boolean cameraFollow = false;
 
@@ -475,9 +477,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         /** Vérifie qu'un agent suivi est toujours vivant et dans le monde. */
         private boolean isAgentStillAlive(Agent a) {
         	if (a == null) return false;
-        	if (!(_myWorld instanceof WorldOfCells)) return true; // pas de moyen de vérifier
-        	WorldOfCells wc = (WorldOfCells) _myWorld;
-        	return wc.loups.contains(a) || wc.moutons.contains(a) || wc.humains.contains(a);
+        	if (!(_myWorld instanceof WorldOfCells)) return true; // pas de moyen de verifier
+        	return ((WorldOfCells) _myWorld).agents.contains(a);   // toutes especes (dont ours)
         }
 
         /**
@@ -506,23 +507,15 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         	int bestIndex = -1;
         	double bestDist = PICK_TOLERANCE_PX;
 
-        	// Loups
-        	for (int i = 0; i < wc.loups.size(); i++) {
-        		Agent a = wc.loups.get(i);
-        		double d = projectAndScreenDist(a, mv, proj, view, win);
-        		if (d >= 0 && d < bestDist) { best = a; bestIndex = i; bestDist = d; }
-        	}
-        	// Moutons
-        	for (int i = 0; i < wc.moutons.size(); i++) {
-        		Agent a = wc.moutons.get(i);
-        		double d = projectAndScreenDist(a, mv, proj, view, win);
-        		if (d >= 0 && d < bestDist) { best = a; bestIndex = i; bestDist = d; }
-        	}
-        	// Humains
-        	for (int i = 0; i < wc.humains.size(); i++) {
-        		Agent a = wc.humains.get(i);
-        		double d = projectAndScreenDist(a, mv, proj, view, win);
-        		if (d >= 0 && d < bestDist) { best = a; bestIndex = i; bestDist = d; }
+        	// Toutes les especes via AgentRoster (loups, moutons, humains, ours) ;
+        	// bestIndex = index LOCAL dans l'espece (sert d'etiquette #index).
+        	ui.AgentRoster roster = new ui.AgentRoster(wc);
+        	for (ui.AgentRoster.Group g : roster.groups()) {
+        		for (int i = 0; i < g.agents.size(); i++) {
+        			Agent a = g.agents.get(i);
+        			double d = projectAndScreenDist(a, mv, proj, view, win);
+        			if (d >= 0 && d < bestDist) { best = a; bestIndex = i; bestDist = d; }
+        		}
         	}
 
         	if (best != null) {
@@ -538,6 +531,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         		}
         		selectedAgent = best;
         		selectedAgentIndex = bestIndex;
+        		if (inGameMenu != null) inGameMenu.syncToAgent(best);   // deplie l'espece + curseur
         	}
         }
 
@@ -2347,12 +2341,19 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 						menuFocused = true;
 						return;
 					}
-					// 2. Double-clic sur une ligne agent → suivre + défocaliser.
-					if (mouse.getClickCount() == 2) {
-						int agentIdx = inGameMenu.agentRowAt(
-								viewportWidth, viewportHeight, mouse.getX(), mouse.getY());
-						if (agentIdx >= 0) {
-							if (inGameMenu.selectAgentByGlobalIndex(agentIdx)) {
+					// 2. Clic sur une ligne du panneau AGENTS :
+					//    - entete d'espece  -> simple clic deplie/replie ;
+					//    - ligne agent      -> double-clic suit + defocalise.
+					int rowIdx = inGameMenu.rowAt(
+							viewportWidth, viewportHeight, mouse.getX(), mouse.getY());
+					if (rowIdx >= 0) {
+						if (inGameMenu.isHeaderRow(rowIdx)) {
+							inGameMenu.toggleHeader(rowIdx);
+							menuFocused = true;
+							return;
+						}
+						if (mouse.getClickCount() == 2) {
+							if (inGameMenu.followAgentRow(rowIdx)) {
 								cameraFollow = true;
 								menuFocused = false;
 							}

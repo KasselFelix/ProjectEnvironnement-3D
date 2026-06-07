@@ -20,7 +20,7 @@ import graphics.Landscape;
  *   - PARAMS : sous-ensemble des sliders de SimulationConfig modifiables à
  *     chaud (proba reproduction, vision, vitesses, CA, durée jour). Les
  *     densités initiales et le paysage ne sont pas exposés ici (déjà figés).
- *   - AGENTS : liste read-only des loups et moutons vivants avec leur état.
+ *   - AGENTS : liste depliable par espece (loups/moutons/humains/ours), via AgentRoster.
  *
  * Tout est en ASCII (GLUT bitmap ne supporte que ça de manière fiable).
  */
@@ -86,6 +86,9 @@ public class InGameMenu {
     private Tab activeTab = Tab.AGENTS;
     private int selectedIndex = 0;
     private int agentScroll = 0;
+
+    /** Depliage par espece, indexe par AgentRoster.Species.ordinal() (L,M,H,O). */
+    private final boolean[] expanded = new boolean[AgentRoster.Species.values().length];
 
     public InGameMenu(SimulationConfig config, WorldOfCells world, Landscape landscape) {
         this.config = config;
@@ -237,49 +240,66 @@ public class InGameMenu {
     }
 
     /**
-     * Si l'onglet actif est AGENTS et que (x, y) tombe sur une ligne d'agent
-     * visible, retourne l'index global (loups puis moutons concaténés).
-     * Sinon retourne -1.
+     * Si l'onglet AGENTS est actif et que (x,y) tombe sur une ligne VISIBLE du
+     * panneau, retourne son index dans les lignes visibles ; sinon -1.
      */
-    public int agentRowAt(int viewportWidth, int viewportHeight, int x, int y) {
+    public int rowAt(int viewportWidth, int viewportHeight, int x, int y) {
         if (!open || activeTab != Tab.AGENTS) return -1;
         int px = viewportWidth - PANEL_WIDTH;
         if (x < px || x >= viewportWidth) return -1;
-
-        int py = HEADER_HEIGHT;
-        int contentY = py + CONTENT_TOP_OFFSET;
-        int firstRowY = contentY + AGENT_LIST_TOP_OFFSET;  // sous le header "Loups: X..."
+        int contentY = HEADER_HEIGHT + CONTENT_TOP_OFFSET;
+        int firstRowY = contentY + AGENT_LIST_TOP_OFFSET;
         if (y < firstRowY) return -1;
         int visualRow = (y - firstRowY) / ROW_HEIGHT;
         if (visualRow < 0 || visualRow >= VISIBLE_AGENT_ROWS) return -1;
-        int globalIdx = agentScroll + visualRow;
-        int total = world.loups.size() + world.moutons.size();
-        if (globalIdx >= total) return -1;
-        return globalIdx;
+        int idx = agentScroll + visualRow;
+        int rowCount = new AgentRoster(world).visibleRows(expanded).size();
+        if (idx >= rowCount) return -1;
+        return idx;
     }
 
-    /**
-     * Sélectionne l'agent à l'index global donné et le pousse à Landscape pour
-     * déclencher le suivi caméra. Appelé par double-clic sur ligne agent.
-     * Retourne true si un agent a été effectivement sélectionné.
-     */
-    public boolean selectAgentByGlobalIndex(int globalIdx) {
-        if (globalIdx < 0) return false;
-        int loupsCount = world.loups.size();
-        Agent picked;
-        int displayIndex;
-        if (globalIdx < loupsCount) {
-            picked = world.loups.get(globalIdx);
-            displayIndex = globalIdx;
-        } else {
-            int mi = globalIdx - loupsCount;
-            if (mi >= world.moutons.size()) return false;
-            picked = world.moutons.get(mi);
-            displayIndex = mi;
-        }
-        landscape.setSelectedAgent(picked, displayIndex);
-        selectedIndex = globalIdx;
+    /** Vrai si la ligne visible a cet index est une entete d'espece. */
+    public boolean isHeaderRow(int rowIndex) {
+        java.util.List<AgentRoster.Row> rows = new AgentRoster(world).visibleRows(expanded);
+        return rowIndex >= 0 && rowIndex < rows.size() && rows.get(rowIndex).header;
+    }
+
+    /** Deplie/replie l'espece de la ligne entete a cet index (no-op si espece vide
+     *  ou si la ligne n'est pas une entete). Met aussi le curseur sur cette ligne. */
+    public void toggleHeader(int rowIndex) {
+        AgentRoster roster = new AgentRoster(world);
+        java.util.List<AgentRoster.Row> rows = roster.visibleRows(expanded);
+        if (rowIndex < 0 || rowIndex >= rows.size()) return;
+        AgentRoster.Row row = rows.get(rowIndex);
+        if (!row.header) return;
+        if (roster.groups().get(row.sp.ordinal()).agents.size() == 0) return;
+        expanded[row.sp.ordinal()] = !expanded[row.sp.ordinal()];
+        selectedIndex = rowIndex;
+    }
+
+    /** Suit l'agent de la ligne (non-entete) a cet index. Retourne true si un agent
+     *  a ete selectionne (-> l'appelant active le suivi camera et defocalise). */
+    public boolean followAgentRow(int rowIndex) {
+        java.util.List<AgentRoster.Row> rows = new AgentRoster(world).visibleRows(expanded);
+        if (rowIndex < 0 || rowIndex >= rows.size()) return false;
+        AgentRoster.Row row = rows.get(rowIndex);
+        if (row.header || row.agent == null) return false;
+        landscape.setSelectedAgent(row.agent, row.localIndex);
+        selectedIndex = rowIndex;
         return true;
+    }
+
+    /** Synchro vue 3D -> menu : deplie l'espece de l'agent et place le curseur sur
+     *  sa ligne. Appele apres un picking dans la scene. */
+    public void syncToAgent(Agent a) {
+        if (a == null) return;
+        AgentRoster.Species sp = AgentRoster.speciesOf(a);
+        if (sp == null) return;
+        expanded[sp.ordinal()] = true;
+        java.util.List<AgentRoster.Row> rows = new AgentRoster(world).visibleRows(expanded);
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).agent == a) { selectedIndex = i; break; }
+        }
     }
 
     /** Retourne true si la touche a été consommée par le menu. */
@@ -318,21 +338,11 @@ public class InGameMenu {
                 }
                 return true;
             case KeyEvent.VK_ENTER:
-                // Sur l'onglet AGENTS : sélectionne l'agent surligné pour le suivre.
                 if (activeTab == Tab.AGENTS) {
-                    int n = world.loups.size() + world.moutons.size();
-                    if (n > 0 && selectedIndex < n) {
-                        Agent picked;
-                        int displayIndex;
-                        if (selectedIndex < world.loups.size()) {
-                            picked = world.loups.get(selectedIndex);
-                            displayIndex = selectedIndex;
-                        } else {
-                            int mi = selectedIndex - world.loups.size();
-                            picked = world.moutons.get(mi);
-                            displayIndex = mi;
-                        }
-                        landscape.setSelectedAgent(picked, displayIndex);
+                    if (isHeaderRow(selectedIndex)) {
+                        toggleHeader(selectedIndex);
+                    } else {
+                        followAgentRow(selectedIndex);
                     }
                 }
                 return true;
@@ -350,13 +360,17 @@ public class InGameMenu {
     }
 
     private void moveSelection(int delta) {
-        int n = (activeTab == Tab.PARAMS) ? paramRows.size() : (world.loups.size() + world.moutons.size());
+        int n;
+        if (activeTab == Tab.PARAMS)        n = paramRows.size();
+        else if (activeTab == Tab.AGENTS)   n = new AgentRoster(world).visibleRows(expanded).size();
+        else                                 n = 0;
         if (n == 0) return;
         selectedIndex = (selectedIndex + delta + n) % n;
         // Petit auto-scroll dans la vue Agents.
         if (activeTab == Tab.AGENTS) {
             if (selectedIndex < agentScroll) agentScroll = selectedIndex;
-            if (selectedIndex >= agentScroll + 22) agentScroll = selectedIndex - 21;
+            if (selectedIndex >= agentScroll + VISIBLE_AGENT_ROWS)
+                agentScroll = selectedIndex - VISIBLE_AGENT_ROWS + 1;
         }
     }
 
@@ -453,41 +467,56 @@ public class InGameMenu {
     }
 
     private void drawAgents(GL2 gl, UiRenderer ui, int px, int y, int pw, int ph, int viewportHeight) {
-        ui.drawText(gl, px + 8, y, viewportHeight,
-                "Loups: " + world.loups.size() + "   Moutons: " + world.moutons.size(),
-                0.75f, 0.85f, 1f);
+        AgentRoster roster = new AgentRoster(world);
+        autoExpandFollowed(roster);
+        java.util.List<AgentRoster.Row> rows = roster.visibleRows(expanded);
+        clampAgentSelection(rows.size());
+
+        int visible = Math.min(VISIBLE_AGENT_ROWS, Math.max(0, rows.size() - agentScroll));
         int rowY = y + 20;
-        int totalAgents = world.loups.size() + world.moutons.size();
-        int visibleRows = Math.min(22, totalAgents - agentScroll);
-        for (int row = 0; row < visibleRows; row++) {
-            int i = agentScroll + row;
-            String label;
-            int agentEnergie;
-            int ax, ay;
-            double ageDays;
-            if (i < world.loups.size()) {
-                Loup l = world.loups.get(i);
-                label = "L#" + i;
-                agentEnergie = l.getEnergie();
-                ax = l.x; ay = l.y;
-                ageDays = l.getAgeDays();
-            } else {
-                int mi = i - world.loups.size();
-                Mouton m = world.moutons.get(mi);
-                label = "M#" + mi;
-                agentEnergie = (int) m.getEnergie();
-                ax = m.x; ay = m.y;
-                ageDays = m.getAgeDays();
-            }
-            boolean sel = (i == selectedIndex);
+        for (int vr = 0; vr < visible; vr++) {
+            int idx = agentScroll + vr;
+            AgentRoster.Row row = rows.get(idx);
+            AgentRoster.Group g = roster.groups().get(row.sp.ordinal());
+            boolean sel = (idx == selectedIndex);
             if (sel) {
                 ui.drawQuad(gl, px + 4, rowY - 11, pw - 8, ROW_HEIGHT - 2,
                         0.20f, 0.30f, 0.45f, 1f);
             }
-            String line = String.format("%-5s E:%-4d (%3d,%3d) %4.1fj",
-                    label, agentEnergie, ax, ay, ageDays);
-            ui.drawText(gl, px + 10, rowY, viewportHeight, line, 0.95f, 0.95f, 0.95f);
+            if (row.header) {
+                int count = g.agents.size();
+                String marker = (count == 0) ? "[ ]" : (expanded[row.sp.ordinal()] ? "[-]" : "[+]");
+                String line = marker + " " + g.name + " " + count;
+                if (count == 0) ui.drawText(gl, px + 8, rowY, viewportHeight, line, 0.5f, 0.5f, 0.5f);
+                else            ui.drawText(gl, px + 8, rowY, viewportHeight, line, g.color[0], g.color[1], g.color[2]);
+            } else {
+                Agent a = row.agent;
+                String line = String.format(" %c#%d E%d/%d (%d,%d) %s",
+                        g.prefix, row.localIndex, AgentRoster.energy(a), AgentRoster.maxEnergy(a),
+                        a.x, a.y, a.getCurrentBehavior());
+                ui.drawText(gl, px + 14, rowY, viewportHeight, line, g.color[0], g.color[1], g.color[2]);
+            }
             rowY += ROW_HEIGHT;
         }
+    }
+
+    /** Garantit que l'espece de l'agent suivi est depliee (on voit toujours qui on suit). */
+    private void autoExpandFollowed(AgentRoster roster) {
+        Agent sel = landscape.getSelectedAgent();
+        if (sel == null) return;
+        AgentRoster.Species sp = AgentRoster.speciesOf(sel);
+        if (sp != null) expanded[sp.ordinal()] = true;
+    }
+
+    /** Reclampe curseur + scroll sur le nb de lignes visibles (qui change quand on
+     *  deplie/replie ou que la population evolue). */
+    private void clampAgentSelection(int rowCount) {
+        if (rowCount <= 0) { selectedIndex = 0; agentScroll = 0; return; }
+        if (selectedIndex >= rowCount) selectedIndex = rowCount - 1;
+        if (selectedIndex < 0) selectedIndex = 0;
+        int maxScroll = Math.max(0, rowCount - VISIBLE_AGENT_ROWS);
+        if (agentScroll > maxScroll) agentScroll = maxScroll;
+        if (selectedIndex < agentScroll) agentScroll = selectedIndex;
+        else if (selectedIndex >= agentScroll + VISIBLE_AGENT_ROWS) agentScroll = selectedIndex - VISIBLE_AGENT_ROWS + 1;
     }
 }
