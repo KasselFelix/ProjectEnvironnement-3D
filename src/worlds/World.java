@@ -173,6 +173,7 @@ public abstract class World {
     public void step()
     {
     	updateWeather();        // L6 — météo du jour (pluie selon la saison)
+    	updateWind();           // vent du tick (dérive + rafales, modulé saison/météo)
     	stepCellularAutomata();
     	stepAgents();
     	before=jour;
@@ -293,6 +294,97 @@ public abstract class World {
 		if (t >= 5.0) return 1.0;
 		double f = 1.0 - (5.0 - t) / 15.0 * 0.3;   // -10°C → 0.7
 		return Math.max(0.7, Math.min(1.0, f));
+	}
+
+	// ===== Vent (2026-06-07) — vecteur vitesse d'air horizontal uniforme =====
+	/** Force max du vent en m/s (garde-fou). */
+	public static final double WIND_FORCE_MAX = 25.0;
+	private static final double DIR_DRIFT_STD  = 0.01;   // rad/tick @20Hz (dérive douce)
+	private static final double FORCE_LERP     = 0.05;   // relaxation/tick @20Hz vers la cible
+	private static final double GUST_STD       = 0.6;    // amplitude rafale (m/s/tick @20Hz, × variabilité)
+	private static final double RAIN_WIND_BONUS = 0.4;   // +40% de force sous la pluie
+
+	private boolean windEnabled   = true;
+	private double  baseWindForce  = 5.0;    // m/s
+	private double  windVariability = 1.0;   // multiplie l'amplitude des rafales
+	private double  windDirRad = 0.0;        // direction VERS laquelle souffle le vent
+	private double  windForce  = 5.0;        // m/s courant
+	private final java.util.Random windRng = new java.util.Random();
+
+	public void setWindEnabled(boolean b)   { this.windEnabled = b; }
+	public void setBaseWindForce(double f)   { this.baseWindForce = f; }
+	public void setWindVariability(double v) { this.windVariability = v; }
+	public void setWindSeed(long s)          { this.windRng.setSeed(s); }
+	public double getWindDirRad() { return windDirRad; }
+	public double getWindForce()  { return windEnabled ? windForce : 0.0; }
+	public double getWindX() { return Math.cos(windDirRad) * getWindForce(); }
+	public double getWindY() { return Math.sin(windDirRad) * getWindForce(); }
+
+	/** Force « cible » (moyenne) selon saison × météo. Pure → testable. */
+	public double targetWindForce(Season season, boolean raining) {
+		return baseWindForce * season.windFactor * (raining ? 1.0 + RAIN_WIND_BONUS : 1.0);
+	}
+
+	/** Fait évoluer le vent d'un tick (dérive continue + rafales), modulé saison/météo.
+	 *  Hz-invariant via dtScale = 20/hz. Appelé en tête de step(). */
+	public void updateWind() {
+		if (!windEnabled) { windForce = 0.0; return; }
+		double dtScale = 20.0 / Math.max(1, ui.SimulationConfig.getInstance().simulationHz);
+		windDirRad += windRng.nextGaussian() * DIR_DRIFT_STD * dtScale;
+		if (windDirRad < 0) windDirRad += 2 * Math.PI;
+		if (windDirRad >= 2 * Math.PI) windDirRad -= 2 * Math.PI;
+		double target = targetWindForce(currentSeason(), raining);
+		windForce += (target - windForce) * FORCE_LERP * dtScale;
+		windForce += windRng.nextGaussian() * GUST_STD * windVariability * dtScale;
+		if (windForce < 0) windForce = 0;
+		if (windForce > WIND_FORCE_MAX) windForce = WIND_FORCE_MAX;
+	}
+
+	// ===== Vent — helpers physiques agents et feu =====
+	public static final double WIND_SPEED_MIN = 0.6, WIND_SPEED_MAX = 1.4;
+	private static final double WIND_DRAG_K = 0.004;   // calibré ; structure physique (cos × force² × 1/taille)
+	private static final double SIZE_MIN = 0.3;
+
+	/** Helper de TEST : fixe direction + force du vent directement. */
+	public void setWindVector(double dirRad, double force) {
+		this.windDirRad = dirRad; this.windForce = Math.max(0, Math.min(WIND_FORCE_MAX, force));
+	}
+
+	/**
+	 * Facteur multiplicatif de vitesse dû au vent (traînée aérodynamique) pour un
+	 * agent se déplaçant dans (mdx, mdy), de taille corporelle sizeFactor.
+	 * Effet QUADRATIQUE (traînée), DIRECTIONNEL (produit scalaire), atténué par la
+	 * taille (∝ 1/L → gros = moins affecté). Borné, neutre si vent off ou dépl. nul.
+	 */
+	public double windSpeedFactor(int mdx, int mdy, double sizeFactor) {
+		if (!windEnabled || windForce <= 0.0) return 1.0;
+		double len = Math.sqrt((double) mdx * mdx + (double) mdy * mdy);
+		if (len == 0.0) return 1.0;
+		double ux = mdx / len, uy = mdy / len;
+		double windAlong = getWindX() * ux + getWindY() * uy;
+		double mult = 1.0 + WIND_DRAG_K * windAlong * Math.abs(windAlong) / Math.max(SIZE_MIN, sizeFactor);
+		return Math.max(WIND_SPEED_MIN, Math.min(WIND_SPEED_MAX, mult));
+	}
+
+	public static final double WIND_FIRE_MIN = 0.15, WIND_FIRE_MAX = 4.0;
+	private static final double WIND_FIRE_K  = 0.12;   // accélération downwind par m/s
+	private static final double WIND_FIRE_UP = 0.06;   // suppression upwind par m/s
+
+	/**
+	 * Facteur multiplicatif de propagation du feu dans la direction (dx, dy)
+	 * (facteur-vent type Rothermel → front elliptique) : accéléré sous le vent,
+	 * supprimé contre. Multiplie le dirSpreadWeight des CAs. Neutre si vent off.
+	 */
+	public double fireWindFactor(int dx, int dy) {
+		if (!windEnabled || windForce <= 0.0) return 1.0;
+		double len = Math.sqrt((double) dx * dx + (double) dy * dy);
+		if (len == 0.0) return 1.0;
+		double sx = dx / len, sy = dy / len;
+		double wx = Math.cos(windDirRad), wy = Math.sin(windDirRad);
+		double cos = wx * sx + wy * sy;
+		double fv = 1.0 + WIND_FIRE_K * windForce * Math.max(0.0, cos);
+		fv *= 1.0 - WIND_FIRE_UP * windForce * Math.max(0.0, -cos);
+		return Math.max(WIND_FIRE_MIN, Math.min(WIND_FIRE_MAX, fv));
 	}
 
 	// ===== Neige sur les sommets (L7) =====
