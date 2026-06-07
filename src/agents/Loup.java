@@ -280,6 +280,7 @@ public class Loup extends Agent {
 
 		// L6 — grand froid (nuits d'hiver) : l'agent s'engourdit (no-op si > 5°C).
 		vitesse *= world.coldSpeedFactor();
+		vitesse *= world.windSpeedFactor(orientDx(_orient), orientDy(_orient), sizeFactor);   // traînée vent
 
 
 		// si dans la lave

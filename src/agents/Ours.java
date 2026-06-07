@@ -207,6 +207,7 @@ public class Ours extends Agent {
         }
         if (world.getCellHeight(x, y) < 0) vitesse *= swimFactor;
         vitesse *= world.coldSpeedFactor();   // L6
+        vitesse *= world.windSpeedFactor(orientDx(_orient), orientDy(_orient), sizeFactor);   // traînée vent
 
         // Mort dans la lave.
         if (world.getLavaCAValue(x, y) > 0) _alive = false;

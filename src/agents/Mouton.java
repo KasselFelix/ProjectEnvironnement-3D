@@ -408,6 +408,7 @@ public class Mouton extends Agent {
 
 		// L6 — grand froid (nuits d'hiver) : le mouton s'engourdit (no-op si > 5°C).
 		vitesse *= world.coldSpeedFactor();
+		vitesse *= world.windSpeedFactor(orientDx(_orient), orientDy(_orient), sizeFactor);   // traînée vent
 
 		//si dans la lave
 		if(_world.getLavaCAValue(x,y)>0) {
