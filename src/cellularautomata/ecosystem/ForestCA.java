@@ -378,7 +378,10 @@ public class ForestCA extends CellularAutomataInteger {
 		    						if (wx == 0 && wy == 0) continue;
 		    						int nx = (i+wx+_dx)%_dx, ny = (j+wy+_dy)%_dy;
 		    						if (isTreeOnFire(this.getCellState(nx, ny)) && !ignitedThisTick[nx][ny])
-		    							qNoCatch *= 1.0 - dirSpreadWeight(wx, wy) * world.fireWindFactor(-wx, -wy) * envFactor; // -wx,-wy = direction fire travels (from nx,ny toward i,j)
+		    							// -wx,-wy = direction fire travels (from nx,ny toward i,j). Math.max(0,..) :
+		    							// le facteur-vent (≤4) peut faire dépasser 1 le terme dirSpread×wind×env ; on
+		    							// borne chaque terme à [0,1] pour garder un produit de probabilités monotone.
+		    							qNoCatch *= Math.max(0.0, 1.0 - dirSpreadWeight(wx, wy) * world.fireWindFactor(-wx, -wy) * envFactor);
 		    					}
 		    				if ( lavaAdj || Math.random() < 1.0 - qNoCatch )
 		    				{

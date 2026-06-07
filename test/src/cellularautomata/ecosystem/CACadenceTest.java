@@ -313,6 +313,9 @@ class CACadenceTest {
         w.nbloups = 0; w.nbmoutons = 0; w.nbhumains = 0; w.nbours = 0;
         double[][] ls = PerlinNoiseLandscapeGenerator.generatePerlinNoiseLandscape(31, 31, 0.7, 0.4, 4);
         w.init(30, 30, ls);
+        // Patch boisé carré rayon R autour du centre. NB tore : cx+R=26 < W=30, donc à
+        // la cible de 120 cellules le front n'a pas encore atteint le bord Est ni rebouclé
+        // en x=0 (ce qui tirerait meanX vers le bas) — le biais Est reste mesurable.
         int W = w.getWidth(), H = w.getHeight(), cx = W / 2, cy = H / 2, R = 12;
         for (int x = 0; x < W; x++)
             for (int y = 0; y < H; y++)
@@ -321,7 +324,7 @@ class CACadenceTest {
                 }
         w.forestCA.pF = 0.0;                          // pas d'ignition spontanée
         w.setWindEnabled(true);
-        w.setWindVector(0.0, 15.0);                   // vent fort vers +X (Est)
+        w.setWindVector(0.0, 15.0);                   // dirRad=0 → souffle vers +X (Est), force 15 m/s
         w.setForestCAValue(cx, cy, ForestCA.FIRE_FIRST);
 
         int target = 120;
