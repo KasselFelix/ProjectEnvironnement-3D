@@ -207,7 +207,9 @@ public class Ours extends Agent {
         if (energie <= 0) { _alive = false; }
         else {
             if (world.getCellHeight(x, y) < 0) energie -= 2;
-            energie -= metabolicCost(1.0 / windF);   // L8 — coût métabolique modulé par l'activité ; ÷windF = effort propre constant
+            // ÷windF SEULEMENT si l'ours a bougé ce tour (à l'arrêt le vent ne change pas l'effort).
+            boolean moved = (x != lastX || y != lastY);
+            energie -= metabolicCost(moved ? 1.0 / windF : 1.0);   // L8 — coût métabolique modulé par l'activité
         }
         if (world.getCellHeight(x, y) < 0) vitesse *= swimFactor;
         vitesse *= world.coldSpeedFactor();   // L6

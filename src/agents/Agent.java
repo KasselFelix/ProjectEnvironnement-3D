@@ -326,9 +326,14 @@ public class Agent extends UniqueDynamicObject{
 	 *  déplace ({@code _orient}) et selon sa taille. >1 dos au vent, <1 face au
 	 *  vent, 1 si vent nul/désactivé. Dans {@code postMove}, chaque espèce
 	 *  l'applique DEUX fois : {@code vitesse *= windDragFactor()} (le vent change la
-	 *  cadence/distance) ET {@code metabolicCost(1.0 / windF)} (le vent fournit la
-	 *  propulsion → l'énergie/temps reste invariante : dos au vent on va plus loin
-	 *  pour la même énergie, face au vent moins loin pour la même énergie). */
+	 *  cadence/distance) ET {@code metabolicCost(1.0 / windF)} UNIQUEMENT si l'agent
+	 *  a bougé ce tour (le vent fournit la propulsion → l'énergie/temps reste
+	 *  invariante : dos au vent on va plus loin pour la même énergie, face au vent
+	 *  moins loin pour la même énergie ; à l'arrêt le vent ne change pas l'effort).
+	 *  NB : contrairement au vent, le froid ({@link World#coldSpeedFactor}) n'est PAS
+	 *  découplé de l'énergie — c'est voulu : le froid est un engourdissement
+	 *  INTRINSÈQUE (les muscles travaillent moins → moins d'énergie), alors que le
+	 *  vent est une force EXTERNE (l'agent fournit le même effort). */
 	protected double windDragFactor() {
 		return world.windSpeedFactor(orientDx(_orient), orientDy(_orient), sizeFactor);
 	}
