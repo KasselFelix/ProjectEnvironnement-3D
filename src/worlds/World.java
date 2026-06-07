@@ -315,6 +315,10 @@ public abstract class World {
 	public void setBaseWindForce(double f)   { this.baseWindForce = f; }
 	public void setWindVariability(double v) { this.windVariability = v; }
 	public void setWindSeed(long s)          { this.windRng.setSeed(s); }
+	/** TEST-only : fixe direction + force du vent directement (package-private). */
+	void setWindVector(double dirRad, double force) {
+		this.windDirRad = dirRad; this.windForce = Math.max(0, Math.min(WIND_FORCE_MAX, force));
+	}
 	public double getWindDirRad() { return windDirRad; }
 	public double getWindForce()  { return windEnabled ? windForce : 0.0; }
 	public double getWindX() { return Math.cos(windDirRad) * getWindForce(); }
@@ -326,29 +330,30 @@ public abstract class World {
 	}
 
 	/** Fait évoluer le vent d'un tick (dérive continue + rafales), modulé saison/météo.
-	 *  Hz-invariant via dtScale = 20/hz. Appelé en tête de step(). */
+	 *  Hz-invariant via dtScale = 20/hz. La relaxation (déterministe) est linéaire en
+	 *  dtScale ; les termes stochastiques (dérive de direction, rafale) sont des marches
+	 *  aléatoires dont la variance s'accumule linéairement avec le nb de pas → leur
+	 *  écart-type par pas se calibre en sqrt(dtScale) pour une variance/seconde constante.
+	 *  Appelé en tête de step(). */
 	public void updateWind() {
 		if (!windEnabled) { windForce = 0.0; return; }
 		double dtScale = 20.0 / Math.max(1, ui.SimulationConfig.getInstance().simulationHz);
-		windDirRad += windRng.nextGaussian() * DIR_DRIFT_STD * dtScale;
+		double sqrtDt = Math.sqrt(dtScale);
+		windDirRad += windRng.nextGaussian() * DIR_DRIFT_STD * sqrtDt;
 		if (windDirRad < 0) windDirRad += 2 * Math.PI;
 		if (windDirRad >= 2 * Math.PI) windDirRad -= 2 * Math.PI;
 		double target = targetWindForce(currentSeason(), raining);
 		windForce += (target - windForce) * FORCE_LERP * dtScale;
-		windForce += windRng.nextGaussian() * GUST_STD * windVariability * dtScale;
+		windForce += windRng.nextGaussian() * GUST_STD * windVariability * sqrtDt;
 		if (windForce < 0) windForce = 0;
 		if (windForce > WIND_FORCE_MAX) windForce = WIND_FORCE_MAX;
 	}
 
 	// ===== Vent — helpers physiques agents et feu =====
-	public static final double WIND_SPEED_MIN = 0.6, WIND_SPEED_MAX = 1.4;
+	/** Bornes (multiplicateurs sans dimension) du facteur de vitesse agent dû au vent. */
+	public static final double WIND_SPEED_FACTOR_MIN = 0.6, WIND_SPEED_FACTOR_MAX = 1.4;
 	private static final double WIND_DRAG_K = 0.004;   // calibré ; structure physique (cos × force² × 1/taille)
 	private static final double SIZE_MIN = 0.3;
-
-	/** Helper de TEST : fixe direction + force du vent directement. */
-	public void setWindVector(double dirRad, double force) {
-		this.windDirRad = dirRad; this.windForce = Math.max(0, Math.min(WIND_FORCE_MAX, force));
-	}
 
 	/**
 	 * Facteur multiplicatif de vitesse dû au vent (traînée aérodynamique) pour un
@@ -363,7 +368,7 @@ public abstract class World {
 		double ux = mdx / len, uy = mdy / len;
 		double windAlong = getWindX() * ux + getWindY() * uy;
 		double mult = 1.0 + WIND_DRAG_K * windAlong * Math.abs(windAlong) / Math.max(SIZE_MIN, sizeFactor);
-		return Math.max(WIND_SPEED_MIN, Math.min(WIND_SPEED_MAX, mult));
+		return Math.max(WIND_SPEED_FACTOR_MIN, Math.min(WIND_SPEED_FACTOR_MAX, mult));
 	}
 
 	public static final double WIND_FIRE_MIN = 0.15, WIND_FIRE_MAX = 4.0;

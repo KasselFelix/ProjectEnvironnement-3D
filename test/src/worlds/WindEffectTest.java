@@ -40,9 +40,9 @@ class WindEffectTest {
         double faible = windyWorld(0.0, 4.0).windSpeedFactor(1, 0, 1.0);
         double fort   = windyWorld(0.0, 20.0).windSpeedFactor(1, 0, 1.0);
         assertTrue(fort > faible, "plus de vent → plus de bonus");
-        assertTrue(fort <= World.WIND_SPEED_MAX + 1e-9, "borné en haut");
+        assertTrue(fort <= World.WIND_SPEED_FACTOR_MAX + 1e-9, "borné en haut");
         double contreFort = windyWorld(0.0, 25.0).windSpeedFactor(-1, 0, 1.0);
-        assertTrue(contreFort >= World.WIND_SPEED_MIN - 1e-9, "borné en bas");
+        assertTrue(contreFort >= World.WIND_SPEED_FACTOR_MIN - 1e-9, "borné en bas");
     }
 
     @Test
