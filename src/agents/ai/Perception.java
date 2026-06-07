@@ -29,6 +29,7 @@ public final class Perception {
 
         int predatorDir = -1; double predatorDist = vision + 1;
         int preyDir = -1;     double preyDist = vision + 1;
+        int preyX = -1, preyY = -1;   // cellule de la proie la plus proche (pour le pathfinding)
         int waterDir = -1;    double waterDist = vision + 1;
         int landDir = -1;     double landDist = vision + 1;
         int grassDir = -1;    double grassDist = vision + 1;
@@ -52,6 +53,7 @@ public final class Perception {
                 if (d <= vision && d < preyDist) {
                     preyDist = d;
                     preyDir = dominantDir(ax, ay, a.x, a.y, w, h);
+                    preyX = a.x; preyY = a.y;
                 }
             }
         }
@@ -96,7 +98,7 @@ public final class Perception {
         boolean inWater = world.getCellHeight(ax, ay) < 0;
         boolean onLava  = world.getLavaCAValue(ax, ay) > 0;
 
-        return new Percept(predatorDir, predatorDist, preyDir, preyDist,
+        return new Percept(predatorDir, predatorDist, preyDir, preyDist, preyX, preyY,
                 waterDir, waterDist, landDir, landDist, grassDir, grassDist,
                 lavaDir, lavaDist, fireAdj, lavaAdj, inWater, onLava, cardinalFree);
     }

@@ -92,12 +92,12 @@ public class Humain extends Agent {
 	protected agents.ai.MoveConstraints applyState(agents.ai.AgentState s, agents.ai.Percept p) {
 		if (s == agents.ai.AgentState.ON_FIRE) {
 			if (p.waterDir >= 0) _orient = p.waterDir;
-			return agents.ai.MoveConstraints.amphibious();
+			return dodgeObstacles(true);    // contourne les arbres ; l'eau éteint le feu
 		}
 		if (s == agents.ai.AgentState.FLEE_LAVA) {
-			// L2 — fuit à l'opposé de la lave la plus proche, à terre.
+			// L2 — fuit à l'opposé de la lave la plus proche, à terre (eau interdite).
 			if (p.lavaDir >= 0) _orient = agents.ai.AgentState.opposite(p.lavaDir);
-			return agents.ai.MoveConstraints.landBound();
+			return dodgeObstacles(false);   // contourne arbres/lave, reste à terre
 		}
 		if (s == agents.ai.AgentState.HUNT) {
 			// L3 — fonce VERS le loup le plus proche (cap = predatorDir, pas son

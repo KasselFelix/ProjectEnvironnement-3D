@@ -99,9 +99,11 @@ public class Ours extends Agent {
     @Override
     public AgentState decideState(Percept p) {
         boolean affame = energie < energieD * HUNGER_RATIO;
+        if (!affame) resetPursuit();                       // plus en chasse → oublie la piste
         if (isOnFire())                  return AgentState.ON_FIRE;
         if (p.lavaVisible())             return AgentState.FLEE_LAVA;   // L2
-        if (affame && p.preyVisible())   return AgentState.HUNT;
+        if (affame && p.preyVisible())   return AgentState.HUNT;        // proie en vue (prioritaire)
+        if (affame && hasFreshTrack())   return AgentState.HUNT;        // proie perdue de vue mais piste fraîche → persistance
         if (p.inWater)                   return AgentState.SEEK_LAND;
         if (affame)                      return AgentState.SEARCH;
         if (energie >= energieD)         return AgentState.REST;
@@ -114,45 +116,62 @@ public class Ours extends Agent {
             case ON_FIRE:
                 if (p.waterDir >= 0) _orient = p.waterDir;
                 vitesse = vcourse;
-                return MoveConstraints.amphibious();
+                return dodgeObstacles(true);   // contourne les arbres ; l'eau est l'objectif
             case FLEE_LAVA:
                 if (p.lavaDir >= 0) _orient = AgentState.opposite(p.lavaDir);
                 vitesse = vcourse;
-                return MoveConstraints.amphibious();
-            case HUNT:
-                _orient = p.preyDir;
+                return dodgeObstacles(true);   // contourne arbres/lave en fuyant
+            case HUNT: {
                 vitesse = vcourse;
+                // Proie EN VUE → sa case (met à jour la piste) ; HORS DE VUE →
+                // persistance vers la dernière position connue (case « fantôme »).
+                int[] aim = p.preyVisible() ? pursuitSeen(p) : pursuitGhost();
+                // Au sortir de la chasse, la recherche se ré-amorce vers la mémoire.
+                mem.spiralHeading = -1;
+                int dir = Perception.dirToCell(this, world, aim[0], aim[1]);
+                if (dir < 0) dir = (p.preyDir >= 0) ? p.preyDir : _orient;
+                // Contourne l'obstacle vers la cible si le pas direct est bloqué (BFS vision).
+                if (aim[0] >= 0 && headingKind(dir, p, true, vision) < 0) {
+                    int bfs = bfsStepToward(aim[0], aim[1], vision, true);
+                    if (bfs >= 0) dir = bfs;
+                }
+                _orient = dir;
                 return MoveConstraints.amphibious();
+            }
             case SEEK_LAND:
-                if (p.landDir >= 0) _orient = p.landDir;
+                // COMMIT : côte en vue droit devant → terminer la traversée
+                // (anti-oscillation au littoral) ; sinon, terre la plus proche.
+                if (!waterCrossable(_orient, vision)) {
+                    if (p.landDir >= 0) _orient = p.landDir;
+                }
                 vitesse = vcourse;
-                return MoveConstraints.amphibious();
+                return dodgeObstacles(true);   // contourne les arbres vers la terre
             case REST:
                 wantsToMove = false;
                 return MoveConstraints.landBound();
-            case SEARCH:
-                spiralSearch();
-                return MoveConstraints.landBound();
+            case SEARCH: {
+                // D'abord rallier une zone de chasse mémorisée (à terre, garde-fou de
+                // progrès) ; sinon spirale biaisée vers la mémoire + contournement
+                // intelligent (longe / traverse un bras d'eau si la côte est en vue).
+                // Strictement la même logique que le Loup (helpers partagés d'Agent).
+                int hdir = huntHomingDir(p, vision);
+                if (hdir >= 0) { _orient = hdir; vitesse = vtrot; return MoveConstraints.landBound(); }
+                seedSpiralTowardMemory(vision);
+                spiralSearch(vision);
+                vitesse = vtrot;
+                _orient = mem.spiralHeading;
+                return steerAroundObstacles(p, true, vision);
+            }
             case WANDER:
             default:
                 lazyWander();
-                return MoveConstraints.landBound();
+                // Anti-obstacle en errance, sans nager (ours repu).
+                return steerAroundObstacles(p, false, vision);
         }
-    }
-
-    private void spiralSearch() {
-        if (mem.spiralStep == mem.spiralPeriod) {
-            _orient = (_orient + 1) % 4;
-            mem.spiralPeriod += vision / 2;
-            mem.spiralStep = 0;
-        } else {
-            mem.spiralStep++;
-        }
-        vitesse = vtrot;
     }
 
     private void lazyWander() {
-        mem.spiralStep = 0; mem.spiralPeriod = 1;
+        mem.resetSpiral();
         if (aheadVisitedRecently()) { _orient = (_orient + 1) % 4; vitesse = vpas; return; }
         if (Math.random() < 0.2) {
             _orient = (Math.random() > 0.5) ? (_orient + 1) % 4 : (_orient - 1 + 4) % 4;

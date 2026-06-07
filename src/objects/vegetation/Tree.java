@@ -160,8 +160,17 @@ public class Tree extends CommonObject {
         // Altitude unifiée : sommet de la stack (sol natif + couches empilées).
         float altitude = myWorld.getCellTopAltitude((int)x + movingX, (int)y + movingY);
 
-        float px = offset + x * stepX;
-        float py = offset + y * stepY;
+        // Position au sol : l'arbre est planté sur le SOMMET (coin de cellule) dont il
+        // lit la hauteur, pas au CENTRE du quad. Le terrain rend la hauteur de la
+        // cellule (x+movingX, y+movingY) au coin bas-gauche du quad, à l'écran
+        // (offset + x*stepX − lenX, offset + y*stepY − lenY). En plantant l'arbre là,
+        // son pied (modèle à Z=0) repose EXACTEMENT sur ce sommet de terrain → aucune
+        // erreur d'altitude, même en pente. Avant, l'arbre était au centre du quad
+        // (décalé d'une demi-cellule de sa référence de hauteur) : sur une pente, cela
+        // créait un décalage vertical FIXE qui enterrait surtout les jeunes pousses
+        // (courtes) tout en restant invisible sur les grands arbres.
+        float px = offset + x * stepX - lenX;
+        float py = offset + y * stepY - lenY;
 
         // Taille = croissance (jeune→adulte) × plafond dépendant de la fertilité.
         double g = 1.0, F = 1.0;

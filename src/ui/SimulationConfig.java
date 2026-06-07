@@ -88,6 +88,11 @@ public class SimulationConfig {
      *  caméra par pixel de souris). Plus bas = plus lent/précis. Plage UI [0.02, 0.40]. */
     public float  mouseLookSensitivity = 0.06f;
 
+    // ───── Affichage HUD ──────────────────────────────────────────────────
+    /** Affiche la 2nde ligne du HUD (dégâts cumulés : arbres brûlés, agents
+     *  morts, lave émise). Désactivée par défaut — togglable dans PARAMS. */
+    public boolean showDamageHud = false;
+
     // ───── Temps (refonte 2026-05 — cycle complet + ratio jour/nuit) ───────
     /** Fréquence cible de la simulation en Hz. Plage UI [10, 60] pas 5. */
     public int    simulationHz       = 20;

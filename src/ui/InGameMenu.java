@@ -119,6 +119,11 @@ public class InGameMenu {
                 .withHelp("Duree d'une saison en jours-jeu ; 0 = ete perpetuel"));
         paramRows.add(intRow("Simulation Hz",     () -> config.simulationHz,   v -> config.simulationHz   = v, 10, 60, 5));
         paramRows.add(intRow("Distance de vue",   () -> config.viewDistanceCells, v -> config.viewDistanceCells = v, 10, 200, 5));
+        paramRows.add(new Row("HUD degats",
+                () -> config.showDamageHud ? "ON" : "OFF",
+                () -> config.showDamageHud = false,
+                () -> config.showDamageHud = true)
+                .withHelp("2e ligne HUD : arbres brules, agents morts, lave emise"));
         paramRows.add(doubleRow("Sensibilite souris", () -> (double) config.mouseLookSensitivity,
                 v -> config.mouseLookSensitivity = (float) v, 0.02, 0.40, 0.02, "%.2f"));
         paramRows.add(doubleRow("Cycle complet (sec)", () -> (double) config.cycleTotalSec,

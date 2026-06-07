@@ -55,8 +55,11 @@ public class Mouton extends Agent {
 		if (y2 < 0) y2 += myWorld.getHeight();
 
 		float altitude = m.computeAgentAltitude(myWorld, m.x, m.y, normalizeHeight);
-		float px = offset + x2 * stepX;
-		float py = offset + y2 * stepY;
+		// Planté sur le SOMMET de terrain (coin de cellule) dont l'altitude est lue,
+		// pas au centre du quad — sinon décalage d'une demi-cellule → l'agent
+		// s'enfonce dans le sol en pente (même cause que les jeunes arbres, cf. Tree).
+		float px = offset + x2 * stepX - lenX;
+		float py = offset + y2 * stepY - lenY;
 		// Taille individuelle (§ 10.2) : trait héritable × croissance (âge) × Force.
 		float scale = Math.abs(lenX) * 1.5f * (float) m.displaySize();
 
@@ -523,6 +526,9 @@ public class Mouton extends Agent {
 	public MoveConstraints applyState(AgentState s, Percept p) {
 		// par défaut, on remet les flags legacy à 0 ; chaque état réactive ce qu'il faut
 		fuite = 0; earthSearch = 0;
+		// Hors de l'état de ralliement (HOME), on purge le record de distance du
+		// homing : sinon un record périmé empêcherait un futur retour au bercail.
+		if (s != AgentState.HOME) mem.resetHoming();
 		switch (s) {
 			case FOLLOW_PARENT:
 				// L'agneau marche vers son parent (§ 10.3) — la proximité déclenche
@@ -534,17 +540,26 @@ public class Mouton extends Agent {
 				vitesse = vmarche;
 				return MoveConstraints.landBound();
 			case HOME:
-				// Rentre vers le lieu sûr connu le plus proche (§ 9). En vue → cap
-				// exact ; hors vue → navigation à l'estime, perturbée par l'axe
-				// Orientation (directionSens, distinct du regard pas-à-pas).
+				// Rentre vers le lieu sûr connu le plus proche (§ 9).
 				int[] safe = nearestSafePlace();
 				if (safe != null) {
 					boolean inSight = world.distance(x, y, safe[0], safe[1]) <= vision;
-					directionSens = inSight
-							? agents.ai.Perception.dirToCell(this, world, safe[0], safe[1])
-							: agents.ai.Perception.navigate(this, world, safe[0], safe[1],
-									genome.orientationErrorProb(), EVO_RNG);
-					if (directionSens >= 0) _orient = directionSens;
+					if (inSight) {
+						// En vue : ralliement à terre AVEC garde-fou de progrès
+						// (Agent.homingStepToward, partagé avec le loup). Si le lieu
+						// sûr est muré (eau/forêt) et qu'aucun pas ne rapproche, le
+						// homing CÈDE LA PRIORITÉ à l'errance au lieu de figer le
+						// mouton au pied de l'obstacle (même cause racine que le loup).
+						int dir = homingStepToward(safe[0], safe[1], vision, p);
+						if (dir >= 0) { _orient = dir; }
+						else { return wanderMove(); }
+					} else {
+						// Hors vue : navigation à l'estime, perturbée par l'axe
+						// Orientation (directionSens, feature § 9).
+						directionSens = agents.ai.Perception.navigate(this, world,
+								safe[0], safe[1], genome.orientationErrorProb(), EVO_RNG);
+						if (directionSens >= 0) _orient = directionSens;
+					}
 				}
 				vitesse = vmarche;
 				return MoveConstraints.landBound();
@@ -565,15 +580,15 @@ public class Mouton extends Agent {
 				// fuit vers l'eau si vue, sinon continue tout droit (pas de demi-tour)
 				if (p.waterDir >= 0) _orient = p.waterDir;
 				vitesse = vcourse;
-				return MoveConstraints.amphibious();
+				return dodgeObstacles(true);     // contourne les arbres ; l'eau éteint le feu
 			case FLEE_LAVA:
 				// L2 — fuit à l'opposé de la lave la plus proche, au sprint. Le
-				// mouton craint l'eau : il reste à terre (landBound) — il préfère
-				// risquer le détour plutôt que se noyer.
+				// mouton craint l'eau : il reste à terre — il contourne les arbres
+				// SANS jamais plonger (waterPassable=false).
 				if (p.lavaDir >= 0) _orient = AgentState.opposite(p.lavaDir);
 				fuite = 1;                       // supprime le Broute pendant la fuite
 				vitesse = vcourse;
-				return MoveConstraints.landBound();
+				return dodgeObstacles(false);    // contourne arbres/lave, eau interdite
 			case FLEE_PREDATOR:
 				if (p.predatorVisible()) {
 					// Voit le loup : fuit à l'opposé (en évitant l'eau si possible),
@@ -589,11 +604,22 @@ public class Mouton extends Agent {
 				vitesse = vcourse;               // correctif : toujours vcourse à la fuite
 				return MoveConstraints.amphibious();
 			case SEEK_LAND:
-				// va vers la terre si vue, sinon continue tout droit jusqu'à la percevoir
-				if (p.landDir >= 0) _orient = p.landDir;
+				// Par défaut : terre la plus proche. MAIS s'il a fui (danger mémorisé),
+				// il ne doit pas regagner la rive du PRÉDATEUR : on vise alors une rive
+				// EN VUE la plus éloignée du danger (aucun prédateur n'est visible ici,
+				// sinon on serait en FLEE_PREDATOR). Anti « demi-tour vers le loup » en
+				// pleine traversée de rivière.
+				int seekDir = p.landDir;
+				int[] danger = memory.nearest(agents.ai.MemoryKind.DANGER, x, y,
+						(a, b, c, d) -> world.distance(a, b, c, d));
+				if (danger != null) {
+					int safeBank = bankDirAwayFromDanger(danger[0], danger[1]);
+					if (safeBank >= 0) seekDir = safeBank;
+				}
+				if (seekDir >= 0) _orient = seekDir;
 				earthSearch = 1;
 				vitesse = vcourse;   // ralenti dans l'eau par swimFactor (postMove)
-				return MoveConstraints.amphibious();
+				return dodgeObstacles(true);   // contourne les arbres vers la terre
 			case SEEK_FOOD:
 				// affamé : se dirige vers l'herbe la plus proche en vue (plus
 				// d'errance aléatoire). L'herbe est sur terre → landBound. Le
@@ -603,20 +629,26 @@ public class Mouton extends Agent {
 				return MoveConstraints.landBound();
 			case WANDER:
 			default:
-				if (dangerAhead()) {
-					// Mémoire sémantique (§ 5.3) : la case devant est une zone de
-					// danger connue → on tourne pour l'éviter.
-					_orient = (_orient + 1) % 4;
-				} else if (aheadVisitedRecently()) {
-					// Mémoire spatiale : la case devant a déjà été visitée → on
-					// tourne pour ne pas errer en boucle.
-					_orient = (_orient + 1) % 4;
-				} else if (Math.random() < 0.2) {
-					_orient = (Math.random() > 0.5) ? (_orient + 1) % 4 : (_orient - 1 + 4) % 4;
-				}
-				vitesse = vmarche;
-				return MoveConstraints.landBound();
+				return wanderMove();
 		}
+	}
+
+	/**
+	 * Mouvement d'errance (état WANDER, et repli de HOME quand le lieu sûr est
+	 * inatteignable) : évite une zone de danger connue / une case déjà visitée
+	 * (mémoires sémantique § 5.3 et spatiale), sinon tourne un peu au hasard. Le
+	 * pas réel (et le contournement d'obstacle) est laissé au repli de Locomotion.
+	 */
+	private MoveConstraints wanderMove() {
+		if (dangerAhead()) {
+			_orient = (_orient + 1) % 4;
+		} else if (aheadVisitedRecently()) {
+			_orient = (_orient + 1) % 4;
+		} else if (Math.random() < 0.2) {
+			_orient = (Math.random() > 0.5) ? (_orient + 1) % 4 : (_orient - 1 + 4) % 4;
+		}
+		vitesse = vmarche;
+		return MoveConstraints.landBound();
 	}
 
 	/**
@@ -645,6 +677,29 @@ public class Mouton extends Agent {
 		int tx = ((x + orientDx(orient)) % w + w) % w;
 		int ty = ((y + orientDy(orient)) % h + h) % h;
 		return world.getCellHeight(tx, ty) >= 0;
+	}
+
+	/**
+	 * Direction cardinale d'une RIVE EN VUE (terre ferme atteignable tout droit dans
+	 * la portée de vision) la PLUS ÉLOIGNÉE de ({@code dgX},{@code dgY}) — pour qu'un
+	 * mouton sortant de l'eau après une fuite ne regagne pas la rive du prédateur.
+	 * Renvoie -1 si aucune rive n'est en vue (→ l'appelant garde la terre la plus proche).
+	 */
+	private int bankDirAwayFromDanger(int dgX, int dgY) {
+		int w = world.getWidth(), h = world.getHeight();
+		int best = -1; double bestD = -1;
+		for (int d = 0; d < 4; d++) {
+			if (!waterCrossable(d, vision)) continue;          // pas de rive en vue par là
+			int lx = x, ly = y;                                // cellule de débarquement = 1re terre le long de d
+			for (int r = 1; r <= vision; r++) {
+				int cx = ((x + orientDx(d) * r) % w + w) % w;
+				int cy = ((y + orientDy(d) * r) % h + h) % h;
+				if (world.getCellHeight(cx, cy) >= 0) { lx = cx; ly = cy; break; }
+			}
+			double dist = world.distance(lx, ly, dgX, dgY);
+			if (dist > bestD) { bestD = dist; best = d; }
+		}
+		return best;
 	}
 
 	public void displayUniqueObject(World myWorld, GL2 gl, int offsetCA_x, int offsetCA_y, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight)

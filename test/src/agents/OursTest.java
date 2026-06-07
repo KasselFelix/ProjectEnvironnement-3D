@@ -90,6 +90,102 @@ class OursTest {
         assertEquals(2, loup._orient, "le loup fuit vers le SUD, à l'opposé de l'ours au NORD");
     }
 
+    /** Parité avec le loup : SEEK_LAND « commit » — au milieu d'un bras d'eau avec
+     *  une côte en vue devant, l'ours termine la traversée au lieu de rebrousser. */
+    @Test
+    void oursTermineSaTraverseeAuLieuDeRebrousser() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int x = 0; x < world.getWidth(); x++)
+            for (int y = 0; y < world.getHeight(); y++) {
+                world.setCellHeight(x, y, (x >= 25 && x <= 27) ? -1.0 : 1.0);
+                world.setForestCAValue(x, y, 0);
+            }
+        world.setJour(1);
+
+        Ours o = new Ours(cx, cy, world);          // dans l'eau, rive Ouest proche, Est en vue
+        o.energie = o.energieD;                    // repu → SEEK_LAND pur en eau
+        o._orient = 1;                             // vers la rive Est
+        world.ours.add(o); world.agents.add(o); world.uniqueDynamicObjects.add(o);
+
+        Percept p = Perception.sense(o, world, null, world.loups);
+        assertEquals(AgentState.SEEK_LAND, o.decideState(p), "dans l'eau → SEEK_LAND");
+        o.applyState(AgentState.SEEK_LAND, p);
+        assertEquals(1, o._orient, "côte en vue à l'Est → l'ours continue (commit), pas de demi-tour");
+    }
+
+    /** Parité : persistance de piste — l'ours qui perd le loup de vue continue vers
+     *  sa dernière position connue quelques ticks, puis abandonne (→ SEARCH). */
+    @Test
+    void oursPoursuitLoupPerduDeVuePuisAbandonne() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        AgentTestSupport.flattenLandArea(world, cx, cy, 13);
+        world.setJour(1);
+
+        Ours o = new Ours(cx, cy, world);
+        o.energie = 100;                           // affamé → chasse
+        world.ours.add(o); world.agents.add(o); world.uniqueDynamicObjects.add(o);
+
+        Loup prey = new Loup(cx + 4, cy, world);   // proie à l'EST, en vue
+        world.loups.add(prey); world.agents.add(prey); world.uniqueDynamicObjects.add(prey);
+
+        Percept p1 = Perception.sense(o, world, null, world.loups);
+        assertTrue(p1.preyVisible());
+        o.currentState = o.decideState(p1);
+        assertEquals(AgentState.HUNT, o.currentState);
+        o.applyState(o.currentState, p1);          // enregistre la piste
+
+        prey.x = cx; prey.y = (cy + 24) % world.getHeight();   // hors vue
+        Percept p2 = Perception.sense(o, world, null, world.loups);
+        assertFalse(p2.preyVisible());
+        assertEquals(AgentState.HUNT, o.decideState(p2), "piste fraîche → reste en HUNT");
+        o.applyState(AgentState.HUNT, p2);
+        assertEquals(1, o._orient, "fonce vers la dernière position connue (Est)");
+
+        for (int i = 0; i < 30; i++) o.applyState(AgentState.HUNT, p2);
+        assertEquals(AgentState.SEARCH, o.decideState(p2), "piste épuisée → SEARCH");
+    }
+
+    /** Parité (garde-fou anti-régression) : en recherche sur terrain à arbres épars,
+     *  l'ours ratisse sans se figer ni tourner en rond (le nouveau contournement ne
+     *  régresse pas — un ours figé couvrirait une poignée de cases). */
+    @Test
+    void oursEnRechercheCouvreLeTerrainSansSeFiger() {
+        long total = 0; int n = 0; int worst = Integer.MAX_VALUE;
+        for (long seed = 1; seed <= 30; seed++) {
+            WorldOfCells w = AgentTestSupport.buildWorld();
+            int W = w.getWidth(), H = w.getHeight();
+            java.util.Random r = new java.util.Random(seed);
+            for (int x = 0; x < W; x++)
+                for (int y = 0; y < H; y++) {
+                    w.setCellHeight(x, y, 1.0);
+                    w.setForestCAValue(x, y, r.nextDouble() < 0.18 ? 1 : 0);
+                }
+            int sx = -1, sy = -1;
+            outer:
+            for (int rad = 0; rad < 20; rad++)
+                for (int dx = -rad; dx <= rad; dx++)
+                    for (int dy = -rad; dy <= rad; dy++) {
+                        int x = ((25 + dx) % W + W) % W, y = ((25 + dy) % H + H) % H;
+                        if (w.getForestCAValue(x, y) == 0) { sx = x; sy = y; break outer; }
+                    }
+            if (sx < 0) continue;
+
+            Ours o = new Ours(sx, sy, w);
+            o.energie = (int) (o.energieD * 0.5);   // affamé → SEARCH (pas de proie présente)
+            o.mem.resetSpiral();
+            w.ours.add(o); w.agents.add(o); w.uniqueDynamicObjects.add(o);
+
+            java.util.Set<Long> distinct = new java.util.HashSet<>();
+            for (int i = 0; i < 250; i++) { w.setJour(1); o.step(); distinct.add(((long) o.x << 20) | o.y); }
+            total += distinct.size(); n++; worst = Math.min(worst, distinct.size());
+        }
+        long avg = total / Math.max(1, n);
+        assertTrue(avg >= 60, "l'ours doit ratisser largement (couverture moyenne = " + avg + ").");
+        assertTrue(worst >= 15, "même au pire, l'ours ne reste pas figé (min = " + worst + ").");
+    }
+
     /** Reconstruit la liste de menaces vue par le loup (humains + ours), comme
      *  le fait Loup.predators() en interne. */
     private static java.util.List<objects.UniqueDynamicObject> loup_predators(WorldOfCells w) {

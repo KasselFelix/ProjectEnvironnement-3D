@@ -22,7 +22,8 @@ public class Hud {
                      World world,
                      String dayLabel, String gameTime,
                      int fps,
-                     String playbackLabel, boolean paused) {
+                     String playbackLabel, boolean paused,
+                     boolean showDamageLine) {
 
         // Fond noir semi-transparent.
         ui.drawQuad(gl, 0, 0, viewportWidth, HEIGHT, 0f, 0f, 0f, 0.55f);
@@ -33,14 +34,17 @@ public class Hud {
         int humains = world.humains.size();
         int oursN   = world.ours.size();
 
-        // L5/L6 — saison courante (+ jour-jeu) et météo (température, pluie).
+        // L5/L6 — saison courante (+ jour-jeu) et météo (température, pluie),
+        // affichées au même niveau que l'heure, dans un bloc clairement libellé.
         String saison = world.currentSeason().label;
-        String meteo  = String.format(java.util.Locale.US, "%.0fC%s",
-                world.getTemperature(), world.isRaining() ? " pluie" : "");
+        String meteo  = world.isRaining() ? "Pluie" : "Sec";
+        String climat = String.format(java.util.Locale.US,
+                "Saison:%s J%d  |  Temp:%.0fC  |  Meteo:%s",
+                saison, world.getCurrentDay(), world.getTemperature(), meteo);
 
         String text = String.format(
-                "Iter:%d  |  %s %s  |  %s J%d %s  |  Ours:%d  Loups:%d  Moutons:%d  Humains:%d  |  FPS:%d  |  ",
-                iter, dayLabel, gameTime, saison, world.getCurrentDay(), meteo, oursN, loups, moutons, humains, fps);
+                "Iter:%d  |  %s %s  |  %s  |  Ours:%d  Loups:%d  Moutons:%d  Humains:%d  |  FPS:%d  |  ",
+                iter, dayLabel, gameTime, climat, oursN, loups, moutons, humains, fps);
 
         ui.drawText(gl, PADDING_X, TEXT_Y_OFFSET, viewportHeight, text, 1f, 1f, 1f);
 
@@ -51,17 +55,22 @@ public class Hud {
         if (paused) ui.drawText(gl, labelX, TEXT_Y_OFFSET, viewportHeight, playbackLabel, 1f, 0.85f, 0.2f);
         else        ui.drawText(gl, labelX, TEXT_Y_OFFSET, viewportHeight, playbackLabel, 0.6f, 1f, 0.6f);
 
-        // V6 — seconde ligne : compteurs de dommages cumulés.
+        // V6 — seconde ligne : compteurs de dommages cumulés (optionnelle,
+        // togglable dans PARAMS ; masquée par défaut).
         worlds.EventLog ev = world.events;
-        String dmg = String.format(
-                "Degats  |  Arbres brules:%d   Agents morts:%d   Lave emise:%d",
-                ev.treesBurned, ev.agentDeaths, ev.lavaEmitted);
-        ui.drawQuad(gl, 0, HEIGHT, viewportWidth, 18, 0f, 0f, 0f, 0.40f);
-        ui.drawText(gl, PADDING_X, HEIGHT + 14, viewportHeight, dmg, 1f, 0.7f, 0.5f);
+        int notifBaseY = HEIGHT + 22;   // si la 2e ligne est masquée, les notifs remontent
+        if (showDamageLine) {
+            String dmg = String.format(
+                    "Degats  |  Arbres brules:%d   Agents morts:%d   Lave emise:%d",
+                    ev.treesBurned, ev.agentDeaths, ev.lavaEmitted);
+            ui.drawQuad(gl, 0, HEIGHT, viewportWidth, 18, 0f, 0f, 0f, 0.40f);
+            ui.drawText(gl, PADDING_X, HEIGHT + 14, viewportHeight, dmg, 1f, 0.7f, 0.5f);
+            notifBaseY = HEIGHT + 18 + 22;
+        }
 
         // V6 — notifications transitoires (« 12 moutons morts ! »), empilées
         // sous le bandeau, en fondu sur leur durée de vie.
-        int ny = HEIGHT + 18 + 22;
+        int ny = notifBaseY;
         for (worlds.EventLog.Notif n : ev.activeNotifications(iter, NOTIF_TTL)) {
             float age = (iter - n.iteration) / (float) NOTIF_TTL;     // 0 → 1
             float k = Math.max(0.25f, 1f - age);   // fondu par assombrissement (drawText sans alpha)

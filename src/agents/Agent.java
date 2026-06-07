@@ -318,6 +318,387 @@ public class Agent extends UniqueDynamicObject{
 	/** Composante Y (N/S) du vecteur unitaire d'une orientation cardinale. */
 	protected static int orientDy(int o) { return (o == 0) ? -1 : (o == 2) ? 1 : 0; }
 
+	// ===== Pilotage anti-obstacle (partagé Loup/Ours, recherche & errance) =====
+	// Évite que l'agent s'entête à foncer dans un mur d'arbres, un congénère ou
+	// l'eau : un comportement (spirale, errance…) propose un cap dans `_orient`,
+	// ce pilotage le VALIDE et le détourne au besoin. Hissé ici pour être partagé.
+
+	/**
+	 * Avance l'état de la SPIRALE CARRÉE extensible (Loup / Ours) : bras de
+	 * longueurs {@code L, L, 2L, 2L, 3L, 3L…} avec {@code L = 2·vision+1} (deux
+	 * passes parallèles espacées du diamètre de vision → couverture sans trou ni
+	 * recouvrement). Ne touche QUE {@code mem.spiralHeading} (le CAP VOULU) et les
+	 * compteurs de bras — PAS {@code _orient}. Le pas réel (et les détours
+	 * d'obstacle) sont décidés par {@link #followSpiralHeading}, qui conserve ce
+	 * cap à travers les détours → l'agent ne dérive plus / ne tourne plus en rond.
+	 */
+	protected void spiralSearch(int vision) {
+		final int L = 2 * Math.max(1, vision) + 1;
+		if (mem.spiralHeading < 0) mem.spiralHeading = _orient;   // init = cap courant
+		if (mem.spiralStepsLeft <= 0) {                 // bras terminé → on tourne le CAP
+			mem.spiralHeading = (mem.spiralHeading + 1) % 4;
+			int n = mem.spiralLegCount / 2 + 1;         // 1,1,2,2,3,3… (longueur ×L)
+			mem.spiralStepsLeft = n * L;
+			mem.spiralLegCount++;
+		}
+		mem.spiralStepsLeft--;
+	}
+
+	/**
+	 * Biais mémoire de la recherche : si la spirale est FRAÎCHE (cap non initialisé,
+	 * {@code spiralHeading < 0} — typiquement au sortir d'une chasse, cf. Loup HUNT
+	 * qui marque {@code spiralHeading = -1}), oriente sa <b>première branche pleine</b>
+	 * vers la dernière position connue de la proie ({@link #lastPreyX}/{@link #lastPreyY}),
+	 * à défaut vers la zone de chasse mémorisée la plus proche. Le prédateur balaie
+	 * ainsi d'abord le secteur le plus prometteur au lieu de repartir sur un cap
+	 * périmé ; les branches suivantes grandissent normalement (ratissage systématique
+	 * préservé). Mesuré : −35 % (terrain ouvert) à −60 % (forêt) de pas avant détection.
+	 * No-op si la spirale est déjà en cours ou si aucune mémoire n'est disponible.
+	 */
+	protected void seedSpiralTowardMemory(int vision) {
+		if (mem.spiralHeading >= 0) return;            // spirale déjà en cours → ne pas perturber
+		int tx = lastPreyX, ty = lastPreyY;            // priorité : dernière proie aperçue
+		if (tx < 0) {                                  // sinon : zone de chasse mémorisée la plus proche
+			int[] zone = memory.nearest(agents.ai.MemoryKind.HUNTING, x, y,
+					(a, b, c, d) -> world.distance(a, b, c, d));
+			if (zone != null) { tx = zone[0]; ty = zone[1]; }
+		}
+		if (tx < 0) return;                            // aucune mémoire → spirale par défaut
+		int dir = agents.ai.Perception.dirToCell(this, world, tx, ty);
+		if (dir < 0) return;
+		mem.spiralHeading   = dir;
+		mem.spiralStepsLeft = 2 * Math.max(1, vision) + 1;   // 1re branche PLEINE vers la mémoire
+		mem.spiralLegCount  = 0;                              // branches suivantes : croissance normale
+	}
+
+	/**
+	 * Décide le pas de la recherche : on suit simplement le <b>CAP VOULU</b> de la
+	 * spirale ({@code mem.spiralHeading}, avancé par {@link #spiralSearch}). Le
+	 * contournement d'obstacle n'est PAS calculé ici : si la case devant est bloquée
+	 * (arbre, lave, eau, congénère), c'est {@link agents.ai.Locomotion#move} qui fait
+	 * un pas vers une case libre voisine (repli aléatoire borné). Cette approche —
+	 * héritée du code d'origine — est volontairement simple et surtout <b>robuste</b> :
+	 * l'agent ne se fige jamais (il bouge tant qu'une case voisine est libre) et ne
+	 * tourne pas en rond indéfiniment (l'aléa du repli casse les cycles), là où les
+	 * contournements « intelligents » (Pledge, plus-proche-cible) finissaient
+	 * toujours par créer des blocages ou des boucles dans certaines configurations.
+	 *
+	 * <p>L'eau est traitée comme un obstacle pendant la spirale ({@code allowSwim}
+	 * passé à {@code false} par l'appelant) : le loup longe les côtes au lieu d'y
+	 * entrer (pas d'oscillation côte/eau). S'il se retrouve tout de même dans l'eau,
+	 * {@code decideState} bascule en {@code SEEK_LAND}.</p>
+	 */
+	protected agents.ai.MoveConstraints followSpiralHeading(agents.ai.Percept p, int vision, boolean allowSwim) {
+		_orient = mem.spiralHeading;
+		return allowSwim ? agents.ai.MoveConstraints.amphibious()
+		                 : agents.ai.MoveConstraints.landBound();
+	}
+
+	/**
+	 * Valide / détourne {@code _orient} contre les obstacles et renvoie les
+	 * contraintes du déplacement. Stratégie anti-entêtement :
+	 * <ul>
+	 *   <li>cap dégagé (et qui ne ramène pas sur ses pas) → on le garde ;</li>
+	 *   <li>sinon on essaie, DANS L'ORDRE, tout droit → <b>décalage latéral</b>
+	 *       (droite/gauche) → demi-tour, en <b>préférant une case non visitée
+	 *       récemment</b> ; le demi-tour n'est choisi qu'en dernier recours ;</li>
+	 *   <li>l'eau n'est franchie que si {@code allowSwim} ET une côte est en vue le
+	 *       long du cap (sinon elle compte comme un obstacle).</li>
+	 * </ul>
+	 * Le décalage latéral + l'évitement des cases visitées suppriment les
+	 * allers-retours entre deux arbres. Sur une impasse (seule issue = demi-tour),
+	 * on rallonge le bras de spirale pour s'engager franchement dans la sortie
+	 * sans rétrécir la spirale ({@code spiralLegCount} conservé).
+	 *
+	 * @param allowSwim autoriser la traversée d'un bras d'eau si une côte est en vue
+	 *                  (true pour la chasse/recherche ; false pour l'errance repue).
+	 * @param vision    portée de vision de l'agent (champ par espèce).
+	 */
+	protected agents.ai.MoveConstraints steerAroundObstacles(agents.ai.Percept p, boolean allowSwim, int vision) {
+		final int desired = _orient;
+		final int right = (desired + 1) % 4, left = (desired + 3) % 4, back = (desired + 2) % 4;
+		// Ordre de préférence : tout droit, puis décalage latéral, puis demi-tour.
+		int[] order = { desired, right, left, back };
+
+		int chosen = -1, chosenKind = -1;
+		int firstPassable = -1, firstPassableKind = -1;
+		for (int d : order) {
+			int k = headingKind(d, p, allowSwim, vision);
+			if (k < 0) continue;                         // bloqué
+			if (firstPassable < 0) { firstPassable = d; firstPassableKind = k; }
+			if (!leadsToVisited(d)) { chosen = d; chosenKind = k; break; }  // 1re issue neuve
+		}
+		if (chosen < 0) { chosen = firstPassable; chosenKind = firstPassableKind; }  // tout visité
+		if (chosen < 0) return agents.ai.MoveConstraints.landBound();                // cerné → fallback Locomotion
+
+		if (chosen != desired) _orient = chosen;
+		return (chosenKind == 1) ? agents.ai.MoveConstraints.amphibious()
+		                         : agents.ai.MoveConstraints.landBound();
+	}
+
+	/**
+	 * Évitement d'obstacles pour les états DIRIGÉS (fuite, ralliement…) : garde au
+	 * mieux la direction voulue ({@code _orient}) mais la dévie autour des obstacles
+	 * SOLIDES — essaie voulu → latéral droit → latéral gauche → demi-tour, et prend
+	 * la première direction franchissable. L'eau est franchissable selon
+	 * {@code waterPassable} (true pour un amphibie ou une fuite VERS l'eau ; false
+	 * pour qui la craint, ex. mouton fuyant la lave). Empêche de rebondir
+	 * indéfiniment sur un arbre pendant une fuite.
+	 *
+	 * @return les contraintes cohérentes ({@code amphibious} si l'eau est permise,
+	 *         sinon {@code landBound}).
+	 */
+	protected agents.ai.MoveConstraints dodgeObstacles(boolean waterPassable) {
+		final int desired = _orient;
+		int[] order = { desired, (desired + 1) % 4, (desired + 3) % 4, (desired + 2) % 4 };
+		for (int d : order) {
+			if (passableForMove(d, waterPassable)) { _orient = d; break; }
+		}
+		return waterPassable ? agents.ai.MoveConstraints.amphibious()
+		                     : agents.ai.MoveConstraints.landBound();
+	}
+
+	/** Case adjacente franchissable pour un déplacement dirigé : jamais forêt/lave
+	 *  ni congénère ; l'eau dépend de {@code waterPassable}. */
+	private boolean passableForMove(int dir, boolean waterPassable) {
+		int w = world.getWidth(), h = world.getHeight();
+		int tx = ((x + orientDx(dir)) % w + w) % w;
+		int ty = ((y + orientDy(dir)) % h + h) % h;
+		if (world.getForestCAValue(tx, ty) != 0) return false;
+		if (world.getLavaCAValue(tx, ty)   != 0) return false;
+		if (world.cellBlockedByAgent(tx, ty, this)) return false;
+		if (!waterPassable && world.getCellHeight(tx, ty) < 0) return false;
+		return true;
+	}
+
+	/** Vrai si la case adjacente dans la direction {@code orient} a été visitée
+	 *  récemment (mémoire spatiale {@link #hasVisitedRecently}). */
+	private boolean leadsToVisited(int orient) {
+		int w = world.getWidth(), h = world.getHeight();
+		int tx = ((x + orientDx(orient)) % w + w) % w;
+		int ty = ((y + orientDy(orient)) % h + h) % h;
+		return hasVisitedRecently(tx, ty);
+	}
+
+	/**
+	 * Évalue le cap {@code orient} : {@code 0} = terre praticable (ni forêt/lave,
+	 * ni agent, ni eau) ; {@code 1} = eau franchissable (côte en vue, si
+	 * {@code allowSwim}) ; {@code -1} = bloqué.
+	 */
+	protected int headingKind(int orient, agents.ai.Percept p, boolean allowSwim, int vision) {
+		if (!p.cardinalFree[orient]) return -1;                  // forêt ou lave devant
+		int w = world.getWidth(), h = world.getHeight();
+		int tx = ((x + orientDx(orient)) % w + w) % w;
+		int ty = ((y + orientDy(orient)) % h + h) % h;
+		if (world.cellBlockedByAgent(tx, ty, this)) return -1;   // congénère devant
+		if (world.getCellHeight(tx, ty) >= 0) return 0;          // terre ferme
+		return (allowSwim && waterCrossable(orient, vision)) ? 1 : -1;
+	}
+
+	/**
+	 * Vrai si, tout droit selon {@code orient}, une terre ferme (côte) apparaît
+	 * dans la portée de {@code vision} après l'eau. Borne la nage à un bras d'eau,
+	 * jamais vers le large.
+	 */
+	protected boolean waterCrossable(int orient, int vision) {
+		int w = world.getWidth(), h = world.getHeight();
+		int dx = orientDx(orient), dy = orientDy(orient);
+		for (int r = 1; r <= vision; r++) {
+			int cx = ((x + dx * r) % w + w) % w;
+			int cy = ((y + dy * r) % h + h) % h;
+			if (world.getCellHeight(cx, cy) >= 0) return true;   // côte atteinte
+		}
+		return false;                                            // que de l'eau
+	}
+
+	// ===== Poursuite : persistance de piste + interception (partagé prédateurs) =====
+	// La proie VISIBLE reste toujours prioritaire (opportunisme, cf. design) ; ces
+	// outils ne servent que QUAND on l'a perdue de vue (persistance) ou pour
+	// anticiper sa trajectoire (interception, désactivée pour l'instant).
+
+	/** Interception (lead pursuit) : viser là où la proie VA, pas où elle est.
+	 *  DÉSACTIVÉE par défaut — quasi sans gain en mouvement cardinal (re-quantifié),
+	 *  gardée pour une future activation (diagonales) ou d'autres prédateurs.
+	 *  Non-{@code final} volontairement : interrupteur (re)activable à l'exécution. */
+	protected static boolean LEAD_PURSUIT = false;
+	/** Anticipation (cases) appliquée à la vitesse estimée de la proie si activée. */
+	protected static final int LEAD_FACTOR = 3;
+	/** Persistance : nb de pas où le prédateur continue de foncer vers la dernière
+	 *  position connue d'une proie sortie de vue, avant d'abandonner (→ recherche). */
+	protected static final int PURSUIT_TRACK_TTL = 10;
+
+	/** Dernière position connue de la proie poursuivie (-1 si aucune). */
+	protected int lastPreyX = -1, lastPreyY = -1;
+	/** Ticks de persistance restants (>0 ⇒ piste fraîche). */
+	protected int pursuitTrackTtl = 0;
+
+	/** Proie EN VUE : met à jour la piste (dernière position + recharge la
+	 *  persistance) et renvoie la CASE VISÉE — la case de la proie, ou une case
+	 *  anticipée si {@link #LEAD_PURSUIT} (interception). */
+	protected int[] pursuitSeen(agents.ai.Percept p) {
+		int aimX = p.preyX, aimY = p.preyY;
+		if (LEAD_PURSUIT && lastPreyX >= 0 && pursuitTrackTtl > 0) {
+			int w = world.getWidth(), h = world.getHeight();
+			int vx = torusSignedDelta(lastPreyX, p.preyX, w);   // vitesse estimée de la proie
+			int vy = torusSignedDelta(lastPreyY, p.preyY, h);
+			aimX = ((p.preyX + vx * LEAD_FACTOR) % w + w) % w;
+			aimY = ((p.preyY + vy * LEAD_FACTOR) % h + h) % h;
+		}
+		lastPreyX = p.preyX; lastPreyY = p.preyY;
+		pursuitTrackTtl = PURSUIT_TRACK_TTL;
+		return new int[]{aimX, aimY};
+	}
+
+	/** Vrai si une proie a été vue assez récemment pour valoir la peine d'être
+	 *  poursuivie « à l'aveugle » vers sa dernière position connue. */
+	protected boolean hasFreshTrack() { return pursuitTrackTtl > 0 && lastPreyX >= 0; }
+
+	/** Proie HORS DE VUE : consomme un pas de persistance et renvoie la dernière
+	 *  position connue (case « fantôme » vers laquelle foncer). */
+	protected int[] pursuitGhost() {
+		if (pursuitTrackTtl > 0) pursuitTrackTtl--;
+		return new int[]{lastPreyX, lastPreyY};
+	}
+
+	/** Oublie la piste (à appeler quand le prédateur cesse de chasser). */
+	protected void resetPursuit() { pursuitTrackTtl = 0; lastPreyX = -1; lastPreyY = -1; }
+
+	/** Delta torique signé minimal de a vers b sur un axe de taille n. */
+	private int torusSignedDelta(int a, int b, int n) {
+		int fwd = (b - a + n) % n, bwd = (a - b + n) % n;
+		return (fwd <= bwd) ? fwd : -bwd;
+	}
+
+	/**
+	 * Pas de RALLIEMENT À TERRE vers ({@code tx},{@code ty}) avec garde-fou
+	 * anti-oscillation — logique PARTAGÉE par {@code Loup.huntHoming} (zone de
+	 * chasse) et {@code Mouton} HOME (lieu sûr). Renvoie une direction (0-3)
+	 * UNIQUEMENT si le pas fait <b>strictement mieux</b> que la meilleure distance
+	 * déjà atteinte vers cette cible (suivi dans {@code mem}) ; <b>-1 sinon</b>.
+	 *
+	 * <p>C'est le cœur du correctif du gel en recherche (2026-06-07) et l'expression
+	 * du principe « une décision de navigation qui ne progresse pas doit CÉDER la
+	 * priorité, pas s'entêter » : au pied d'un obstacle qui mure la cible (eau OU
+	 * forêt), aucun pas ne bat le record → on renvoie -1, et l'appelant retombe sur
+	 * son comportement de repli (spirale pour le loup, errance pour le mouton) au
+	 * lieu d'osciller indéfiniment. Le « record » (et non « mieux que la case
+	 * courante ») est indispensable : sinon le repli repousse l'agent hors de la
+	 * rangée de distance minimale et le ralliement l'y ré-aspire → oscillation.</p>
+	 *
+	 * <p>L'eau est un obstacle ({@code allowSwim=false}) : on ne nage pas vers un
+	 * souvenir, ce qui évite aussi la bascule SEARCH↔SEEK_LAND au littoral.</p>
+	 */
+	protected int homingStepToward(int tx, int ty, int vision, agents.ai.Percept p) {
+		double dHere = world.distance(x, y, tx, ty);
+		// Nouvelle cible (ou première fois) → on initialise le record à la distance
+		// courante. resetHoming() (appelé hors état de ralliement) évite un record
+		// périmé qui interdirait tout ralliement futur.
+		if (tx != mem.homingZoneX || ty != mem.homingZoneY) {
+			mem.homingZoneX = tx;
+			mem.homingZoneY = ty;
+			mem.homingBestDist = dHere;
+		}
+		int dir = agents.ai.Perception.dirToCell(this, world, tx, ty);
+		// Pas direct bloqué (eau / arbre / congénère) → contournement BFS À TERRE.
+		if (dir < 0 || headingKind(dir, p, false, vision) < 0) {
+			dir = bfsStepToward(tx, ty, vision, false);
+		}
+		if (dir < 0) return -1;                       // aucun pas terrestre → repli
+		int w = world.getWidth(), h = world.getHeight();
+		int nx = ((x + orientDx(dir)) % w + w) % w;
+		int ny = ((y + orientDy(dir)) % h + h) % h;
+		double dNext = world.distance(nx, ny, tx, ty);
+		if (dNext >= mem.homingBestDist) return -1;   // pas de NOUVEAU progrès → repli
+		mem.homingBestDist = dNext;
+		return dir;
+	}
+
+	/**
+	 * Direction de RALLIEMENT vers la zone de chasse mémorisée la plus proche
+	 * ({@code MemoryKind.HUNTING}), avec le garde-fou de progrès de
+	 * {@link #homingStepToward} : renvoie un cap (0-3) tant que l'agent peut se
+	 * rapprocher d'une zone à terre, sinon -1 (aucune zone, déjà dessus, ou murée →
+	 * l'appelant retombe sur la spirale). Partagé Loup/Ours ; l'appelant fixe
+	 * l'orientation et la vitesse (trot). */
+	protected int huntHomingDir(agents.ai.Percept p, int vision) {
+		int[] zone = memory.nearest(agents.ai.MemoryKind.HUNTING, x, y,
+				(a, b, c, d) -> world.distance(a, b, c, d));
+		if (zone == null) return -1;
+		if (zone[0] == x && zone[1] == y) return -1;   // déjà sur la zone → balayer
+		return homingStepToward(zone[0], zone[1], vision, p);
+	}
+
+	// ===== Pathfinding local (BFS borné à la vision) pour la TRAQUE =====
+	// Sert à HUNT et huntHoming : quand le pas direct vers la cible est bloqué par
+	// un obstacle, on contourne. BFS sur la fenêtre (2·vision+1)² centrée sur
+	// l'agent → ≤ ~441 cases, calculé SEULEMENT en cas de blocage → coût
+	// négligeable. La cible peut être hors fenêtre (zone mémorisée lointaine) : on
+	// vise alors la case ATTEIGNABLE la plus proche de la cible (frontière).
+
+	/** Case franchissable pour le BFS (statique : forêt/lave/eau). On ignore les
+	 *  autres agents (mobiles, transitoires) — la collision est gérée au pas. */
+	private boolean bfsPassable(int wx, int wy, boolean allowSwim) {
+		if (world.getForestCAValue(wx, wy) != 0) return false;
+		if (world.getLavaCAValue(wx, wy)   != 0) return false;
+		if (!allowSwim && world.getCellHeight(wx, wy) < 0) return false;
+		return true;
+	}
+
+	/**
+	 * Première direction (0=N/1=E/2=S/3=O) du plus court chemin (BFS, 4-connexe)
+	 * vers ({@code targetX},{@code targetY}), borné à la fenêtre de vision. Si la
+	 * cible est hors fenêtre ou inatteignable, vise la case atteignable la plus
+	 * proche de la cible. Renvoie -1 si l'agent est complètement cerné.
+	 *
+	 * @param allowSwim l'eau est-elle franchissable dans le calcul (true en chasse).
+	 */
+	protected int bfsStepToward(int targetX, int targetY, int vision, boolean allowSwim) {
+		final int v = Math.max(1, vision);
+		final int size = 2 * v + 1;
+		final int W = world.getWidth(), H = world.getHeight();
+		boolean[] visited = new boolean[size * size];
+		int[] firstDir = new int[size * size];
+		int[] queue = new int[size * size];
+		int qh = 0, qt = 0;
+
+		final int originIdx = v * size + v;          // l'agent est au centre
+		visited[originIdx] = true;
+		firstDir[originIdx] = -1;
+		queue[qt++] = originIdx;
+
+		int bestIdx = -1;
+		double bestDist = Double.MAX_VALUE;
+
+		while (qh < qt) {
+			int idx = queue[qh++];
+			int lx = idx % size, ly = idx / size;
+			int wx = ((x - v + lx) % W + W) % W;
+			int wy = ((y - v + ly) % H + H) % H;
+			if (idx != originIdx) {                  // candidat « le plus proche de la cible »
+				double d = world.distance(wx, wy, targetX, targetY);
+				if (d < bestDist) { bestDist = d; bestIdx = idx; }
+				if (d == 0) break;                   // cible atteinte → chemin optimal trouvé
+			}
+			for (int dir = 0; dir < 4; dir++) {
+				int nlx = lx + orientDx(dir), nly = ly + orientDy(dir);
+				if (nlx < 0 || nlx >= size || nly < 0 || nly >= size) continue;  // hors fenêtre
+				int nIdx = nly * size + nlx;
+				if (visited[nIdx]) continue;
+				int nwx = ((x - v + nlx) % W + W) % W;
+				int nwy = ((y - v + nly) % H + H) % H;
+				// Clip au DISQUE de vision (euclidien, comme Perception) : l'agent ne
+				// planifie que sur le terrain qu'il perçoit réellement — pas les coins
+				// du carré qui dépasseraient ~vision·√2.
+				if (world.distance(x, y, nwx, nwy) > v) continue;
+				if (!bfsPassable(nwx, nwy, allowSwim)) continue;
+				visited[nIdx] = true;
+				firstDir[nIdx] = (idx == originIdx) ? dir : firstDir[idx];
+				queue[qt++] = nIdx;
+			}
+		}
+		return bestIdx < 0 ? -1 : firstDir[bestIdx];
+	}
+
 	/**
 	 * Itération du monde au moment de la naissance. Sert à calculer l'âge à
 	 * la volée sans avoir à incrémenter un compteur dans chaque step() des

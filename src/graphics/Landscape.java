@@ -276,9 +276,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		// gros à l'écran). 1/8 = un carreau de bruit couvre 8 cellules.
 		private static final float TEX_TILES_PER_CELL = 1f / 8f;
 
-		// Normales par sommet (vertex shading sur le terrain) précalculées une fois
-		// dans initLandscape() à partir de landscape[][]. Indexées comme landscape,
-		// donc [dxView][dyView][3] avec wrap torique pour les voisins.
+		// Normales par cellule (vertex shading sur le terrain) précalculées une fois
+		// dans initLandscape() à partir de getCellHeight (grille du tore = dxView-1).
+		// Dimensionnées [dxView-1][dyView-1][3] et indexées au rendu avec le MÊME
+		// modulo que les hauteurs (% (dxView-1)) — sinon une fissure d'éclairage
+		// balaie le sol au pan (cf. note dans precomputeNormals()).
 		private float[][][] normals;
 
 		// Couleur du ciel/brouillard recalculée chaque frame par updateSunAndSky.
@@ -390,9 +392,19 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         float smoothFactor[];
         int smoothingDistanceThreshold;
         
-        int movingX = 0; 
+        int movingX = 0;
         int movingY = 0;
-   
+        // Déplacements de pan (flèches/ZQSD + drag clic droit + molette) accumulés
+        // par le THREAD D'ÉVÉNEMENTS NEWT, drainés et appliqués à movingX/movingY au
+        // début de display() (THREAD DE RENDU). Sans ce découplage, un input pendant
+        // que display() parcourt la grille modifiait movingX en plein milieu de la
+        // frame → une partie des sommets du terrain lus avec l'ancien movingX, l'autre
+        // avec le nouveau → DÉCHIRURE (« fissure ») d'une cellule, visible surtout en
+        // déplacement rapide. movingX/movingY ne sont désormais écrits que par le
+        // thread de rendu ; les handlers n'écrivent que ces deltas atomiques.
+        private final java.util.concurrent.atomic.AtomicInteger pendingMoveX = new java.util.concurrent.atomic.AtomicInteger();
+        private final java.util.concurrent.atomic.AtomicInteger pendingMoveY = new java.util.concurrent.atomic.AtomicInteger();
+
         
         /**
          * 
@@ -546,8 +558,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         	int h = _myWorld.getHeight();
         	int x2 = ((a.x - (movingX % w)) % w + w) % w;
         	int y2 = ((a.y - (movingY % h)) % h + h) % h;
-        	double worldX = offset + x2 * stepX;
-        	double worldY = offset + y2 * stepY;
+        	// −lenX/−lenY : même position que le rendu de l'agent (planté sur le coin
+        	// de cellule, cf. Loup/Mouton.displayXxxAt) → picking aligné.
+        	double worldX = offset + x2 * stepX - lenX;
+        	double worldY = offset + y2 * stepY - lenY;
         	double cellH  = Math.max(0, _myWorld.getCellHeight(a.x, a.y));
         	// Centre approximatif de la boîte agent (h à h+5 dans Agent.displayUniqueObject).
         	double worldZ = cellH * nHeihtUniqueObj + 2.5;
@@ -629,8 +643,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         	int h = _myWorld.getHeight();
         	int x2 = ((a.x - (movingX % w)) % w + w) % w;
         	int y2 = ((a.y - (movingY % h)) % h + h) % h;
-        	float px = offset + x2 * stepX;
-        	float py = offset + y2 * stepY;
+        	// −lenX/−lenY : sous l'agent tel que rendu (coin de cellule, cf. Loup/Mouton).
+        	float px = offset + x2 * stepX - lenX;
+        	float py = offset + y2 * stepY - lenY;
         	float z  = (float) _myWorld.getCellTopAltitude(a.x, a.y) + 0.6f;
         	float r  = Math.abs(lenX) * 1.8f;
 
@@ -765,8 +780,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         	int h = _myWorld.getHeight();
         	int x2 = ((a.x - (movingX % w)) % w + w) % w;
         	int y2 = ((a.y - (movingY % h)) % h + h) % h;
-        	double worldX = offset + x2 * stepX;
-        	double worldY = offset + y2 * stepY;
+        	// −lenX/−lenY : même position que le rendu (coin de cellule) → culling cohérent.
+        	double worldX = offset + x2 * stepX - lenX;
+        	double worldY = offset + y2 * stepY - lenY;
         	double cellH  = Math.max(0, _myWorld.getCellHeight(a.x, a.y));
         	double worldZ = cellH * nHeihtUniqueObj + 2.5; // centre approx du corps
 
@@ -915,32 +931,47 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         }
 
         /**
-         * Normales par sommet à partir des hauteurs voisines (différences centrées,
+         * Normales par cellule à partir des hauteurs voisines (différences centrées,
          * wrap torique). Donne au terrain un vrai relief pour la lumière directionnelle.
-         * Précalcul unique : O(dxView * dyView), une seule fois au boot.
+         * Précalcul unique : O(dxCA * dyCA), une seule fois au boot.
          * En vue de dessus (terrain plat à z=0) les normales encodent quand même la
          * pente — ça produit un effet "relief shading" agréable.
+         *
+         * IMPORTANT — la grille (et son wrap) doit être IDENTIQUE à celle des hauteurs
+         * rendues. Le rendu lit l'altitude des sommets via {@code getCellHeight(...)},
+         * qui wrappe sur le tore du monde de taille {@code dxCA = dxView-1}. Les normales
+         * doivent donc être calculées sur cette MÊME grille de cellules (dxView-1) à
+         * partir de {@code getCellHeight}, et indexées au rendu avec le MÊME modulo
+         * {@code % (dxView-1)}. Avant correction, les normales étaient bâties sur la
+         * grille de SOMMETS Perlin {@code landscape[dxView][dyView]} (période dxView,
+         * car le bruit de Perlin est tileable de période dxView) et indexées
+         * {@code % dxView}, alors que les hauteurs wrappent à {@code dxView-1} : ce
+         * décalage d'une cellule entre les deux périodes (51 vs 50) faisait battre les
+         * deux grilles et produisait une « fissure » d'éclairage diagonale qui balayait
+         * le sol dès qu'on panne le terrain (flèches / ZQSD / drag clic droit, tout ce
+         * qui modifie movingX/movingY).
          */
         private void precomputeNormals() {
-            normals = new float[dxView][dyView][3];
+            final int nx = dxView - 1, ny = dyView - 1;   // taille du tore (= dxCA, dyCA)
+            normals = new float[nx][ny][3];
             final double zScale = heightFactor * heightBooster;
             final double dxScale = 2.0 * Math.abs(stepX);
             final double dyScale = 2.0 * Math.abs(stepY);
-            for (int x = 0; x < dxView; x++) {
-                int xp = (x + 1) % dxView;
-                int xm = (x - 1 + dxView) % dxView;
-                for (int y = 0; y < dyView; y++) {
-                    int yp = (y + 1) % dyView;
-                    int ym = (y - 1 + dyView) % dyView;
-                    double dzdx = (landscape[xp][y] - landscape[xm][y]) * zScale / dxScale;
-                    double dzdy = (landscape[x][yp] - landscape[x][ym]) * zScale / dyScale;
-                    float nx = (float) -dzdx;
-                    float ny = (float) -dzdy;
-                    float nz = 1f;
-                    float invLen = 1f / (float) Math.sqrt(nx*nx + ny*ny + nz*nz);
-                    normals[x][y][0] = nx * invLen;
-                    normals[x][y][1] = ny * invLen;
-                    normals[x][y][2] = nz * invLen;
+            for (int x = 0; x < nx; x++) {
+                int xp = (x + 1) % nx;
+                int xm = (x - 1 + nx) % nx;
+                for (int y = 0; y < ny; y++) {
+                    int yp = (y + 1) % ny;
+                    int ym = (y - 1 + ny) % ny;
+                    double dzdx = (_myWorld.getCellHeight(xp, y) - _myWorld.getCellHeight(xm, y)) * zScale / dxScale;
+                    double dzdy = (_myWorld.getCellHeight(x, yp) - _myWorld.getCellHeight(x, ym)) * zScale / dyScale;
+                    float vnx = (float) -dzdx;
+                    float vny = (float) -dzdy;
+                    float vnz = 1f;
+                    float invLen = 1f / (float) Math.sqrt(vnx*vnx + vny*vny + vnz*vnz);
+                    normals[x][y][0] = vnx * invLen;
+                    normals[x][y][1] = vny * invLen;
+                    normals[x][y][2] = vnz * invLen;
                 }
             }
         }
@@ -1543,6 +1574,13 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         		// occulte la caméra placée à son œil).
         		if (selectedAgent != null) selectedAgent.hiddenFP = firstPersonControl();
 
+        		// Draine ICI (thread de rendu) les déplacements de pan accumulés par le
+        		// thread d'événements NEWT, et applique-les à movingX/movingY UNE fois
+        		// pour toute la frame. Garantit que toute la passe terrain lit le même
+        		// movingX → plus de déchirure d'une cellule en déplacement rapide /
+        		// drag clic droit. (cf. champs pendingMoveX/Y.)
+        		applyPendingPan();
+
         		// Caméra-follow (Phase 8) : recentre movingX/movingY sur l'agent
         		// sélectionné si la touche `f` a basculé le mode.
         		if (cameraFollow && selectedAgent != null) {
@@ -1852,7 +1890,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 	                        // Normale précalculée du sommet — donne du relief sous
 	                        // la lumière directionnelle (face éclairée / face ombragée).
-	                        float[] n = normals[(x+xIt+movingX) % dxView][(y+yIt+movingY) % dyView];
+	                        // Même grille/wrap que l'altitude lue ci-dessus (getCellHeight,
+	                        // tore de taille dxView-1) — cf. note dans precomputeNormals().
+	                        float[] n = normals[(x+xIt+movingX) % (dxView-1)][(y+yIt+movingY) % (dyView-1)];
 	                        gl.glNormal3f(n[0], n[1], n[2]);
 	                        gl.glTexCoord2f(u, v);
 	                        float[] vcol = ((worlds.WorldOfCells)_myWorld).getVertexTerrainColor(x+xIt+movingX, y+yIt+movingY);
@@ -2158,7 +2198,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 	            		hud.draw(gl, ui, viewportWidth, viewportHeight,
 	            		         _myWorld, dayLabel, gameTime, lastFpsValue,
-	            		         playback.statusLabel(), playback.isPaused());
+	            		         playback.statusLabel(), playback.isPaused(),
+	            		         config != null && config.showDamageHud);
 	            	}
 	            	// Fiche détaillée de l'agent suivi (Phase 8), si présent.
 	            	if (selectedAgent != null) {
@@ -2382,8 +2423,6 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				int rdy = mouse.getY() - lastDragY;
 				lastDragX = mouse.getX();
 				lastDragY = mouse.getY();
-				int modX = dxView - 1;
-				int modY = dyView - 1;
 
 				// Déplacement caméra désiré (en cellules, fractionnaire) façon
 				// « agrippe le sol » (Google Maps) :
@@ -2411,8 +2450,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				panAccumY += moveY;
 				int idx = (int) panAccumX;  panAccumX -= idx;
 				int idy = (int) panAccumY;  panAccumY -= idy;
-				if (modX > 0 && idx != 0) movingX = ((movingX + idx) % modX + modX) % modX;
-				if (modY > 0 && idy != 0) movingY = ((movingY + idy) % modY + modY) % modY;
+				// Accumule le delta ; appliqué à movingX/Y par applyPendingPan (thread
+				// de rendu) → pas de modification en plein milieu d'une frame.
+				if (idx != 0) pendingMoveX.addAndGet(idx);
+				if (idy != 0) pendingMoveY.addAndGet(idy);
 				return;
 			}
 
@@ -2468,14 +2509,14 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				// (movingX/Y sont des cellules entières ; sans accumulateur, un drag
 				// lent arrondirait à 0 et ne bougerait pas). Souris gauche → +X
 				// (droite), souris bas → +Y (avance).
-				int modX = dxView - 1;
-				int modY = dyView - 1;
 				panAccumX += -dx * PAN_SENSITIVITY;
 				panAccumY +=  dy * PAN_SENSITIVITY;
 				int idx = (int) panAccumX;  panAccumX -= idx;
 				int idy = (int) panAccumY;  panAccumY -= idy;
-				if (modX > 0 && idx != 0) movingX = ((movingX + idx) % modX + modX) % modX;
-				if (modY > 0 && idy != 0) movingY = ((movingY + idy) % modY + modY) % modY;
+				// Accumule le delta ; appliqué à movingX/Y par applyPendingPan (thread
+				// de rendu) → pas de modification en plein milieu d'une frame.
+				if (idx != 0) pendingMoveX.addAndGet(idx);
+				if (idy != 0) pendingMoveY.addAndGet(idy);
 			} else {
 				// 3D libre : rotation FPS yaw + pitch.
 				rotateX    += dx * ROT_SENSITIVITY;
@@ -2664,14 +2705,27 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		 * forwardSign : +1 = avant, -1 = arrière, 0 = pas de translation longitudinale.
 		 * strafeSign  : +1 = droite, -1 = gauche, 0 = pas de strafe.
 		 */
+		/**
+		 * Applique (thread de rendu, début de frame) les deltas de pan accumulés par
+		 * les handlers d'événements. movingX/movingY ne sont donc jamais modifiés en
+		 * cours de frame par le thread d'événements → pas de déchirure du terrain.
+		 */
+		private void applyPendingPan() {
+			int dmx = pendingMoveX.getAndSet(0);
+			int dmy = pendingMoveY.getAndSet(0);
+			if (dmx == 0 && dmy == 0) return;
+			int modX = dxView - 1, modY = dyView - 1;
+			if (modX > 0 && dmx != 0) movingX = ((movingX + dmx) % modX + modX) % modX;
+			if (modY > 0 && dmy != 0) movingY = ((movingY + dmy) % modY + modY) % modY;
+		}
+
 		private void cameraRelativeMove(int forwardSign, int strafeSign) {
 			if (dxView <= 1 || dyView <= 1) return;
-			int modX = dxView - 1;
-			int modY = dyView - 1;
 
 			if (VIEW_FROM_ABOVE) {
-				movingX = ((movingX + strafeSign)  % modX + modX) % modX;
-				movingY = ((movingY + forwardSign) % modY + modY) % modY;
+				// Accumule le delta (drainé par applyPendingPan sur le thread de rendu).
+				pendingMoveX.addAndGet(strafeSign);
+				pendingMoveY.addAndGet(forwardSign);
 				return;
 			}
 			if (cameraFollow && selectedAgent != null) {
@@ -2687,8 +2741,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 			double dy = forwardSign * c - strafeSign * s;
 			int idx = (int) Math.round(dx);
 			int idy = (int) Math.round(dy);
-			if (idx != 0) movingX = ((movingX + idx) % modX + modX) % modX;
-			if (idy != 0) movingY = ((movingY + idy) % modY + modY) % modY;
+			if (idx != 0) pendingMoveX.addAndGet(idx);
+			if (idy != 0) pendingMoveY.addAndGet(idy);
 		}
 
 		@Override

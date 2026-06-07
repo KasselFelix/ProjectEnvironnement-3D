@@ -27,6 +27,12 @@ public class Grass {
     		// Altitude unifiée : sommet de la stack (sol natif + couches empilées).
     		float altitude = myWorld.getCellTopAltitude((int)x + movingX, (int)y + movingY);
 
+    		// Planté sur le SOMMET de terrain (coin de cellule) dont l'altitude est lue,
+    		// pas au centre du quad : sinon décalage d'une demi-cellule → le brin
+    		// s'enfonce dans le sol en pente (même cause que les jeunes arbres, cf. Tree).
+    		float px = offset + x * stepX - lenX;
+    		float py = offset + y * stepY - lenY;
+
     		// Randoms déterministes par cellule (et par brin) — fixés pour
     		// la durée de vie de la cellule. Avant : Math.random() à chaque
     		// frame faisait scintiller violemment le sol.
@@ -49,10 +55,10 @@ public class Grass {
             		             (float)(0.1*stableNoise(cellX,cellY,12)));
             		break;
             }
-    		gl.glVertex3f( offset+x*stepX, offset+y*stepY, altitude );
-            gl.glVertex3f( offset+x*stepX, offset+y*stepY+lenY*0.4f, altitude+1.f);
-            gl.glVertex3f( offset+x*stepX, offset+y*stepY, altitude );
-            gl.glVertex3f( offset+x*stepX, offset+y*stepY-lenY*0.4f, altitude+1.f);
+    		gl.glVertex3f( px, py, altitude );
+            gl.glVertex3f( px, py+lenY*0.4f, altitude+1.f);
+            gl.glVertex3f( px, py, altitude );
+            gl.glVertex3f( px, py-lenY*0.4f, altitude+1.f);
 
             switch ( cellState )
             {
@@ -68,10 +74,10 @@ public class Grass {
             		             (float)(0.2*stableNoise(cellX,cellY,22)));
             		break;
             }
-            gl.glVertex3f( offset+x*stepX, offset+y*stepY, altitude );
-            gl.glVertex3f( offset+x*stepX-lenX*0.4f, offset+y*stepY, altitude+1.f);
-    		gl.glVertex3f( offset+x*stepX, offset+y*stepY, altitude );
-            gl.glVertex3f( offset+x*stepX+lenX*0.4f, offset+y*stepY, altitude+1.f);
+            gl.glVertex3f( px, py, altitude );
+            gl.glVertex3f( px-lenX*0.4f, py, altitude+1.f);
+    		gl.glVertex3f( px, py, altitude );
+            gl.glVertex3f( px+lenX*0.4f, py, altitude+1.f);
         }
     }
 }

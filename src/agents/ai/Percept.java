@@ -10,6 +10,8 @@ import java.util.Arrays;
 public final class Percept {
     public final int predatorDir; public final double predatorDist;
     public final int preyDir;     public final double preyDist;
+    /** Cellule de la proie la plus proche en vue (pour le pathfinding) ; -1 si aucune. */
+    public final int preyX, preyY;
     public final int waterDir;    public final double waterDist;
     public final int landDir;     public final double landDist;
     public final int grassDir;    public final double grassDist;
@@ -24,7 +26,7 @@ public final class Percept {
     public final boolean[] cardinalFree;
 
     public Percept(int predatorDir, double predatorDist,
-                   int preyDir, double preyDist,
+                   int preyDir, double preyDist, int preyX, int preyY,
                    int waterDir, double waterDist,
                    int landDir, double landDist,
                    int grassDir, double grassDist,
@@ -34,6 +36,7 @@ public final class Percept {
                    boolean[] cardinalFree) {
         this.predatorDir = predatorDir; this.predatorDist = predatorDist;
         this.preyDir = preyDir;         this.preyDist = preyDist;
+        this.preyX = preyX;             this.preyY = preyY;
         this.waterDir = waterDir;       this.waterDist = waterDist;
         this.landDir = landDir;         this.landDist = landDist;
         this.grassDir = grassDir;       this.grassDist = grassDist;

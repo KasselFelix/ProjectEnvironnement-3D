@@ -144,55 +144,522 @@ class AgentBehaviorTest {
     // -----------------------------------------------------------------------
 
     /**
-     * Un loup AFFAMÉ sans proie en vue entre en SEARCH et balaie en spirale.
-     * On vérifie le compteur de spirale (spiralStep / spiralPeriod) et le
-     * changement d'orientation, tick par tick.
-     *
-     * Mécanique de spirale (Loup.spiralSearch) :
-     *   Tick 1: spiralStep(0) != spiralPeriod(1) → spiralStep++ → spiralStep=1, _orient reste 0.
-     *   Tick 2: spiralStep(1) == spiralPeriod(1) → _orient=(0+1)%4=1,
-     *           spiralPeriod += vision/2 = 1+5 = 6, spiralStep=0.
+     * Un loup AFFAMÉ sans proie en vue entre en SEARCH, et la recherche balaie en
+     * SPIRALE CARRÉE EXTENSIBLE : bras de longueurs {@code L, L, 2L, 2L, 3L…}
+     * (L = 2·vision+1), pour couvrir la zone sans trou ni recouvrement.
      */
     @Test
-    void loupAffameChercheEnSpirale() {
+    void loupAffameChercheEnSpiraleExtensible() {
         WorldOfCells world = AgentTestSupport.buildWorld();
         int cx = 25, cy = 25;
 
-        // Force a 5×5 land block and clear forest/lava there.
+        // 5×5 de terre dégagée (ni forêt ni lave) autour du loup.
         for (int dx = -2; dx <= 2; dx++) {
             for (int dy = -2; dy <= 2; dy++) {
                 world.setCellHeight(cx + dx, cy + dy, 1.0);
                 world.setForestCAValue(cx + dx, cy + dy, 0);
             }
         }
+        world.setJour(1); // attaqueNuit reste 0
 
-        world.setJour(1); // ensure attaqueNuit stays 0
-
-        // No moutons → preyVisible() = false ; affamé → SEARCH (spirale) garanti.
         Loup l = new Loup(cx, cy, world);
         l.energie = 100; // < energieD*0.7 = 350 → affamé → SEARCH
         world.loups.add(l);
         world.agents.add(l);
         world.uniqueDynamicObjects.add(l);
 
-        // Sanity: freshly constructed Loup faces North.
-        assertEquals(0, l._orient, "Default orient must be 0 (North).");
-
-        // ── Tick 1 ──
+        // Affamé sans proie → état SEARCH.
         l.step();
         assertEquals(AgentState.SEARCH, l.currentState,
                 "Affamé sans proie → état SEARCH.");
-        assertEquals(1, l.mem.spiralStep,
-                "After tick 1: spiralStep must be 1 (incremented, no turn yet).");
-        assertEquals(0, l._orient,
-                "After tick 1: orient must remain 0 (no turn on first SEARCH tick).");
 
-        // ── Tick 2 ──
-        l.step();
+        // Motif des bras : L, L, 2L, 2L, 3L… spiralSearch fait avancer le CAP VOULU
+        // (mem.spiralHeading) ; à chaque virage de cap, la longueur du nouveau bras
+        // vaut spiralStepsLeft+1 (posée puis décrémentée une fois).
+        final int L = 2 * l.vision + 1;
+        l._orient = 0;
+        l.mem.resetSpiral();
+        java.util.List<Integer> legs = new java.util.ArrayList<>();
+        int prevHeading = l.mem.spiralHeading;
+        for (int i = 0; i < 60 * L && legs.size() < 6; i++) {
+            l.spiralSearch(l.vision);
+            if (l.mem.spiralHeading != prevHeading) {     // virage de cap → nouveau bras
+                legs.add(l.mem.spiralStepsLeft + 1);
+                prevHeading = l.mem.spiralHeading;
+            }
+        }
+        assertTrue(legs.size() >= 5, "Au moins 5 bras balayés.");
+        assertEquals(L,     (int) legs.get(0), "Bras 1 = L");
+        assertEquals(L,     (int) legs.get(1), "Bras 2 = L");
+        assertEquals(2 * L, (int) legs.get(2), "Bras 3 = 2L");
+        assertEquals(2 * L, (int) legs.get(3), "Bras 4 = 2L");
+        assertEquals(3 * L, (int) legs.get(4), "Bras 5 = 3L");
+    }
+
+    /**
+     * Anti-entêtement : face à un arbre droit devant, le loup se DÉCALE sur le
+     * côté (latéral) au lieu de foncer dedans ou de faire demi-tour. (Bug filmé :
+     * allers-retours entre deux arbres.)
+     */
+    @Test
+    void loupContourneArbreParLeCote() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dy = -2; dy <= 2; dy++) {
+                world.setCellHeight(cx + dx, cy + dy, 1.0);
+                world.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        world.setForestCAValue(cx + 1, cy, 1);   // arbre PILE à l'est
+
+        Loup l = new Loup(cx, cy, world);
+        l._orient = 1;                           // cap est (vers l'arbre)
+        l.mem.resetSpiral();
+        world.loups.add(l); world.agents.add(l); world.uniqueDynamicObjects.add(l);
+
+        java.util.List<objects.UniqueDynamicObject> none = java.util.Collections.emptyList();
+        agents.ai.Percept p = agents.ai.Perception.sense(l, world, none, none);
+        l.steerAroundObstacles(p, true, l.vision);
+
+        assertEquals(2, l._orient,
+                "Arbre à l'est → décalage latéral (sud), PAS de demi-tour vers l'ouest.");
+    }
+
+    /**
+     * Esquive d'errance (WANDER, steerAroundObstacles) : impasse est+nord+sud,
+     * seule issue ouest → l'agent prend l'ouest (pas de blocage).
+     */
+    @Test
+    void loupSEngageDansLaSortieDImpasse() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dy = -2; dy <= 2; dy++) {
+                world.setCellHeight(cx + dx, cy + dy, 1.0);
+                world.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        world.setForestCAValue(cx + 1, cy, 1);   // est
+        world.setForestCAValue(cx, cy - 1, 1);   // nord
+        world.setForestCAValue(cx, cy + 1, 1);   // sud
+
+        Loup l = new Loup(cx, cy, world);
+        l._orient = 1;                           // cap est (impasse)
+        l.mem.resetSpiral();
+        world.loups.add(l); world.agents.add(l); world.uniqueDynamicObjects.add(l);
+
+        java.util.List<objects.UniqueDynamicObject> none = java.util.Collections.emptyList();
+        agents.ai.Percept p = agents.ai.Perception.sense(l, world, none, none);
+        l.steerAroundObstacles(p, true, l.vision);
+
+        assertEquals(3, l._orient, "Seule issue = ouest.");
+    }
+
+    /**
+     * Anti-blocage : face à une impasse (est/nord/sud bloqués par la forêt, seule
+     * l'ouest — et les diagonales — ouvertes), le loup affamé en SEARCH ne reste pas
+     * coincé : le repli de Locomotion lui fait quitter sa case de départ en quelques
+     * pas. (Le contournement n'est plus « calculé » : il émerge du repli aléatoire,
+     * approche simple et robuste héritée du code d'origine.)
+     */
+    @Test
+    void loupSpiraleTourneApresImpasse() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dy = -2; dy <= 2; dy++) {
+                world.setCellHeight(cx + dx, cy + dy, 1.0);
+                world.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        world.setForestCAValue(cx + 1, cy, 1);   // est
+        world.setForestCAValue(cx, cy - 1, 1);   // nord
+        world.setForestCAValue(cx, cy + 1, 1);   // sud
+
+        Loup l = new Loup(cx, cy, world);
+        l.energie = 100;                         // affamé → SEARCH
+        l.mem.resetSpiral();
+        world.loups.add(l); world.agents.add(l); world.uniqueDynamicObjects.add(l);
+
+        boolean leftStart = false;
+        for (int i = 0; i < 15 && !leftStart; i++) {
+            l.step();
+            if (l.x != cx || l.y != cy) leftStart = true;
+        }
+        assertTrue(leftStart, "Le loup doit sortir de l'impasse (ne pas rester bloqué).");
+    }
+
+    /**
+     * Régression anti-blocage : en SEARCH la NUIT, sur du terrain navigable (arbres
+     * épars, espace libre connexe), le loup ne doit jamais RESTER FIGÉ — il ratisse
+     * le terrain. La spirale suit son cap et le repli de Locomotion gère les
+     * obstacles, si bien que l'agent couvre largement la carte. On mesure la
+     * couverture moyenne (nb de cases distinctes) sur de nombreux terrains : un loup
+     * figé couvrirait une poignée de cases, donc un seuil élevé garantit l'absence
+     * de gel (le bug observé : loups immobiles sur la plage / en forêt).
+     */
+    @Test
+    void loupEnRechercheCouvreLeTerrainSansSeFiger() {
+        long totalDistinct = 0; int n = 0; int worstCoverage = Integer.MAX_VALUE;
+        for (long seed = 1; seed <= 50; seed++) {
+            WorldOfCells w = AgentTestSupport.buildWorld();
+            int W = w.getWidth(), H = w.getHeight();
+            java.util.Random r = new java.util.Random(seed);
+            // Terrain navigable : arbres épars (~18 %) à terre, espace libre connexe.
+            for (int x = 0; x < W; x++)
+                for (int y = 0; y < H; y++) {
+                    w.setCellHeight(x, y, 1.0);
+                    w.setForestCAValue(x, y, r.nextDouble() < 0.18 ? 1 : 0);
+                }
+            int sx = -1, sy = -1;
+            outer:
+            for (int rad = 0; rad < 20; rad++)
+                for (int dx = -rad; dx <= rad; dx++)
+                    for (int dy = -rad; dy <= rad; dy++) {
+                        int x = ((25 + dx) % W + W) % W, y = ((25 + dy) % H + H) % H;
+                        if (w.getForestCAValue(x, y) == 0) { sx = x; sy = y; break outer; }
+                    }
+            if (sx < 0) continue;
+
+            Loup l = new Loup(sx, sy, w);
+            l.energie = l.energieD;                                   // repu : seule la NUIT cherche
+            l.mem.resetSpiral();
+            w.loups.add(l); w.agents.add(l); w.uniqueDynamicObjects.add(l);
+
+            java.util.Set<Long> distinct = new java.util.HashSet<>();
+            for (int i = 0; i < 250; i++) {
+                w.setJour(0); l.attaqueNuit = 1;                      // NUIT
+                l.step();
+                distinct.add(((long) l.x << 20) | l.y);
+            }
+            totalDistinct += distinct.size(); n++;
+            worstCoverage = Math.min(worstCoverage, distinct.size());
+        }
+        long avg = totalDistinct / Math.max(1, n);
+        assertTrue(avg >= 80,
+                "Le loup doit ratisser largement, pas rester figé (couverture moyenne = "
+                + avg + " cases/250 ticks).");
+        assertTrue(worstCoverage >= 20,
+                "Même au pire, le loup ne reste pas figé (couverture min = "
+                + worstCoverage + " cases/250 ticks).");
+    }
+
+    /**
+     * RÉGRESSION — cause racine du gel en SEARCH (bug filmé : loups "Cherche proie"
+     * figés, énergie pleine, au bord de l'eau ET en pleine forêt). Un loup qui a
+     * mémorisé une zone de chasse INATTEIGNABLE (ici derrière un mur d'arbres
+     * infranchissable dans son champ de vision, AUCUNE eau) ne doit PAS rester à
+     * osciller au pied de l'obstacle : {@code huntHoming} doit constater l'absence
+     * de progrès vers la zone et rendre la main à la spirale, qui ratisse le terrain.
+     *
+     * <p>Avant correctif : huntHoming garde le cap vers la zone à chaque tick et
+     * renvoie {@code true} → la spirale ne s'exécute jamais → le loup bat le mur
+     * (4 cases distinctes sur 200 ticks). Après : il s'en échappe et couvre la zone.</p>
+     */
+    @Test
+    void loupNeBloquePasSurZoneDeChasseInaccessible() {
+        WorldOfCells w = AgentTestSupport.buildWorld();
+        int W = w.getWidth(), H = w.getHeight();
+        for (int x = 0; x < W; x++)
+            for (int y = 0; y < H; y++) {
+                w.setCellHeight(x, y, 1.0);                              // TOUT terre (pas d'eau)
+                w.setForestCAValue(x, y, (x >= 28 && x <= 31) ? 1 : 0); // mur d'arbres vertical
+                w.setGrassCAValue(x, y, 0);
+            }
+
+        Loup l = new Loup(24, 25, w);
+        l.energie = l.energieD;                                          // repu (≠ famine)
+        l.mem.resetSpiral();
+        // Zone de chasse mémorisée DE L'AUTRE CÔTÉ du mur, inatteignable en vision.
+        l.memory.remember(agents.ai.MemoryKind.HUNTING, 40, 25);
+        w.loups.add(l); w.agents.add(l); w.uniqueDynamicObjects.add(l);
+
+        java.util.Set<Long> distinct = new java.util.HashSet<>();
+        for (int i = 0; i < 200; i++) {
+            w.setJour(0); l.attaqueNuit = 1;                            // NUIT → SEARCH
+            l.step();
+            distinct.add(((long) l.x << 20) | l.y);
+        }
+        assertTrue(distinct.size() >= 30,
+                "Le loup ne doit pas osciller au pied d'une zone inatteignable "
+                + "(cases distinctes = " + distinct.size() + " ; symptôme du bug = 4).");
+    }
+
+    /**
+     * Persistance de piste : un loup affamé qui PERD sa proie de vue (elle se cache
+     * derrière des arbres / sort du champ) ne retombe pas instantanément en SEARCH —
+     * il reste en HUNT quelques ticks et fonce vers sa DERNIÈRE position connue, puis
+     * abandonne (→ SEARCH) si le contact n'est pas rétabli. Une proie VISIBLE reste
+     * toujours prioritaire (opportunisme préservé).
+     */
+    @Test
+    void loupPoursuitProiePerdueDeVuePuisAbandonne() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int dx = -12; dx <= 12; dx++)
+            for (int dy = -12; dy <= 12; dy++) {
+                world.setCellHeight(cx + dx, cy + dy, 1.0);
+                world.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        world.setJour(1);
+
+        Loup l = new Loup(cx, cy, world);
+        l.energie = 200;                                  // affamé → chasse
+        world.loups.add(l); world.agents.add(l); world.uniqueDynamicObjects.add(l);
+
+        // Proie en vue à l'EST (dist 4) : le loup la voit → HUNT, et mémorise la piste.
+        Mouton prey = new Mouton(cx + 4, cy, world);
+        world.moutons.add(prey); world.agents.add(prey); world.uniqueDynamicObjects.add(prey);
+
+        agents.ai.Percept p1 = agents.ai.Perception.sense(l, world, null, world.moutons);
+        assertTrue(p1.preyVisible(), "proie à dist 4 doit être visible");
+        l.currentState = l.decideState(p1);
+        assertEquals(AgentState.HUNT, l.currentState, "proie en vue → HUNT");
+        l.applyState(l.currentState, p1);                 // enregistre la piste (dernière pos connue)
+
+        // La proie disparaît loin (hors vision) → plus visible.
+        prey.x = cx; prey.y = (cy + 22) % world.getHeight();
+        agents.ai.Percept p2 = agents.ai.Perception.sense(l, world, null, world.moutons);
+        assertFalse(p2.preyVisible(), "proie à dist 22 ne doit plus être visible");
+
+        // Persistance : encore HUNT, et le loup vise la dernière position connue (Est).
+        assertEquals(AgentState.HUNT, l.decideState(p2),
+                "proie perdue de vue mais piste fraîche → reste en HUNT (persistance)");
+        l.applyState(AgentState.HUNT, p2);
         assertEquals(1, l._orient,
-                "After tick 2: spiralStep==spiralPeriod → turn → orient must be 1 (East).");
-        assertEquals(1 + l.vision / 2, l.mem.spiralPeriod,
-                "After tick 2: spiralPeriod must be 1 + vision/2.");
+                "le loup fonce vers la dernière position connue de la proie (Est)");
+
+        // Sans recontact, la piste s'épuise → retour en SEARCH.
+        for (int i = 0; i < 30; i++) l.applyState(AgentState.HUNT, p2);
+        assertEquals(AgentState.SEARCH, l.decideState(p2),
+                "piste épuisée sans recontact → le loup abandonne et repart en SEARCH");
+    }
+
+    /**
+     * Biais mémoire de la recherche : au sortir d'une chasse (spirale « fraîche »,
+     * cap non initialisé), le loup affamé sans proie en vue doit amorcer sa spirale
+     * vers la DERNIÈRE POSITION CONNUE de la proie — pas reprendre un cap périmé. Ici
+     * la dernière proie a été vue à l'EST : la 1re branche doit partir à l'Est, même
+     * si le cap courant pointait à l'Ouest.
+     */
+    @Test
+    void loupRechercheBiaiseeVersDerniereProieConnue() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int dx = -12; dx <= 12; dx++)
+            for (int dy = -12; dy <= 12; dy++) {
+                world.setCellHeight(cx + dx, cy + dy, 1.0);
+                world.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        world.setJour(1);
+
+        Loup l = new Loup(cx, cy, world);
+        l.energie = 200;                                  // affamé → SEARCH
+        world.loups.add(l); world.agents.add(l); world.uniqueDynamicObjects.add(l);
+
+        // État post-chasse simulé : dernière proie connue à l'EST, piste expirée,
+        // spirale marquée « à ré-amorcer » (comme le fait HUNT), cap courant à l'OUEST.
+        l.lastPreyX = cx + 8; l.lastPreyY = cy; l.pursuitTrackTtl = 0;
+        l.mem.spiralHeading = -1;
+        l._orient = 3;                                    // Ouest (périmé)
+
+        agents.ai.Percept p = agents.ai.Perception.sense(l, world, null, world.moutons);
+        assertFalse(p.preyVisible(), "aucune proie en vue → SEARCH");
+        l.applyState(AgentState.SEARCH, p);
+
+        assertEquals(1, l._orient,
+                "la spirale doit s'amorcer vers la dernière proie connue (Est), pas le cap périmé (Ouest)");
+    }
+
+    /**
+     * SEEK_LAND « commit » : un loup au MILIEU d'un bras d'eau, avec une côte EN VUE
+     * droit devant, doit TERMINER sa traversée au lieu de rebrousser vers la rive la
+     * plus proche (souvent celle qu'il vient de quitter) → anti-oscillation au littoral.
+     */
+    @Test
+    void loupTermineSaTraverseeAuLieuDeRebrousser() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int x = 0; x < world.getWidth(); x++)
+            for (int y = 0; y < world.getHeight(); y++) {
+                // Bande d'eau verticale x∈[25,27] ; terre ailleurs.
+                world.setCellHeight(x, y, (x >= 25 && x <= 27) ? -1.0 : 1.0);
+                world.setForestCAValue(x, y, 0);
+            }
+        world.setJour(1);
+
+        Loup l = new Loup(cx, cy, world);          // DANS l'eau (x=25), rive Ouest à x=24 (proche)
+        l.energie = l.energieD;                    // repu : pas enChasse → SEEK_LAND pur
+        l._orient = 1;                             // Est = vers la rive lointaine (x=28, en vue)
+        world.loups.add(l); world.agents.add(l); world.uniqueDynamicObjects.add(l);
+
+        agents.ai.Percept p = agents.ai.Perception.sense(l, world, null, null);
+        assertEquals(AgentState.SEEK_LAND, l.decideState(p), "dans l'eau → SEEK_LAND");
+        l.applyState(AgentState.SEEK_LAND, p);
+        assertEquals(1, l._orient,
+                "côte en vue à l'Est → le loup continue (commit), il ne rebrousse pas vers l'Ouest plus proche");
+    }
+
+    /**
+     * Intégration (anti-oscillation cross-tick) : un loup en recherche, cap biaisé
+     * vers l'autre rive, doit TRAVERSER une rivière étroite (SEARCH plonge → SEEK_LAND
+     * « commit » termine la traversée) et finir de l'AUTRE CÔTÉ, au lieu d'osciller au
+     * bord de l'eau. C'est le scénario où l'ancienne bascule SEARCH↔SEEK_LAND coinçait.
+     */
+    @Test
+    void loupTraverseUneRiviereEnRecherche() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        for (int x = 0; x < world.getWidth(); x++)
+            for (int y = 0; y < world.getHeight(); y++) {
+                world.setCellHeight(x, y, (x == 27 || x == 28) ? -1.0 : 1.0);  // rivière 2 cases
+                world.setForestCAValue(x, y, 0);
+            }
+        world.setJour(1);
+
+        Loup l = new Loup(25, 25, world);          // rive Ouest
+        l.energie = 200;                           // affamé → SEARCH
+        l.lastPreyX = 35; l.lastPreyY = 25;        // souvenir à l'Est → spirale amorcée vers l'Est
+        l.mem.spiralHeading = -1;
+        world.loups.add(l); world.agents.add(l); world.uniqueDynamicObjects.add(l);
+
+        boolean crossed = false;
+        for (int i = 0; i < 80 && !crossed; i++) {
+            l.energie = 200;
+            l.step();
+            if (l.x >= 29) crossed = true;         // a atteint la rive Est (au-delà de la rivière)
+        }
+        assertTrue(crossed,
+                "le loup doit traverser la rivière étroite vers la rive Est, pas osciller au bord");
+    }
+
+    /**
+     * Contournement de la recherche : face à de l'eau « vers le large » (aucune côte
+     * en vue droit devant), le loup LONGE (décalage latéral) ; face à un BRAS d'eau
+     * étroit (côte en vue), il TRAVERSE (garde le cap). Même `steerAroundObstacles`
+     * que pour un mur d'arbres.
+     */
+    @Test
+    void loupRechercheLongeLeLargeMaisTraverseUnBras() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int dx = -12; dx <= 12; dx++)
+            for (int dy = -12; dy <= 12; dy++) {
+                world.setCellHeight(cx + dx, cy + dy, 1.0);
+                world.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        Loup l = new Loup(cx, cy, world);
+        world.loups.add(l); world.agents.add(l); world.uniqueDynamicObjects.add(l);
+
+        // (a) « Vers le large » : toute la ligne Est dans la vision = eau → pas de côte.
+        for (int r = 1; r <= l.vision; r++) world.setCellHeight(cx + r, cy, -1.0);
+        l._orient = 1;
+        agents.ai.Percept pa = agents.ai.Perception.sense(l, world, null, null);
+        l.steerAroundObstacles(pa, true, l.vision);
+        assertTrue(l._orient == 0 || l._orient == 2,
+                "eau vers le large à l'Est → le loup LONGE (Nord/Sud), il ne plonge pas vers le large");
+
+        // (b) Bras étroit : eau à cx+1..cx+2, côte à cx+3 (en vue) → il TRAVERSE.
+        for (int dx = -12; dx <= 12; dx++)
+            for (int dy = -12; dy <= 12; dy++) world.setCellHeight(cx + dx, cy + dy, 1.0);
+        world.setCellHeight(cx + 1, cy, -1.0);
+        world.setCellHeight(cx + 2, cy, -1.0);   // côte ferme à cx+3
+        l._orient = 1;
+        agents.ai.Percept pb = agents.ai.Perception.sense(l, world, null, null);
+        l.steerAroundObstacles(pb, true, l.vision);
+        assertEquals(1, l._orient, "bras d'eau étroit avec côte en vue → le loup TRAVERSE (garde le cap Est)");
+    }
+
+    /**
+     * SEEK_LAND du MOUTON après une fuite : un mouton sorti dans l'eau pour échapper à
+     * un loup ne doit pas regagner la rive du PRÉDATEUR. S'il a un danger mémorisé à
+     * l'Ouest et une rive en vue à l'Est, il vise l'Est (loin du danger), pas la rive
+     * Ouest plus proche.
+     */
+    @Test
+    void moutonEnFuiteNeRegagnePasLaRiveDuPredateur() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int x = 0; x < world.getWidth(); x++)
+            for (int y = 0; y < world.getHeight(); y++) {
+                world.setCellHeight(x, y, (x >= 24 && x <= 27) ? -1.0 : 1.0);   // rivière x∈[24,27]
+                world.setForestCAValue(x, y, 0);
+            }
+        world.setJour(1);
+
+        Mouton m = new Mouton(cx, cy, world);      // dans l'eau ; rive Ouest x=23 (proche), Est x=28 (en vue)
+        m.energie = m.energieMAX;
+        m._orient = 1;
+        world.moutons.add(m); world.agents.add(m); world.uniqueDynamicObjects.add(m);
+        // Danger mémorisé à l'OUEST (là où était le loup) — aucun prédateur visible ici.
+        m.memory.remember(agents.ai.MemoryKind.DANGER, 20, cy);
+
+        agents.ai.Percept p = agents.ai.Perception.sense(m, world, world.loups, null);
+        assertEquals(AgentState.SEEK_LAND, m.decideState(p), "dans l'eau, sans prédateur visible → SEEK_LAND");
+        m.applyState(AgentState.SEEK_LAND, p);
+        assertEquals(1, m._orient,
+                "fuite : viser la rive Est (loin du danger mémorisé à l'Ouest), pas la rive Ouest plus proche");
+    }
+
+    /**
+     * Traque (BFS borné à la vision) : chemin dégagé → pas direct ; arbre entre le
+     * loup et la proie → contournement latéral (le loup ne fonce plus dans l'arbre).
+     */
+    @Test
+    void loupContourneVersLaProieAvecBFS() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dy = -2; dy <= 2; dy++) {
+                world.setCellHeight(cx + dx, cy + dy, 1.0);
+                world.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        Loup l = new Loup(cx, cy, world);
+        world.loups.add(l); world.agents.add(l); world.uniqueDynamicObjects.add(l);
+
+        // Chemin dégagé vers une proie 2 cases à l'est → premier pas = est (1).
+        assertEquals(1, l.bfsStepToward(cx + 2, cy, l.vision, true),
+                "Chemin dégagé → pas direct vers l'est.");
+
+        // Arbre PILE à l'est, proie derrière → contournement latéral (nord ou sud),
+        // jamais dans l'arbre (est) ni à l'opposé (ouest).
+        world.setForestCAValue(cx + 1, cy, 1);
+        int dir = l.bfsStepToward(cx + 2, cy, l.vision, true);
+        assertTrue(dir == 0 || dir == 2,
+                "Arbre devant la proie → contournement latéral (nord/sud).");
+    }
+
+    /**
+     * Évitement en FUITE (dodgeObstacles) : contourne un arbre droit devant, et
+     * respecte la contrainte d'eau selon {@code waterPassable} (un amphibie plonge,
+     * un craintif de l'eau dévie).
+     */
+    @Test
+    void fuiteContourneObstacleEtRespecteEau() {
+        WorldOfCells world = AgentTestSupport.buildWorld();
+        int cx = 25, cy = 25;
+        for (int dx = -2; dx <= 2; dx++)
+            for (int dy = -2; dy <= 2; dy++) {
+                world.setCellHeight(cx + dx, cy + dy, 1.0);
+                world.setForestCAValue(cx + dx, cy + dy, 0);
+            }
+        Loup l = new Loup(cx, cy, world);
+        world.loups.add(l); world.agents.add(l); world.uniqueDynamicObjects.add(l);
+
+        // (a) Arbre PILE à l'est → contournement latéral (sud).
+        world.setForestCAValue(cx + 1, cy, 1);
+        l._orient = 1;
+        l.dodgeObstacles(true);
+        assertEquals(2, l._orient, "Arbre devant en fuite → décalage latéral (sud).");
+
+        // (b) Eau à l'est, eau INTERDITE → dévie (ne plonge pas).
+        world.setForestCAValue(cx + 1, cy, 0);
+        world.setCellHeight(cx + 1, cy, -1.0);
+        l._orient = 1;
+        l.dodgeObstacles(false);
+        assertEquals(2, l._orient, "Eau interdite devant → dévie latéralement (reste à terre).");
+
+        // (c) Même eau, eau PERMISE (amphibie) → fuit tout droit dans l'eau.
+        l._orient = 1;
+        l.dodgeObstacles(true);
+        assertEquals(1, l._orient, "Eau permise → fuit tout droit dans l'eau.");
     }
 
     /**

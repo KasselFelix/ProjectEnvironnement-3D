@@ -46,8 +46,11 @@ public class Loup extends Agent {
 		if (y2 < 0) y2 += myWorld.getHeight();
 
 		float altitude = l.computeAgentAltitude(myWorld, l.x, l.y, normalizeHeight);
-		float px = offset + x2 * stepX;
-		float py = offset + y2 * stepY;
+		// Planté sur le SOMMET de terrain (coin de cellule) dont l'altitude est lue,
+		// pas au centre du quad — sinon décalage d'une demi-cellule → l'agent
+		// s'enfonce dans le sol en pente (même cause que les jeunes arbres, cf. Tree).
+		float px = offset + x2 * stepX - lenX;
+		float py = offset + y2 * stepY - lenY;
 		// prédateur : plus grand que le mouton, × taille individuelle (§ 10.2).
 		float scale = Math.abs(lenX) * 2.0f * (float) l.displaySize();
 
@@ -387,10 +390,12 @@ public class Loup extends Agent {
 
 	public AgentState decideState(Percept p) {
 		boolean enChasse = energie < energieD * HUNGER_RATIO || attaqueNuit == 1;
+		if (!enChasse) resetPursuit();        // plus en chasse → on oublie la piste
 		if (isOnFire())                       return AgentState.ON_FIRE;
 		if (p.lavaVisible())                  return AgentState.FLEE_LAVA;       // L2 — la lave tue au contact
 		if (p.predatorVisible())              return AgentState.FLEE_PREDATOR;  // fuit l'Humain (prime sur la faim)
-		if (enChasse && p.preyVisible())      return AgentState.HUNT;
+		if (enChasse && p.preyVisible())      return AgentState.HUNT;            // proie en vue (prioritaire)
+		if (enChasse && hasFreshTrack())      return AgentState.HUNT;            // proie perdue de vue mais piste fraîche → persistance
 		if (p.inWater)                        return AgentState.SEEK_LAND;
 		if (enChasse)                         return AgentState.SEARCH;   // balayage spirale
 		if (energie >= energieD)              return AgentState.REST;     // repu plein → repos
@@ -403,62 +408,114 @@ public class Loup extends Agent {
 				// fuit vers l'eau si vue, sinon continue tout droit (pas de demi-tour)
 				if (p.waterDir >= 0) _orient = p.waterDir;
 				vitesse = vcourse;
-				return MoveConstraints.amphibious();
+				return dodgeObstacles(true);   // contourne les arbres ; l'eau est l'objectif
 			case FLEE_LAVA:
 				// L2 — fuit à l'opposé de la lave, au sprint. Le loup nage bien
 				// (amphibie) : il peut couper par l'eau pour s'éloigner.
 				if (p.lavaDir >= 0) _orient = AgentState.opposite(p.lavaDir);
 				vitesse = vcourse;
-				return MoveConstraints.amphibious();
+				return dodgeObstacles(true);   // contourne arbres/lave en fuyant
 			case FLEE_PREDATOR:
 				// Fuit à l'opposé de l'Humain. Le loup nage bien (swimFactor élevé)
 				// → amphibie, pas besoin d'éviter l'eau comme le mouton.
 				_orient = AgentState.opposite(p.predatorDir);
 				vitesse = vcourse;
-				return MoveConstraints.amphibious();
-			case HUNT:
-				_orient = p.preyDir;
+				return dodgeObstacles(true);   // contourne les obstacles en fuyant
+			case HUNT: {
 				// Affamé (< HUNGER_RATIO) → SPRINT (vcourse) pour rattraper et tuer.
 				// Repu (chasse seulement parce que c'est la nuit, attaqueNuit) →
 				// simple TROT (vtrot) : il effraie/disperse le troupeau sans se
 				// vider en énergie. Comme vtrot(8) < vcourse mouton(9), le loup
 				// repu ne rattrape pas — il ne fait qu'effrayer, ce qui est voulu.
 				vitesse = (energie < energieD * HUNGER_RATIO) ? vcourse : vtrot;
+				// Case visée : proie EN VUE → sa case (met à jour la piste) ; HORS DE
+				// VUE → persistance vers la dernière position connue (case « fantôme »).
+				int[] aim = p.preyVisible() ? pursuitSeen(p) : pursuitGhost();
+				// Marque la spirale « à ré-amorcer » : au sortir de cette chasse, la
+				// recherche repartira vers la dernière position connue de la proie
+				// (seedSpiralTowardMemory) au lieu d'un cap périmé d'avant-chasse.
+				mem.spiralHeading = -1;
+				int dir = Perception.dirToCell(this, world, aim[0], aim[1]);
+				if (dir < 0) dir = (p.preyDir >= 0) ? p.preyDir : _orient;  // déjà sur la case / cas limite
+				// Si le pas direct vers la cible est bloqué (arbre, etc.), on
+				// CONTOURNE via un BFS borné à la vision au lieu de buter dessus.
+				if (aim[0] >= 0 && headingKind(dir, p, true, vision) < 0) {
+					int bfs = bfsStepToward(aim[0], aim[1], vision, true);
+					if (bfs >= 0) dir = bfs;
+				}
+				_orient = dir;
 				return MoveConstraints.amphibious();   // ralenti dans l'eau par swimFactor (postMove)
+			}
 			case SEEK_LAND:
-				// va vers la terre si vue, sinon continue tout droit jusqu'à la percevoir
-				if (p.landDir >= 0) _orient = p.landDir;
+				// COMMIT : si une côte est en vue DROIT DEVANT (cap actuel), on TERMINE
+				// la traversée au lieu de rebrousser vers la terre la plus proche (souvent
+				// la rive qu'on vient de quitter) → anti-oscillation au littoral pendant
+				// une traversée délibérée. Sinon (pas de côte devant : chute accidentelle
+				// en eau profonde), on vise la terre la plus proche.
+				if (!waterCrossable(_orient, vision)) {
+					if (p.landDir >= 0) _orient = p.landDir;
+				}
 				vitesse = vcourse;   // ralenti dans l'eau par swimFactor (postMove)
-				return MoveConstraints.amphibious();
+				return dodgeObstacles(true);   // contourne les arbres vers la terre
 			case REST:
 				// Repu (énergie pleine) : repos sur place (économie d'énergie).
 				wantsToMove = false;
 				return MoveConstraints.landBound();
 			case SEARCH:
-				// L1 — d'abord retourner vers une zone de chasse mémorisée (homing) ;
-				// à défaut, balayage en spirale aveugle.
-				if (!huntHoming()) spiralSearch();
-				return MoveConstraints.landBound();
+				// L1 — d'abord rejoindre une zone de chasse mémorisée (homing À TERRE :
+				// il ne rallie que s'il PROGRESSE vers elle, sinon il rend la main à la
+				// spirale — cf. huntHoming, cause racine du gel littoral/forêt). Sinon,
+				// balayage en SPIRALE : spiralSearch avance le CAP VOULU, followSpiralHeading
+				// le suit, le repli de Locomotion gère les obstacles. Tout est landBound :
+				// l'eau est un obstacle → aucune entrée dans l'eau → pas de bascule SEEK_LAND.
+				if (huntHoming(p)) return MoveConstraints.landBound();
+				seedSpiralTowardMemory(vision);   // biais mémoire : 1re branche vers la dernière proie / zone connue
+				spiralSearch(vision);
+				vitesse = vtrot;
+				_orient = mem.spiralHeading;       // cap voulu de la spirale
+				// Contournement intelligent : longe les obstacles (eau « vers le large »
+				// ET murs d'arbres), mais TRAVERSE un bras d'eau si la côte est en vue
+				// droit devant (allowSwim=true → headingKind/waterCrossable). Le cap de
+				// spirale (mem.spiralHeading) est conservé : la déviation n'est que locale.
+				return steerAroundObstacles(p, true, vision);
 			case WANDER:
 			default:
 				lazyWander();
-				return MoveConstraints.landBound();
+				// Anti-obstacle aussi en errance (sans nager : un loup repu ne
+				// traverse pas l'eau pour flâner → allowSwim=false).
+				return steerAroundObstacles(p, false, vision);
 		}
 	}
 
 	/**
 	 * Homing vers la zone de chasse mémorisée la plus proche (§ 5, L1). Renvoie
-	 * true (et oriente le loup vers elle, au trot) si une zone HUNTING est connue
-	 * et que le loup n'y est pas déjà ; false sinon (→ retombe sur la spirale).
-	 * Une fois sur place, on laisse la spirale balayer les environs au cas où la
-	 * proie a bougé.
+	 * true (et oriente le loup vers elle, au trot) UNIQUEMENT s'il existe un pas
+	 * <b>à terre</b> qui RAPPROCHE réellement de la zone ; false sinon (→ retombe
+	 * sur la spirale, qui ratisse les environs au cas où la proie a bougé).
+	 *
+	 * <p><b>Cause racine du gel en SEARCH (corrigé 2026-06-07).</b> L'ancienne
+	 * version gardait le cap vers la zone à chaque tick et renvoyait toujours
+	 * {@code true}, même quand la zone était INATTEIGNABLE (derrière un bras d'eau
+	 * ou un mur d'arbres hors d'atteinte en vision). Conséquences observées :
+	 * <ul>
+	 *   <li>à terre : le loup battait le pied de l'obstacle (BFS « case atteignable
+	 *       la plus proche » oscillant entre deux cases) — la spirale ne tournait
+	 *       jamais ;</li>
+	 *   <li>au littoral : le BFS était amphibie → pas DANS l'eau, puis {@code
+	 *       decideState} renvoyait {@code SEEK_LAND} (sort de l'eau), puis re-homing
+	 *       (re-rentre) → oscillation avance/recule au bord de l'eau.</li>
+	 * </ul>
+	 * Le correctif : (1) BFS et franchissement <b>à terre</b> (l'eau est un
+	 * obstacle, comme la spirale) ; (2) on ne rallie QUE si le pas choisi diminue
+	 * strictement la distance tore à la zone — sinon on renonce et on rend la main
+	 * à la spirale. Le loup longe donc l'obstacle vers la zone tant qu'il progresse,
+	 * et ratisse dès qu'il est bloqué, au lieu de rester figé.</p>
 	 */
-	private boolean huntHoming() {
-		int[] zone = memory.nearest(MemoryKind.HUNTING, x, y,
-				(a, b, c, d) -> world.distance(a, b, c, d));
-		if (zone == null) return false;
-		if (zone[0] == x && zone[1] == y) return false;   // déjà sur la zone → balayer
-		int dir = Perception.dirToCell(this, world, zone[0], zone[1]);
+	private boolean huntHoming(Percept p) {
+		// Ralliement à terre AVEC garde-fou de progrès (Agent.huntHomingDir →
+		// homingStepToward) : -1 si la zone est murée/inatteignable → on rend la main
+		// à la spirale au lieu d'osciller au pied de l'obstacle (cause racine du gel).
+		int dir = huntHomingDir(p, vision);
 		if (dir < 0) return false;
 		_orient = dir;
 		vitesse = vtrot;
@@ -481,31 +538,14 @@ public class Loup extends Agent {
 	}
 
 	/**
-	 * Recherche active de proie : balayage en spirale (à {@code vtrot}), efficace
-	 * pour couvrir du terrain. Déclenchée quand le loup est affamé ou chasse de
-	 * nuit sans proie en vue. Mécanique de spirale portée par {@code mem}.
-	 */
-	private void spiralSearch() {
-		if (mem.spiralStep == mem.spiralPeriod) {
-			_orient = (_orient + 1) % 4;
-			mem.spiralPeriod += vision / 2;
-			mem.spiralStep = 0;
-		} else {
-			mem.spiralStep++;
-		}
-		vitesse = vtrot;
-	}
-
-	/**
 	 * Flânerie économe (à {@code vpas}) quand le loup est repu : ~20% du temps il
 	 * tourne légèrement et marque une pause (ne se déplace pas ce tick), sinon il
 	 * continue tout droit. Préserve le comportement legacy « 2.2 » et limite la
 	 * dépense d'énergie au repos. Réinitialise la spirale pour que la prochaine
-	 * recherche reparte d'une spirale serrée.
+	 * recherche reparte du centre (spirale fraîche).
 	 */
 	private void lazyWander() {
-		mem.spiralStep = 0;
-		mem.spiralPeriod = 1;
+		mem.resetSpiral();
 		// L1 — cohésion de meute : un loup repu NON solitaire dérive vers le
 		// barycentre des congénères visibles (la meute reste groupée hors chasse).
 		if (packCohesion()) return;
