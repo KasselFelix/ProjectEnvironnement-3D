@@ -315,8 +315,9 @@ public abstract class World {
 	public void setBaseWindForce(double f)   { this.baseWindForce = f; }
 	public void setWindVariability(double v) { this.windVariability = v; }
 	public void setWindSeed(long s)          { this.windRng.setSeed(s); }
-	/** TEST-only : fixe direction + force du vent directement (package-private). */
-	void setWindVector(double dirRad, double force) {
+	/** TEST-only : fixe direction + force du vent directement (utilisé par les tests
+	 *  worlds ET cellularautomata, d'où la visibilité publique). */
+	public void setWindVector(double dirRad, double force) {
 		this.windDirRad = dirRad; this.windForce = Math.max(0, Math.min(WIND_FORCE_MAX, force));
 	}
 	public double getWindDirRad() { return windDirRad; }
