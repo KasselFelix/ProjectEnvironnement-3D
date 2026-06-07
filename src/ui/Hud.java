@@ -84,14 +84,17 @@ public class Hud {
     /** Durée de vie d'une notification, en ticks de simulation (V6). */
     private static final int NOTIF_TTL = 120;
 
-    /** Secteurs cardinaux indexes par round(dirRad / (PI/4)) & 7. */
-    private static final String[] WIND_DIRS = {"E","NE","N","NO","O","SO","S","SE"};
+    /** Secteurs cardinaux indexes par round(dirRad / (PI/4)) & 7. L'axe Y est
+     *  rendu inverse a l'ecran (grille +Y = bas = Sud), donc +Y (idx 2) = "S" et
+     *  -Y (idx 6) = "N" : la boussole colle a ce que voit le joueur. L'axe E/O
+     *  (X) n'est pas inverse. */
+    private static final String[] WIND_DIRS = {"E","SE","S","SO","O","NO","N","NE"};
 
     /**
-     * Convertit la direction du vent (radians, 0=Est, CCW) et sa force (m/s)
-     * en libelle ASCII pour le HUD. Ex: "Vent:NO 3m/s". NB : dirRad est la
-     * direction VERS laquelle souffle le vent (convention du modele), pas la
-     * provenance de la convention meteo classique.
+     * Convertit la direction du vent (radians, 0=Est, CCW math) et sa force (m/s)
+     * en libelle ASCII oriente ECRAN pour le HUD. Ex: "Vent:NO 3m/s". NB : dirRad
+     * est la direction VERS laquelle souffle le vent (convention du modele), pas
+     * la provenance de la convention meteo classique.
      */
     private static String windLabel(double dirRad, double force) {
         int idx = (int) Math.round(dirRad / (Math.PI / 4)) & 7;
