@@ -120,6 +120,17 @@ public class InGameMenu {
                 .withHelp("Berger garde le troupeau / Chasseur traque les loups"));
         paramRows.add(intRow("Saison (jours)",    () -> config.seasonLengthDays, v -> config.seasonLengthDays = v, 0, 30, 1)
                 .withHelp("Duree d'une saison en jours-jeu ; 0 = ete perpetuel"));
+        paramRows.add(new Row("Vent actif",
+                () -> config.windEnabled ? "Oui" : "Non",
+                () -> config.windEnabled = false,
+                () -> config.windEnabled = true)
+                .withHelp("Active ou desactive le vent (propagation feu, graines)"));
+        paramRows.add(doubleRow("Force vent",       () -> config.baseWindForce,
+                v -> config.baseWindForce = v, 0.0, 25.0, 1.0, "%.1f")
+                .withHelp("Force de base du vent en m/s"));
+        paramRows.add(doubleRow("Variabilite vent", () -> config.windVariability,
+                v -> config.windVariability = v, 0.0, 3.0, 0.25, "%.2f")
+                .withHelp("Amplitude des rafales (0 = vent constant)"));
         paramRows.add(intRow("Simulation Hz",     () -> config.simulationHz,   v -> config.simulationHz   = v, 10, 60, 5));
         paramRows.add(intRow("Distance de vue",   () -> config.viewDistanceCells, v -> config.viewDistanceCells = v, 10, 200, 5));
         paramRows.add(new Row("HUD degats",

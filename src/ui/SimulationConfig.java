@@ -139,6 +139,14 @@ public class SimulationConfig {
      *  (lave qui refroidit coule plus lentement). Bas = lave épaisse, haut = lave fluide. */
     public float  lavaViscosity        = 2.0f;
 
+    // ───── Vent (2026-06-07) ───────────────────────────────────────────────
+    /** Vent actif (true par defaut). */
+    public boolean windEnabled     = true;
+    /** Force de base du vent en m/s. */
+    public double  baseWindForce   = 5.0;
+    /** Amplitude des rafales (variabilite). */
+    public double  windVariability = 1.0;
+
     // ───── Drapeaux UI ─────────────────────────────────────────────────────
     /** true tant que l'utilisateur n'a pas cliqué Start dans le menu de lancement. */
     public boolean awaitingStart = true;

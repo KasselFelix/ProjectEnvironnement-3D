@@ -103,6 +103,16 @@ public class LaunchMenu {
         rows.add(intRow("Saison (jours-jeu)", () -> config.seasonLengthDays,
                 v -> config.seasonLengthDays = v, 0, 30, 1));
 
+        rows.add(new Section("VENT"));
+        rows.add(new Row("Vent actif",
+                () -> config.windEnabled ? "Oui" : "Non",
+                () -> config.windEnabled = false,
+                () -> config.windEnabled = true));
+        rows.add(doubleRow("Force vent",       () -> config.baseWindForce,
+                v -> config.baseWindForce = v, 0.0, 25.0, 1.0, "%.1f"));
+        rows.add(doubleRow("Variabilite vent", () -> config.windVariability,
+                v -> config.windVariability = v, 0.0, 3.0, 0.25, "%.2f"));
+
         rows.add(new Section("FORET"));
         rows.add(doubleRow("Densite initiale",   () -> config.forestDensite,
                 v -> config.forestDensite = v, 0.0, 1.0, 0.05, "%.2f"));
