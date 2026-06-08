@@ -575,6 +575,27 @@ public class Loup extends Agent {
 		return true;
 	}
 
+	/** Diffuse le hurlement (omnidirectionnel) : chaque loup vivant à portée
+	 *  HOWL_RADIUS mémorise la zone de chasse, bruitée selon SON propre sens
+	 *  d'orientation (noisyLocation). Seuls les loups AFFAMÉS adoptent une balise et
+	 *  partiront (LOCALISATION) ; en cas de balise déjà présente, on rebascule vers la
+	 *  plus proche. Comme l'alerte du troupeau : seul l'émetteur diffuse (pas de cascade). */
+	void broadcastHowl() {
+		for (Loup l : world.loups) {
+			if (l == this || !l._alive) continue;
+			if (world.distance(l.x, l.y, x, y) > HOWL_RADIUS) continue;
+			int[] pos = l.noisyLocation(x, y, l.genome.orientationErrorProb(), HOWL_NOISE_MAX, EVO_RNG);
+			l.memory.remember(MemoryKind.HUNTING, pos[0], pos[1]);
+			if (l.energie < l.energieD * HUNGER_RATIO) {        // affamé → se déplace
+				if (!l.hasHowlTarget()
+						|| world.distance(l.x, l.y, pos[0], pos[1])
+						   < world.distance(l.x, l.y, l.howlTargetX, l.howlTargetY)) {
+					l.howlTargetX = pos[0]; l.howlTargetY = pos[1];
+				}
+			}
+		}
+	}
+
 	/**
 	 * Flânerie économe (à {@code vpas}) quand le loup est repu : ~20% du temps il
 	 * tourne légèrement et marque une pause (ne se déplace pas ce tick), sinon il

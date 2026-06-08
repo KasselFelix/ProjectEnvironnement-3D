@@ -1,10 +1,12 @@
 package agents;
 
 import agents.ai.AgentState;
+import agents.ai.Axis;
 import agents.ai.Genome;
 import agents.ai.MemoryKind;
 import agents.ai.Percept;
 import agents.ai.Perception;
+import agents.ai.Pole;
 import org.junit.jupiter.api.Test;
 import worlds.WorldOfCells;
 
@@ -86,5 +88,64 @@ class HurlementTest {
         Percept p = Perception.sense(l, w, l.predators(), l.prey());   // aucune proie en vue
         assertFalse(p.preyVisible());
         assertEquals(AgentState.LOCALISATION, l.decideState(p), "affame + balise => localisation");
+    }
+
+    @Test
+    void hurlementMemoriseChezLesLoupsAPorteeSeulement() {
+        WorldOfCells w = flatWorld();
+        int saved = Loup.HOWL_RADIUS;
+        try {
+            Loup.HOWL_RADIUS = 8;                          // petit rayon pour distinguer dedans/dehors
+            Loup howler = new Loup(25, 25, w); w.loups.add(howler);
+            Loup near   = new Loup(30, 25, w); w.loups.add(near);  near.energie = 1;   // dist 5 <= 8, affamé
+            Loup far    = new Loup(25, 40, w); w.loups.add(far);   far.energie = 1;    // dist 15 > 8
+            near.genome.set(Axis.ORIENTATION, Pole.POSITIVE);            // BON SENS → exact
+
+            howler.broadcastHowl();
+
+            assertTrue(near.memory.contains(MemoryKind.HUNTING, 25, 25),
+                    "loup a portee + bon sens => memorise la position EXACTE du hurleur");
+            assertTrue(near.howlTargetX == 25 && near.howlTargetY == 25,
+                    "loup affame a portee => adopte la balise");
+            assertEquals(0, far.memory.size(), "loup hors rayon => rien");
+            assertFalse(far.howlTargetX >= 0, "loup hors rayon => pas de balise");
+        } finally {
+            Loup.HOWL_RADIUS = saved;
+        }
+    }
+
+    @Test
+    void loupRepuMemoriseMaisNeRalliePas() {
+        WorldOfCells w = flatWorld();
+        int saved = Loup.HOWL_RADIUS;
+        try {
+            Loup.HOWL_RADIUS = 8;
+            Loup howler = new Loup(25, 25, w); w.loups.add(howler);
+            Loup repu   = new Loup(30, 25, w); w.loups.add(repu);
+            repu.energie = repu.energieD;                  // repu → ne se déplace pas
+            repu.genome.set(Axis.ORIENTATION, Pole.POSITIVE);
+            howler.broadcastHowl();
+            assertTrue(repu.memory.contains(MemoryKind.HUNTING, 25, 25), "repu memorise quand meme");
+            assertFalse(repu.howlTargetX >= 0, "repu ne prend pas de balise (ne court pas)");
+        } finally {
+            Loup.HOWL_RADIUS = saved;
+        }
+    }
+
+    @Test
+    void baliseRebasculeVersLeHurleurLePlusProche() {
+        WorldOfCells w = flatWorld();
+        int savedR = Loup.HOWL_RADIUS, savedN = Loup.HOWL_NOISE_MAX;
+        try {
+            Loup.HOWL_RADIUS = 30; Loup.HOWL_NOISE_MAX = 0;   // pas de bruit → positions exactes
+            Loup seeker = new Loup(25, 25, w); w.loups.add(seeker); seeker.energie = 1;  // affamé
+            seeker.howlTargetX = 25; seeker.howlTargetY = 45;  // balise actuelle LOINTAINE (dist 20)
+            Loup closeHowler = new Loup(25, 30, w); w.loups.add(closeHowler);  // dist 5 du seeker
+            closeHowler.broadcastHowl();
+            assertEquals(25, seeker.howlTargetX);
+            assertEquals(30, seeker.howlTargetY, "rebascule vers le hurleur le plus proche (5 < 20)");
+        } finally {
+            Loup.HOWL_RADIUS = savedR; Loup.HOWL_NOISE_MAX = savedN;
+        }
     }
 }
