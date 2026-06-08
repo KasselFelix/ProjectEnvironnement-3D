@@ -582,7 +582,10 @@ public class Agent extends UniqueDynamicObject{
 	 *  d'une proie à une case d'eau, ou changer de proie). Une proie MOBILE ne bouge
 	 *  que de ~1 case/tick (< seuil) → le suivi n'est pas réinitialisé à tort. */
 	protected int lastAimX = -1, lastAimY = -1;
-	/** Saut de cible (cases) au-delà duquel on considère un CHANGEMENT DE BUT → reset. */
+	/** Saut de cible (cases) au-delà duquel on considère un CHANGEMENT DE BUT → reset.
+	 *  NB : suppose LEAD_PURSUIT=false. Si l'interception est réactivée, la cible
+	 *  anticipée peut sauter de LEAD_FACTOR×2=6 cases quand la proie inverse sa
+	 *  direction → reset intempestif en pleine poursuite (acceptable mais sous-optimal). */
 	private static final double AIM_JUMP_RESET = 3.0;
 	/** Seuil de ticks sans rapprochement au-delà duquel l'agent se considère PIÉGÉ et
 	 *  replanifie sur un horizon élargi (sans lâcher sa cible). Calibré à 6 par
