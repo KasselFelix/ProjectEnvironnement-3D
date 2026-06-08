@@ -604,6 +604,20 @@ public class Agent extends UniqueDynamicObject{
 		return Math.min(HUNT_ESCAPE_VISION, (Math.min(world.getWidth(), world.getHeight()) - 1) / 2);
 	}
 
+	/** Bruite une POSITION (et non un cap) selon l'aptitude d'orientation : décalage
+	 *  de magnitude aléatoire dans [0, errProb·maxOffset] cases, direction aléatoire,
+	 *  tore-aware. errProb=0 (bon sens) → position EXACTE. Sert au hurlement de meute :
+	 *  un bon orientateur localise mieux la source du cri (avantage évolutif). */
+	protected int[] noisyLocation(int bx, int by, double errProb, double maxOffset, java.util.Random rng) {
+		if (errProb <= 0.0) return new int[]{bx, by};
+		double mag = rng.nextDouble() * errProb * maxOffset;
+		double ang = rng.nextDouble() * 2.0 * Math.PI;
+		int W = world.getWidth(), H = world.getHeight();
+		int nx = (((int) Math.round(bx + Math.cos(ang) * mag)) % W + W) % W;
+		int ny = (((int) Math.round(by + Math.sin(ang) * mag)) % H + H) % H;
+		return new int[]{nx, ny};
+	}
+
 	/** Case d'eau (altitude &lt; 0) la plus proche dans un disque de rayon {@code radius}
 	 *  autour de l'agent (tore), ou {@code {-1,-1}} si aucune. Sert de cible à la fuite
 	 *  ON_FIRE (rejoindre l'eau qui éteint le feu). Scrute SEULEMENT quand l'agent brûle. */
