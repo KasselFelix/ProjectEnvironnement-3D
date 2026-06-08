@@ -20,8 +20,10 @@ class FleeDangerTrapTest {
         WorldOfCells w = AgentTestSupport.buildWorld();
         int W = w.getWidth(), H = w.getHeight();
         for (int x = 0; x < W; x++) for (int y = 0; y < H; y++) { w.setCellHeight(x, y, 0.5); w.setForestCAValue(x, y, 0); }
-        // Mur d'arbres COURT entre le mouton et l'eau (concavité modérée, contournable
-        // dans le champ de vision — c'est là que l'anti-revisite évite de dithérer).
+        // Mur d'arbres COURT entre le mouton et l'eau : le chemin direct (nord) est
+        // bloqué, il faut contourner par un bout du mur. C'est exactement le cas où
+        // dodgeObstacles peut osciller (N→E→N…) faute de mémoire, et où l'anti-revisite
+        // de steerAroundObstacles fait progresser proprement vers l'eau.
         for (int x = cx - 3; x <= cx + 3; x++) w.setForestCAValue(x, cy - 2, 1);
         // Bassin d'EAU au NORD, derrière le mur court (le mouton doit contourner par un
         // bout du mur pour l'atteindre).
