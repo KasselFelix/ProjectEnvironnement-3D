@@ -117,13 +117,14 @@ public class Ours extends Agent {
     public MoveConstraints applyState(AgentState s, Percept p) {
         switch (s) {
             case ON_FIRE:
+                // anti-revisite : atteint l'eau sans dithérer dans une concavité.
                 if (p.waterDir >= 0) _orient = p.waterDir;
                 vitesse = vcourse;
-                return dodgeObstacles(true);   // contourne les arbres ; l'eau est l'objectif
+                return steerAroundObstacles(p, true, vision);   // contourne (anti-revisite) vers l'eau
             case FLEE_LAVA:
                 if (p.lavaDir >= 0) _orient = AgentState.opposite(p.lavaDir);
                 vitesse = vcourse;
-                return dodgeObstacles(true);   // contourne arbres/lave en fuyant
+                return steerAroundObstacles(p, true, vision);   // contourne arbres/lave (anti-revisite) en fuyant
             case HUNT: {
                 vitesse = vcourse;
                 // Proie EN VUE → sa case (met à jour la piste) ; HORS DE VUE →

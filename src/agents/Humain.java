@@ -99,13 +99,13 @@ public class Humain extends Agent {
 		if (s == agents.ai.AgentState.ON_FIRE) {
 			vitesse = vcourse;              // panique : sprint
 			if (p.waterDir >= 0) _orient = p.waterDir;
-			return dodgeObstacles(true);    // contourne les arbres ; l'eau éteint le feu
+			return steerAroundObstacles(p, true, vision);   // contourne (anti-revisite) vers l'eau
 		}
 		if (s == agents.ai.AgentState.FLEE_LAVA) {
 			// L2 — fuit à l'opposé de la lave la plus proche, à terre (eau interdite).
 			vitesse = vcourse;              // panique : sprint
 			if (p.lavaDir >= 0) _orient = agents.ai.AgentState.opposite(p.lavaDir);
-			return dodgeObstacles(false);   // contourne arbres/lave, reste à terre
+			return steerAroundObstacles(p, false, vision);  // contourne arbres/lave (anti-revisite), reste à terre
 		}
 		if (s == agents.ai.AgentState.HUNT) {
 			// L3 — fonce VERS le loup le plus proche (cap = predatorDir, pas son

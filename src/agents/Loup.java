@@ -417,16 +417,17 @@ public class Loup extends Agent {
 	public MoveConstraints applyState(AgentState s, Percept p) {
 		switch (s) {
 			case ON_FIRE:
-				// fuit vers l'eau si vue, sinon continue tout droit (pas de demi-tour)
+				// fuit vers l'eau si vue, sinon continue tout droit. steerAroundObstacles
+				// (anti-revisite) → atteint l'eau sans dithérer dans une concavité.
 				if (p.waterDir >= 0) _orient = p.waterDir;
 				vitesse = vcourse;
-				return dodgeObstacles(true);   // contourne les arbres ; l'eau est l'objectif
+				return steerAroundObstacles(p, true, vision);   // contourne (anti-revisite) vers l'eau
 			case FLEE_LAVA:
 				// L2 — fuit à l'opposé de la lave, au sprint. Le loup nage bien
 				// (amphibie) : il peut couper par l'eau pour s'éloigner.
 				if (p.lavaDir >= 0) _orient = AgentState.opposite(p.lavaDir);
 				vitesse = vcourse;
-				return dodgeObstacles(true);   // contourne arbres/lave en fuyant
+				return steerAroundObstacles(p, true, vision);   // contourne arbres/lave (anti-revisite) en fuyant
 			case FLEE_PREDATOR:
 				// Fuit à l'opposé de l'Humain. Le loup nage bien (swimFactor élevé)
 				// → amphibie, pas besoin d'éviter l'eau comme le mouton.

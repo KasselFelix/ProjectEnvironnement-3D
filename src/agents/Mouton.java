@@ -588,18 +588,20 @@ public class Mouton extends Agent {
 				vitesse = vmarche;
 				return MoveConstraints.landBound();
 			case ON_FIRE:
-				// fuit vers l'eau si vue, sinon continue tout droit (pas de demi-tour)
+				// fuit vers l'eau si vue, sinon continue tout droit (pas de demi-tour).
+				// steerAroundObstacles (anti-revisite) : ne dithère pas dans une
+				// concavité → atteint l'eau plus fiablement qu'un dodge réactif.
 				if (p.waterDir >= 0) _orient = p.waterDir;
 				vitesse = vcourse;
-				return dodgeObstacles(true);     // contourne les arbres ; l'eau éteint le feu
+				return steerAroundObstacles(p, true, vision);   // contourne (anti-revisite) vers l'eau qui éteint le feu
 			case FLEE_LAVA:
 				// L2 — fuit à l'opposé de la lave la plus proche, au sprint. Le
-				// mouton craint l'eau : il reste à terre — il contourne les arbres
-				// SANS jamais plonger (waterPassable=false).
+				// mouton craint l'eau : il reste à terre (allowSwim=false). Anti-revisite
+				// → il longe proprement la lave/les arbres sans se piéger dans une poche.
 				if (p.lavaDir >= 0) _orient = AgentState.opposite(p.lavaDir);
 				fuite = 1;                       // supprime le Broute pendant la fuite
 				vitesse = vcourse;
-				return dodgeObstacles(false);    // contourne arbres/lave, eau interdite
+				return steerAroundObstacles(p, false, vision);  // contourne arbres/lave (anti-revisite), eau interdite
 			case FLEE_PREDATOR:
 				if (p.predatorVisible()) {
 					// Voit le loup : fuit à l'opposé (en évitant l'eau si possible),
