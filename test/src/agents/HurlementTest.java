@@ -156,18 +156,28 @@ class HurlementTest {
         try {
             Loup.HOWL_RADIUS = 8; Loup.HOWL_DURATION = 3;
             Loup howler = new Loup(25, 25, w); w.loups.add(howler);
-            Mouton prey = new Mouton(27, 25, w); w.moutons.add(prey);
-            howler.energie = howler.energieD;     // repu
-            Loup near = new Loup(30, 25, w); w.loups.add(near); near.energie = 1;  // affame a portee
+            Mouton prey = new Mouton(27, 25, w); w.moutons.add(prey);   // proie en vue → déclenche le hurlement
+            Loup near = new Loup(30, 25, w); w.loups.add(near); near.energie = 1;  // affamé à portée
 
             int sx = howler.x, sy = howler.y;
-            for (int t = 0; t < 30; t++) { w.setIteration(t); howler.step(); }
-
-            assertEquals(sx, howler.x); assertEquals(sy, howler.y, "le hurleur reste sur place");
+            boolean howledThenStopped = false;
+            for (int t = 0; t < 300; t++) {
+                howler.energie = howler.energieD;   // repu et PLEIN : après le hurlement il REST (stationnaire), ne WANDER pas
+                near.energie = 1;                   // reste affamé pour recevoir/garder la balise
+                w.setIteration(t);
+                howler.step();
+                // le hurleur ne bouge JAMAIS (balise fixe pendant le hurlement, REST ensuite)
+                assertEquals(sx, howler.x, "le hurleur reste sur place (x)");
+                assertEquals(sy, howler.y, "le hurleur reste sur place (y)");
+                // une fois le hurlement terminé, il n'est plus en HOWL (cooldown actif)
+                if (near.howlTargetX >= 0 && howler.decideState(
+                        Perception.sense(howler, w, howler.predators(), howler.prey())) != AgentState.HOWL) {
+                    howledThenStopped = true;
+                    break;
+                }
+            }
             assertTrue(near.howlTargetX >= 0, "un loup affame a portee a recu la balise");
-            // Apres HOWL_DURATION tours, le hurlement cesse -> cooldown actif (plus en HOWL).
-            assertNotEquals(AgentState.HOWL, howler.decideState(Perception.sense(howler, w, howler.predators(), howler.prey())),
-                    "apres la duree : en cooldown, ne re-hurle pas immediatement");
+            assertTrue(howledThenStopped, "apres HOWL_DURATION tours : plus en HOWL (cooldown), et toujours immobile");
         } finally {
             Loup.HOWL_RADIUS = savedR; Loup.HOWL_DURATION = savedD;
         }

@@ -502,8 +502,7 @@ public class Loup extends Agent {
 				return dodgeObstacles(true);   // contourne les arbres vers la terre
 			case HOWL: {
 				if (howlDurationLeft <= 0) howlDurationLeft = HOWL_DURATION;   // debut du hurlement
-				// vitesse inchangee (ne pas accelerer : isMyTurn cadence le nombre de
-				// diffusions ; trop rapide → l'agent depasse sa duree et entre en WANDER)
+				vitesse = vpas;               // cadence de diffusion stable et indépendante de l'état précédent (le hurleur ne se déplace pas)
 				wantsToMove = false;          // BALISE FIXE : reste sur place
 				broadcastHowl();              // diffuse a chaque tour (capte ceux qui entrent a portee)
 				howlDurationLeft--;
