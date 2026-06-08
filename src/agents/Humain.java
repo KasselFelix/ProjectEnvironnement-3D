@@ -98,8 +98,12 @@ public class Humain extends Agent {
 		vitesse = vpas;
 		if (s == agents.ai.AgentState.ON_FIRE) {
 			vitesse = vcourse;              // panique : sprint
+			// Rejoint la case d'EAU la plus proche (éteint le feu) avec sortie garantie
+			// des pièges concaves (pursuitStep). Fallback steer si aucune eau à portée.
+			int[] water = nearestWaterCell(escapeRadius());
+			if (water[0] >= 0) return pursuitStep(p, water, vision);
 			if (p.waterDir >= 0) _orient = p.waterDir;
-			return steerAroundObstacles(p, true, vision);   // contourne (anti-revisite) vers l'eau
+			return steerAroundObstacles(p, true, vision);
 		}
 		if (s == agents.ai.AgentState.FLEE_LAVA) {
 			// L2 — fuit à l'opposé de la lave la plus proche, à terre (eau interdite).

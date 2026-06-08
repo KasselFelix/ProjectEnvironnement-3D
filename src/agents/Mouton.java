@@ -587,13 +587,16 @@ public class Mouton extends Agent {
 				wantsToMove = false;
 				vitesse = vmarche;
 				return MoveConstraints.landBound();
-			case ON_FIRE:
-				// fuit vers l'eau si vue, sinon continue tout droit (pas de demi-tour).
-				// steerAroundObstacles (anti-revisite) : ne dithère pas dans une
-				// concavité → atteint l'eau plus fiablement qu'un dodge réactif.
-				if (p.waterDir >= 0) _orient = p.waterDir;
+			case ON_FIRE: {
+				// Rejoint la case d'EAU la plus proche (l'eau éteint le feu) avec sortie
+				// GARANTIE des pièges concaves : pursuitStep (direct → BFS vision →
+				// replanif élargie si bloqué dans un U). Fallback steer si aucune eau à portée.
 				vitesse = vcourse;
-				return steerAroundObstacles(p, true, vision);   // contourne (anti-revisite) vers l'eau qui éteint le feu
+				int[] water = nearestWaterCell(escapeRadius());
+				if (water[0] >= 0) return pursuitStep(p, water, vision);
+				if (p.waterDir >= 0) _orient = p.waterDir;
+				return steerAroundObstacles(p, true, vision);
+			}
 			case FLEE_LAVA:
 				// L2 — fuit à l'opposé de la lave la plus proche, au sprint. Le
 				// mouton craint l'eau : il reste à terre (allowSwim=false). Anti-revisite

@@ -116,11 +116,15 @@ public class Ours extends Agent {
     @Override
     public MoveConstraints applyState(AgentState s, Percept p) {
         switch (s) {
-            case ON_FIRE:
-                // anti-revisite : atteint l'eau sans dithérer dans une concavité.
-                if (p.waterDir >= 0) _orient = p.waterDir;
+            case ON_FIRE: {
+                // Rejoint la case d'EAU la plus proche (éteint le feu) avec sortie garantie
+                // des pièges concaves (pursuitStep). Fallback steer si aucune eau à portée.
                 vitesse = vcourse;
-                return steerAroundObstacles(p, true, vision);   // contourne (anti-revisite) vers l'eau
+                int[] water = nearestWaterCell(escapeRadius());
+                if (water[0] >= 0) return pursuitStep(p, water, vision);
+                if (p.waterDir >= 0) _orient = p.waterDir;
+                return steerAroundObstacles(p, true, vision);
+            }
             case FLEE_LAVA:
                 if (p.lavaDir >= 0) _orient = AgentState.opposite(p.lavaDir);
                 vitesse = vcourse;

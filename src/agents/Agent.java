@@ -572,25 +572,50 @@ public class Agent extends UniqueDynamicObject{
 	/** Ticks de persistance restants (>0 ⇒ piste fraîche). */
 	protected int pursuitTrackTtl = 0;
 
-	/** Détection de blocage en HUNT (piège concave/U) : meilleure distance à la
-	 *  cible atteinte dans la poursuite courante (record), et nb de ticks consécutifs
-	 *  sans battre ce record. Le BFS de traque vise la case la plus proche de la
-	 *  proie ; dans une poche en U dont l'issue sort de la vision, ce record plafonne
-	 *  → on le détecte pour basculer en évasion (longe-mur). */
+	/** Détection de blocage pour un déplacement DIRIGÉ vers une case (chasse vers une
+	 *  proie OU fuite ON_FIRE vers l'eau) : meilleure distance à la cible atteinte
+	 *  (record) et nb de ticks consécutifs sans battre ce record. Dans une poche en U
+	 *  dont l'issue sort de la vision, le record plafonne → on bascule en évasion. */
 	protected double huntBestDist = Double.MAX_VALUE;
 	protected int huntStuck = 0;
-	/** Seuil de ticks sans rapprochement au-delà duquel le prédateur se considère
-	 *  PIÉGÉ et longe l'obstacle pour s'extraire (sans lâcher la traque). COURT : il
-	 *  doit rattraper sa proie après un blocage bref (un arbre) tout en réagissant
-	 *  vite à un vrai piège en U. Valeur calibrée par expérience (LoupTrapBench).
-	 *  Calibré à 6 par expérience : le plateau naturel d'un détour LÉGITIME autour
-	 *  d'un petit obstacle mesure ~5 ticks, donc 6 est le plus court seuil qui réagit
-	 *  aux vrais pièges concaves SANS déclencher la replanification élargie sur un
-	 *  contournement ordinaire. Sortie d'un U ≈ 96 ticks. Non-final : ajustable. */
+	/** Dernière case visée (pour réinitialiser le record quand le BUT change : passer
+	 *  d'une proie à une case d'eau, ou changer de proie). Une proie MOBILE ne bouge
+	 *  que de ~1 case/tick (< seuil) → le suivi n'est pas réinitialisé à tort. */
+	protected int lastAimX = -1, lastAimY = -1;
+	/** Saut de cible (cases) au-delà duquel on considère un CHANGEMENT DE BUT → reset. */
+	private static final double AIM_JUMP_RESET = 3.0;
+	/** Seuil de ticks sans rapprochement au-delà duquel l'agent se considère PIÉGÉ et
+	 *  replanifie sur un horizon élargi (sans lâcher sa cible). Calibré à 6 par
+	 *  expérience : le plateau naturel d'un détour LÉGITIME autour d'un petit obstacle
+	 *  mesure ~5 ticks, donc 6 est le plus court seuil qui réagit aux vrais pièges
+	 *  concaves SANS déclencher la replanification sur un contournement ordinaire.
+	 *  Sortie d'un U ≈ 96 ticks. Non-final : ajustable. */
 	protected static int HUNT_STUCK_LIMIT = 6;
-	/** Rayon de planification ÉLARGI utilisé pour s'extraire d'un piège (BFS de
-	 *  contournement quand bloqué). Borné (garde-fou CPU) ; ≈ 3× la vision. */
+	/** Rayon de planification ÉLARGI pour s'extraire d'un piège (BFS de contournement
+	 *  quand bloqué) ET portée de recherche d'eau en ON_FIRE. Borné (garde-fou CPU). */
 	protected static final int HUNT_ESCAPE_VISION = 30;
+
+	/** Rayon d'évasion effectif : borné pour que la fenêtre BFS (2·r+1) ne dépasse pas
+	 *  la plus petite dimension du monde (sinon repli torique → double-comptage). */
+	protected int escapeRadius() {
+		return Math.min(HUNT_ESCAPE_VISION, (Math.min(world.getWidth(), world.getHeight()) - 1) / 2);
+	}
+
+	/** Case d'eau (altitude &lt; 0) la plus proche dans un disque de rayon {@code radius}
+	 *  autour de l'agent (tore), ou {@code {-1,-1}} si aucune. Sert de cible à la fuite
+	 *  ON_FIRE (rejoindre l'eau qui éteint le feu). Scrute SEULEMENT quand l'agent brûle. */
+	protected int[] nearestWaterCell(int radius) {
+		int W = world.getWidth(), H = world.getHeight();
+		int bx = -1, by = -1; double best = Double.MAX_VALUE;
+		for (int dx = -radius; dx <= radius; dx++)
+			for (int dy = -radius; dy <= radius; dy++) {
+				int wx = ((x + dx) % W + W) % W, wy = ((y + dy) % H + H) % H;
+				double d = world.distance(x, y, wx, wy);
+				if (d > radius || d >= best) continue;
+				if (world.getCellHeight(wx, wy) < 0) { best = d; bx = wx; by = wy; }
+			}
+		return new int[]{bx, by};
+	}
 
 	/** Proie EN VUE : met à jour la piste (dernière position + recharge la
 	 *  persistance) et renvoie la CASE VISÉE — la case de la proie, ou une case
@@ -623,12 +648,13 @@ public class Agent extends UniqueDynamicObject{
 	/** Oublie la piste (à appeler quand le prédateur cesse de chasser). */
 	protected void resetPursuit() {
 		pursuitTrackTtl = 0; lastPreyX = -1; lastPreyY = -1;
-		huntBestDist = Double.MAX_VALUE; huntStuck = 0;   // réinitialise la détection de blocage
+		huntBestDist = Double.MAX_VALUE; huntStuck = 0; lastAimX = -1; lastAimY = -1;
 	}
 
 	/**
-	 * Un pas de TRAQUE vers la case {@code aim} (proie vue ou « fantôme »), PARTAGÉ
-	 * par Loup et Ours (parité). Trois niveaux :
+	 * Un pas de déplacement DIRIGÉ vers la case {@code aim}, avec garantie de sortie
+	 * des pièges concaves. Utilisé pour la TRAQUE (Loup/Ours vers une proie) ET la
+	 * fuite ON_FIRE (tous les agents vers la case d'eau la plus proche). Trois niveaux :
 	 * <ol>
 	 *   <li>pas direct vers la cible si libre ;</li>
 	 *   <li>sinon BFS de contournement borné à la vision (petits obstacles) ;</li>
@@ -640,6 +666,14 @@ public class Agent extends UniqueDynamicObject{
 	 * Met à jour {@code _orient} ; renvoie les contraintes de déplacement (amphibie).
 	 */
 	protected agents.ai.MoveConstraints pursuitStep(agents.ai.Percept p, int[] aim, int vision) {
+		// Changement de BUT (nouvelle proie, ou proie → case d'eau en ON_FIRE) : on
+		// repart d'un record neuf. Une cible MOBILE bouge de ~1 case/tick (< seuil) →
+		// pas de reset à tort sur une poursuite continue.
+		if (aim[0] >= 0 && (lastAimX < 0 || world.distance(aim[0], aim[1], lastAimX, lastAimY) > AIM_JUMP_RESET)) {
+			huntBestDist = Double.MAX_VALUE; huntStuck = 0;
+		}
+		if (aim[0] >= 0) { lastAimX = aim[0]; lastAimY = aim[1]; }
+
 		// Suivi du record de rapprochement (gate « meilleur que jamais », robuste à
 		// l'oscillation — cf. homingStepToward).
 		double dAim = (aim[0] >= 0) ? world.distance(x, y, aim[0], aim[1]) : Double.MAX_VALUE;
@@ -651,13 +685,10 @@ public class Agent extends UniqueDynamicObject{
 		// trouver le VRAI chemin de contournement (le 1er pas peut s'éloigner de la
 		// proie — sortir par l'ouverture). Coûteux mais calculé SEULEMENT quand bloqué.
 		if (huntStuck >= HUNT_STUCK_LIMIT && aim[0] >= 0) {
-			// Rayon élargi, MAIS borné pour que la fenêtre (2·r+1) ne dépasse pas la
-			// plus petite dimension du monde — sinon le BFS replie sur le tore et
-			// double-compte des cellules. (min(W,H)-1)/2 ⇒ fenêtre ≤ monde ; couvre la
-			// demi-distance torique (= distance max), donc tout piège franchissable.
-			int worldCap = (Math.min(world.getWidth(), world.getHeight()) - 1) / 2;
-			int escapeR = Math.min(HUNT_ESCAPE_VISION, worldCap);
-			int bfs = bfsStepToward(aim[0], aim[1], escapeR, true);
+			// Replanif sur un horizon élargi (borné par escapeRadius() pour éviter le
+			// repli torique) → trouve le vrai chemin de contournement (1er pas pouvant
+			// s'éloigner de la cible pour sortir par l'ouverture).
+			int bfs = bfsStepToward(aim[0], aim[1], escapeRadius(), true);
 			if (bfs >= 0) { _orient = bfs; return agents.ai.MoveConstraints.amphibious(); }
 			// Cible vraiment inatteignable (murée) : longe-mur en dernier recours.
 			int d = agents.ai.Perception.dirToCell(this, world, aim[0], aim[1]);
