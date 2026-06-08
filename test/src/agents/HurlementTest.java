@@ -148,4 +148,28 @@ class HurlementTest {
             Loup.HOWL_RADIUS = savedR; Loup.HOWL_NOISE_MAX = savedN;
         }
     }
+
+    @Test
+    void leHurleurResteSurPlaceDiffuseEtPasseEnCooldown() {
+        WorldOfCells w = flatWorld();
+        int savedR = Loup.HOWL_RADIUS, savedD = Loup.HOWL_DURATION;
+        try {
+            Loup.HOWL_RADIUS = 8; Loup.HOWL_DURATION = 3;
+            Loup howler = new Loup(25, 25, w); w.loups.add(howler);
+            Mouton prey = new Mouton(27, 25, w); w.moutons.add(prey);
+            howler.energie = howler.energieD;     // repu
+            Loup near = new Loup(30, 25, w); w.loups.add(near); near.energie = 1;  // affame a portee
+
+            int sx = howler.x, sy = howler.y;
+            for (int t = 0; t < 30; t++) { w.setIteration(t); howler.step(); }
+
+            assertEquals(sx, howler.x); assertEquals(sy, howler.y, "le hurleur reste sur place");
+            assertTrue(near.howlTargetX >= 0, "un loup affame a portee a recu la balise");
+            // Apres HOWL_DURATION tours, le hurlement cesse -> cooldown actif (plus en HOWL).
+            assertNotEquals(AgentState.HOWL, howler.decideState(Perception.sense(howler, w, howler.predators(), howler.prey())),
+                    "apres la duree : en cooldown, ne re-hurle pas immediatement");
+        } finally {
+            Loup.HOWL_RADIUS = savedR; Loup.HOWL_DURATION = savedD;
+        }
+    }
 }

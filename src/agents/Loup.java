@@ -156,6 +156,8 @@ public class Loup extends Agent {
 			case HUNT:      return "Chasse";
 			case SEARCH:    return "Cherche proie";
 			case SEEK_LAND: return "Cherche terre";
+			case HOWL:         return "Hurle";
+			case LOCALISATION: return "Rallie le cri";
 			default:        return attaqueNuit == 1 ? "Rode (nuit)" : "Errance";
 		}
 	}
@@ -372,6 +374,9 @@ public class Loup extends Agent {
 
 		// L1 — entraînement cérébral (§ 6.2) + émergence du caractère de meute (§ 7).
 		trainMindAndCharacter();
+
+		// Cooldown du hurlement : décrémenté à chaque tick (pas gated par isMyTurn).
+		if (howlCooldown > 0) howlCooldown--;
 	}
 
 	/** Rayon (cases) en deçà duquel un congénère « rompt » l'isolement de meute (§ 7.3). */
@@ -495,6 +500,16 @@ public class Loup extends Agent {
 				}
 				vitesse = vcourse;   // ralenti dans l'eau par swimFactor (postMove)
 				return dodgeObstacles(true);   // contourne les arbres vers la terre
+			case HOWL: {
+				if (howlDurationLeft <= 0) howlDurationLeft = HOWL_DURATION;   // debut du hurlement
+				// vitesse inchangee (ne pas accelerer : isMyTurn cadence le nombre de
+				// diffusions ; trop rapide → l'agent depasse sa duree et entre en WANDER)
+				wantsToMove = false;          // BALISE FIXE : reste sur place
+				broadcastHowl();              // diffuse a chaque tour (capte ceux qui entrent a portee)
+				howlDurationLeft--;
+				if (howlDurationLeft <= 0) howlCooldown = HOWL_COOLDOWN;       // fin -> cooldown
+				return MoveConstraints.landBound();
+			}
 			case REST:
 				// Repu (énergie pleine) : repos sur place (économie d'énergie).
 				wantsToMove = false;
