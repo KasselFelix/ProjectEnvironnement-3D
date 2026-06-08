@@ -530,6 +530,20 @@ public class Loup extends Agent {
 				// droit devant (allowSwim=true → headingKind/waterCrossable). Le cap de
 				// spirale (mem.spiralHeading) est conservé : la déviation n'est que locale.
 				return steerAroundObstacles(p, true, vision);
+			case LOCALISATION: {
+				vitesse = vcourse;
+				// Arrivée sur la balise : zone atteinte (déjà en mémoire HUNTING) → relâche la
+				// balise ; la recherche normale (spirale biaisée mémoire) ratisse la zone.
+				if (world.distance(x, y, howlTargetX, howlTargetY) <= 1.0) {
+					clearHowlTarget();
+					return MoveConstraints.landBound();
+				}
+				// Fonce vers la balise en contournant les obstacles de façon fiable.
+				MoveConstraints c = pursuitStep(p, new int[]{howlTargetX, howlTargetY}, vision);
+				// Balise inaccessible (murée) : non-progrès prolongé → abandon → SEARCH.
+				if (huntStuck >= LOCALISATION_GIVEUP) clearHowlTarget();
+				return c;
+			}
 			case WANDER:
 			default:
 				lazyWander();

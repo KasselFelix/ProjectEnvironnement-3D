@@ -182,4 +182,55 @@ class HurlementTest {
             Loup.HOWL_RADIUS = savedR; Loup.HOWL_DURATION = savedD;
         }
     }
+
+    @Test
+    void loupAffameRallieLaBaliseAuCourse() {
+        WorldOfCells w = flatWorld();
+        Loup l = new Loup(10, 25, w); w.loups.add(l);
+        l.energie = 5;                       // affamé (reste affamé : refill ; > 2 pour canMove)
+        l.howlTargetX = 40; l.howlTargetY = 25;   // balise à l'EST
+        double d0 = w.distance(l.x, l.y, 40, 25);
+        for (int t = 0; t < 400; t++) {
+            l.energie = 5;                   // isole la navigation (affamé + peut bouger)
+            w.setIteration(t); l.step();
+            if (w.distance(l.x, l.y, 40, 25) <= 1.0) break;
+        }
+        assertTrue(w.distance(l.x, l.y, 40, 25) < d0, "le loup s'est rapproche de la balise");
+    }
+
+    @Test
+    void localisationAbandonneSiBaliseMuree() {
+        WorldOfCells w = flatWorld();
+        int saved = Loup.LOCALISATION_GIVEUP;
+        try {
+            Loup.LOCALISATION_GIVEUP = 20;   // abandon rapide pour le test
+            int cx = 25, cy = 25;
+            // mur d'arbres fermé (anneau) autour de la balise → inatteignable
+            for (int x = cx - 1; x <= cx + 1; x++) for (int y = cy - 1; y <= cy + 1; y++) w.setForestCAValue(x, y, 1);
+            w.setForestCAValue(cx, cy, 0);   // la balise est au centre, mais cernée d'arbres
+            Loup l = new Loup(cx - 6, cy, w); w.loups.add(l);
+            l.energie = 5; l.howlTargetX = cx; l.howlTargetY = cy;
+            boolean abandoned = false;
+            for (int t = 0; t < 600; t++) {
+                l.energie = 5; w.setIteration(t); l.step();
+                if (l.howlTargetX < 0) { abandoned = true; break; }
+            }
+            assertTrue(abandoned, "balise muree => le loup abandonne (clear) et repart en recherche");
+        } finally {
+            Loup.LOCALISATION_GIVEUP = saved;
+        }
+    }
+
+    @Test
+    void localisationBasculeEnHuntSiProieEnVue() {
+        WorldOfCells w = flatWorld();
+        Loup l = new Loup(25, 25, w); w.loups.add(l);
+        l.energie = 1;                       // affamé
+        l.howlTargetX = 45; l.howlTargetY = 25;   // a une balise
+        Mouton prey = new Mouton(27, 25, w); w.moutons.add(prey);   // proie en vue (dist 2)
+        Percept p = Perception.sense(l, w, l.predators(), l.prey());
+        assertTrue(p.preyVisible());
+        // proie en vue prime sur le ralliement : HUNT, pas LOCALISATION.
+        assertEquals(AgentState.HUNT, l.decideState(p), "proie en vue => HUNT (prime sur localisation)");
+    }
 }
