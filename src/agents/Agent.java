@@ -583,10 +583,10 @@ public class Agent extends UniqueDynamicObject{
 	 *  PIÉGÉ et longe l'obstacle pour s'extraire (sans lâcher la traque). COURT : il
 	 *  doit rattraper sa proie après un blocage bref (un arbre) tout en réagissant
 	 *  vite à un vrai piège en U. Valeur calibrée par expérience (LoupTrapBench).
-	 *  Calibré à 6 : le plateau naturel d'un détour LÉGITIME autour d'un petit
-	 *  obstacle mesure ~5 ticks (LoupCalibTest), donc 6 est le plus court seuil qui
-	 *  réagit aux vrais pièges concaves SANS déclencher la replanification élargie sur
-	 *  un contournement ordinaire. Sortie d'un U ≈ 96 ticks. Non-final : ajustable. */
+	 *  Calibré à 6 par expérience : le plateau naturel d'un détour LÉGITIME autour
+	 *  d'un petit obstacle mesure ~5 ticks, donc 6 est le plus court seuil qui réagit
+	 *  aux vrais pièges concaves SANS déclencher la replanification élargie sur un
+	 *  contournement ordinaire. Sortie d'un U ≈ 96 ticks. Non-final : ajustable. */
 	protected static int HUNT_STUCK_LIMIT = 6;
 	/** Rayon de planification ÉLARGI utilisé pour s'extraire d'un piège (BFS de
 	 *  contournement quand bloqué). Borné (garde-fou CPU) ; ≈ 3× la vision. */
@@ -651,7 +651,12 @@ public class Agent extends UniqueDynamicObject{
 		// trouver le VRAI chemin de contournement (le 1er pas peut s'éloigner de la
 		// proie — sortir par l'ouverture). Coûteux mais calculé SEULEMENT quand bloqué.
 		if (huntStuck >= HUNT_STUCK_LIMIT && aim[0] >= 0) {
-			int escapeR = Math.min(HUNT_ESCAPE_VISION, Math.max(world.getWidth(), world.getHeight()));
+			// Rayon élargi, MAIS borné pour que la fenêtre (2·r+1) ne dépasse pas la
+			// plus petite dimension du monde — sinon le BFS replie sur le tore et
+			// double-compte des cellules. (min(W,H)-1)/2 ⇒ fenêtre ≤ monde ; couvre la
+			// demi-distance torique (= distance max), donc tout piège franchissable.
+			int worldCap = (Math.min(world.getWidth(), world.getHeight()) - 1) / 2;
+			int escapeR = Math.min(HUNT_ESCAPE_VISION, worldCap);
 			int bfs = bfsStepToward(aim[0], aim[1], escapeR, true);
 			if (bfs >= 0) { _orient = bfs; return agents.ai.MoveConstraints.amphibious(); }
 			// Cible vraiment inatteignable (murée) : longe-mur en dernier recours.
