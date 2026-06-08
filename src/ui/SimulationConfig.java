@@ -53,6 +53,10 @@ public class SimulationConfig {
     /** Fraction de la vitesse terrestre conservée dans l'eau. Le loup nage bien
      *  (0.6) — bien mieux que le mouton. Plage utile [0.2, 1.0]. */
     public double loupSwimFactor  = 0.6;
+    /** Portée d'audition du hurlement de meute (cases, distance torique). Un loup
+     *  repu voyant une proie hurle ; les loups affamés dans ce rayon convergent.
+     *  Défaut 30 (~3× vision). Propagé sur Loup.HOWL_RADIUS via applyConfigToCAs. */
+    public int    howlRadius      = 30;
 
     // ───── Biologie Mouton (cf. Mouton.java) ───────────────────────────────
     public int    moutonVision      = 10;

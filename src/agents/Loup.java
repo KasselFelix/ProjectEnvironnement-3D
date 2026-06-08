@@ -102,8 +102,10 @@ public class Loup extends Agent {
 	public int lastY;
 
 	// ===== Meute : hurlement (HOWL) + ralliement (LOCALISATION) =====
-	/** Portée d'audition du hurlement (omnidirectionnelle). Non-final : calibrable. */
-	protected static int HOWL_RADIUS = 30;
+	/** Portée d'audition du hurlement (omnidirectionnelle), en cases. Non-final :
+	 *  pilotée par SimulationConfig.howlRadius (menu in-game / lancement) via
+	 *  WorldOfCells.applyConfigToCAs. public car écrite depuis le package worlds. */
+	public static int HOWL_RADIUS = 30;
 	/** Durée du hurlement, en TOURS d'agent (balise active). */
 	protected static int HOWL_DURATION = 6;
 	/** Délai (en TICKS) avant de pouvoir re-hurler (anti-spam). */

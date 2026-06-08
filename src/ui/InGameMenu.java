@@ -105,6 +105,8 @@ public class InGameMenu {
                 v -> config.loupPrepro = v, 0.0, 0.05, 0.0005, "%.4f"));
         paramRows.add(doubleRow("Age max loup",    () -> config.loupMaxAgeDays,
                 v -> config.loupMaxAgeDays = v, 0.0, 200.0, 1.0, "%.1f"));
+        paramRows.add(intRow("Portee cri loup",   () -> config.howlRadius, v -> config.howlRadius = v, 5, 80, 5)
+                .withHelp("Distance (cases) a laquelle un hurlement de meute est entendu"));
         paramRows.add(intRow("Vision mouton",     () -> config.moutonVision, v -> config.moutonVision = v, 1, 50, 1));
         paramRows.add(doubleRow("EnergieMax mouton", () -> config.moutonEnergieMax,
                 v -> config.moutonEnergieMax = v, 50.0, 5000.0, 50.0, "%.0f"));

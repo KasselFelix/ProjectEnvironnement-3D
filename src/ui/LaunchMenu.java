@@ -80,6 +80,7 @@ public class LaunchMenu {
                 v -> config.loupPrepro = v, 0.0, 0.05, 0.0005, "%.4f"));
         rows.add(doubleRow("Esperance vie (j)", () -> config.loupMaxAgeDays,
                 v -> config.loupMaxAgeDays = v, 0.0, 200.0, 1.0, "%.1f"));
+        rows.add(intRow("Portee cri",     () -> config.howlRadius, v -> config.howlRadius = v, 5, 80, 5));
 
         rows.add(new Section("BIOLOGIE - Mouton"));
         rows.add(intRow("Vision",         () -> config.moutonVision,        v -> config.moutonVision        = v, 1, 50, 1));

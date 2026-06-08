@@ -399,6 +399,7 @@ public class WorldOfCells extends World {
     	setWindEnabled(config.windEnabled);
     	setBaseWindForce(config.baseWindForce);
     	setWindVariability(config.windVariability);
+    	Loup.HOWL_RADIUS = Math.max(1, config.howlRadius);   // meute : portee du hurlement (etat global partage, comme le vent)
     	if (forestCA != null) {
     		forestCA.darbre = config.forestDensite;
     		forestCA.pA     = config.forestProbApparition;
