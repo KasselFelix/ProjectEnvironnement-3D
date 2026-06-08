@@ -101,6 +101,29 @@ public class Loup extends Agent {
 	public int lastX;
 	public int lastY;
 
+	// ===== Meute : hurlement (HOWL) + ralliement (LOCALISATION) =====
+	/** Portée d'audition du hurlement (omnidirectionnelle). Non-final : calibrable. */
+	protected static int HOWL_RADIUS = 30;
+	/** Durée du hurlement, en TOURS d'agent (balise active). */
+	protected static int HOWL_DURATION = 6;
+	/** Délai (en TICKS) avant de pouvoir re-hurler (anti-spam). */
+	protected static int HOWL_COOLDOWN = 30;
+	/** Flou max (cases) de la position mémorisée à errProb=1.0. */
+	protected static int HOWL_NOISE_MAX = 16;
+	/** Non-progrès (huntStuck) au-delà duquel on abandonne une balise murée → SEARCH. */
+	protected static int LOCALISATION_GIVEUP = 60;
+
+	/** Tours restants de hurlement (>0 = en train de hurler). */
+	private int howlDurationLeft = 0;
+	/** Ticks restants avant de pouvoir re-hurler. */
+	int howlCooldown = 0;
+	/** Balise entendue (position bruitée d'un hurlement), -1 = aucune. */
+	public int howlTargetX = -1, howlTargetY = -1;
+
+	private boolean howlReady()      { return howlCooldown == 0; }
+	private boolean hasHowlTarget()  { return howlTargetX >= 0; }
+	private void    clearHowlTarget(){ howlTargetX = -1; howlTargetY = -1; }
+
 	// Génome, cycle de vie (isFounder/currentStage/growthScale/displaySize) et
 	// taille héritable : factorisés dans Agent (consolidation C3).
 
@@ -401,17 +424,23 @@ public class Loup extends Agent {
 	}
 
 	public AgentState decideState(Percept p) {
-		boolean enChasse = energie < energieD * HUNGER_RATIO || attaqueNuit == 1;
+		boolean affame   = energie < energieD * HUNGER_RATIO;
+		boolean enChasse = affame || attaqueNuit == 1;
 		if (!enChasse) resetPursuit();        // plus en chasse → on oublie la piste
 		if (isOnFire())                       return AgentState.ON_FIRE;
 		if (p.lavaVisible())                  return AgentState.FLEE_LAVA;       // L2 — la lave tue au contact
 		if (p.predatorVisible())              return AgentState.FLEE_PREDATOR;  // fuit l'Humain (prime sur la faim)
-		if (enChasse && p.preyVisible())      return AgentState.HUNT;            // proie en vue (prioritaire)
-		if (enChasse && hasFreshTrack())      return AgentState.HUNT;            // proie perdue de vue mais piste fraîche → persistance
+		if (howlDurationLeft > 0 && !p.inWater) return AgentState.HOWL;           // hurlement en cours → jusqu'au bout (pas dans l'eau)
+		if (affame && p.preyVisible())        return AgentState.HUNT;            // affamé : chasse/tue en solo
+		if (!affame && p.preyVisible() && howlReady() && !p.inWater)
+		                                      return AgentState.HOWL;            // repu : hurle pour rallier la meute
+		if (enChasse && p.preyVisible())      return AgentState.HUNT;            // repu de nuit hors cooldown : effraie
+		if (enChasse && hasFreshTrack())      return AgentState.HUNT;            // persistance
 		if (p.inWater)                        return AgentState.SEEK_LAND;
-		if (enChasse)                         return AgentState.SEARCH;   // balayage spirale
-		if (energie >= energieD)              return AgentState.REST;     // repu plein → repos
-		return AgentState.WANDER;                                          // flânerie économe
+		if (affame && hasHowlTarget())        return AgentState.LOCALISATION;    // a entendu un hurlement
+		if (enChasse)                         return AgentState.SEARCH;          // balayage spirale
+		if (energie >= energieD)              return AgentState.REST;            // repu plein → repos
+		return AgentState.WANDER;                                                 // flânerie économe
 	}
 
 	public MoveConstraints applyState(AgentState s, Percept p) {

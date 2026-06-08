@@ -7,7 +7,7 @@ package agents.ai;
  * mouton affamé se dirige vers l'herbe la plus proche en vue (cf. Mouton).
  */
 public enum AgentState {
-    ON_FIRE, FLEE_LAVA, FLEE_PREDATOR, HUNT, SEARCH, EAT, SEEK_LAND, SEEK_WATER, SEEK_FOOD, FOLLOW_PARENT, HERD, HOME, REST, WANDER, CONTROLLED;
+    ON_FIRE, FLEE_LAVA, FLEE_PREDATOR, HUNT, HOWL, LOCALISATION, SEARCH, EAT, SEEK_LAND, SEEK_WATER, SEEK_FOOD, FOLLOW_PARENT, HERD, HOME, REST, WANDER, CONTROLLED;
 
     /** Orientation opposée (0↔2, 1↔3). -1 reste -1 (pas de cible). */
     public static int opposite(int dir) {

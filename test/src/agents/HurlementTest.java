@@ -42,4 +42,49 @@ class HurlementTest {
         }
         assertTrue(someOffset, "desoriente => au moins un tirage decale la position");
     }
+
+    /** Place une proie en vue et renvoie le percept du loup. */
+    private static Percept sensePrey(WorldOfCells w, Loup l) {
+        return Perception.sense(l, w, l.predators(), l.prey());
+    }
+
+    @Test
+    void loupRepuHurleEtAffameChasse() {
+        WorldOfCells w = flatWorld();
+        Loup l = new Loup(25, 25, w); w.loups.add(l);
+        Mouton prey = new Mouton(27, 25, w); w.moutons.add(prey);   // dist 2 <= vision 10
+        l.attaqueNuit = 0;
+        Percept p = sensePrey(w, l);
+        assertTrue(p.preyVisible(), "la proie doit etre visible");
+
+        l.energie = l.energieD;            // repu (>= HUNGER_RATIO*energieD), cooldown 0
+        l.howlCooldown = 0;
+        assertEquals(AgentState.HOWL, l.decideState(p), "repu + proie + pret => hurle");
+
+        l.energie = 1;                     // affamé
+        assertEquals(AgentState.HUNT, l.decideState(p), "affame + proie => chasse solo");
+    }
+
+    @Test
+    void loupRepuEnCooldownNeHurlePas() {
+        WorldOfCells w = flatWorld();
+        Loup l = new Loup(25, 25, w); w.loups.add(l);
+        Mouton prey = new Mouton(27, 25, w); w.moutons.add(prey);
+        l.attaqueNuit = 0;
+        l.energie = l.energieD;
+        l.howlCooldown = 5;                // en cooldown
+        AgentState s = l.decideState(sensePrey(w, l));
+        assertNotEquals(AgentState.HOWL, s, "en cooldown : pas de hurlement");
+    }
+
+    @Test
+    void loupAffameAvecBaliseVaEnLocalisation() {
+        WorldOfCells w = flatWorld();
+        Loup l = new Loup(25, 25, w); w.loups.add(l);
+        l.energie = 1;                     // affamé
+        l.howlTargetX = 40; l.howlTargetY = 25;
+        Percept p = Perception.sense(l, w, l.predators(), l.prey());   // aucune proie en vue
+        assertFalse(p.preyVisible());
+        assertEquals(AgentState.LOCALISATION, l.decideState(p), "affame + balise => localisation");
+    }
 }
