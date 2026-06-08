@@ -255,4 +255,26 @@ class HurlementTest {
         // proie en vue prime sur le ralliement : HUNT, pas LOCALISATION.
         assertEquals(AgentState.HUNT, l.decideState(p), "proie en vue => HUNT (prime sur localisation)");
     }
+
+    @Test
+    void boucleHurlementRalliement() {
+        WorldOfCells w = flatWorld();
+        Loup howler = new Loup(25, 25, w); w.loups.add(howler);
+        Mouton prey = new Mouton(26, 25, w); w.moutons.add(prey);   // proie en vue du hurleur
+        howler.energie = howler.energieD;     // repu → va hurler
+        Loup seeker = new Loup(25, 5, w); w.loups.add(seeker);      // affamé, à portée (dist 20 <= 30)
+        seeker.energie = 5;
+
+        double d0 = w.distance(seeker.x, seeker.y, howler.x, howler.y);
+        for (int t = 0; t < 300; t++) {
+            howler.energie = howler.energieD;   // reste repu (continue de pouvoir hurler)
+            seeker.energie = 5;                 // reste affamé (5 << 350) et > 2 (canMove)
+            w.setIteration(t);
+            howler.step();
+            seeker.step();
+            if (seeker.howlTargetX >= 0 && w.distance(seeker.x, seeker.y, howler.x, howler.y) < d0 - 3) break;
+        }
+        assertTrue(seeker.howlTargetX >= 0 || w.distance(seeker.x, seeker.y, howler.x, howler.y) < d0,
+                "le chercheur a entendu le hurlement et s'est rapproche");
+    }
 }
