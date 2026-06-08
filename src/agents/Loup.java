@@ -447,16 +447,9 @@ public class Loup extends Agent {
 				// recherche repartira vers la dernière position connue de la proie
 				// (seedSpiralTowardMemory) au lieu d'un cap périmé d'avant-chasse.
 				mem.spiralHeading = -1;
-				int dir = Perception.dirToCell(this, world, aim[0], aim[1]);
-				if (dir < 0) dir = (p.preyDir >= 0) ? p.preyDir : _orient;  // déjà sur la case / cas limite
-				// Si le pas direct vers la cible est bloqué (arbre, etc.), on
-				// CONTOURNE via un BFS borné à la vision au lieu de buter dessus.
-				if (aim[0] >= 0 && headingKind(dir, p, true, vision) < 0) {
-					int bfs = bfsStepToward(aim[0], aim[1], vision, true);
-					if (bfs >= 0) dir = bfs;
-				}
-				_orient = dir;
-				return MoveConstraints.amphibious();   // ralenti dans l'eau par swimFactor (postMove)
+				// Traque (pas direct → BFS contournement → évasion longe-mur si piégé
+				// dans une poche en U) : logique partagée avec l'Ours (Agent.pursuitStep).
+				return pursuitStep(p, aim, vision);   // ralenti dans l'eau par swimFactor (postMove)
 			}
 			case SEEK_LAND:
 				// COMMIT : si une côte est en vue DROIT DEVANT (cap actuel), on TERMINE

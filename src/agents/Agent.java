@@ -572,6 +572,26 @@ public class Agent extends UniqueDynamicObject{
 	/** Ticks de persistance restants (>0 ⇒ piste fraîche). */
 	protected int pursuitTrackTtl = 0;
 
+	/** Détection de blocage en HUNT (piège concave/U) : meilleure distance à la
+	 *  cible atteinte dans la poursuite courante (record), et nb de ticks consécutifs
+	 *  sans battre ce record. Le BFS de traque vise la case la plus proche de la
+	 *  proie ; dans une poche en U dont l'issue sort de la vision, ce record plafonne
+	 *  → on le détecte pour basculer en évasion (longe-mur). */
+	protected double huntBestDist = Double.MAX_VALUE;
+	protected int huntStuck = 0;
+	/** Seuil de ticks sans rapprochement au-delà duquel le prédateur se considère
+	 *  PIÉGÉ et longe l'obstacle pour s'extraire (sans lâcher la traque). COURT : il
+	 *  doit rattraper sa proie après un blocage bref (un arbre) tout en réagissant
+	 *  vite à un vrai piège en U. Valeur calibrée par expérience (LoupTrapBench).
+	 *  Calibré à 6 : le plateau naturel d'un détour LÉGITIME autour d'un petit
+	 *  obstacle mesure ~5 ticks (LoupCalibTest), donc 6 est le plus court seuil qui
+	 *  réagit aux vrais pièges concaves SANS déclencher la replanification élargie sur
+	 *  un contournement ordinaire. Sortie d'un U ≈ 96 ticks. Non-final : ajustable. */
+	protected static int HUNT_STUCK_LIMIT = 6;
+	/** Rayon de planification ÉLARGI utilisé pour s'extraire d'un piège (BFS de
+	 *  contournement quand bloqué). Borné (garde-fou CPU) ; ≈ 3× la vision. */
+	protected static final int HUNT_ESCAPE_VISION = 30;
+
 	/** Proie EN VUE : met à jour la piste (dernière position + recharge la
 	 *  persistance) et renvoie la CASE VISÉE — la case de la proie, ou une case
 	 *  anticipée si {@link #LEAD_PURSUIT} (interception). */
@@ -601,7 +621,55 @@ public class Agent extends UniqueDynamicObject{
 	}
 
 	/** Oublie la piste (à appeler quand le prédateur cesse de chasser). */
-	protected void resetPursuit() { pursuitTrackTtl = 0; lastPreyX = -1; lastPreyY = -1; }
+	protected void resetPursuit() {
+		pursuitTrackTtl = 0; lastPreyX = -1; lastPreyY = -1;
+		huntBestDist = Double.MAX_VALUE; huntStuck = 0;   // réinitialise la détection de blocage
+	}
+
+	/**
+	 * Un pas de TRAQUE vers la case {@code aim} (proie vue ou « fantôme »), PARTAGÉ
+	 * par Loup et Ours (parité). Trois niveaux :
+	 * <ol>
+	 *   <li>pas direct vers la cible si libre ;</li>
+	 *   <li>sinon BFS de contournement borné à la vision (petits obstacles) ;</li>
+	 *   <li>si la distance à la cible ne s'améliore pas depuis {@link #HUNT_STUCK_LIMIT}
+	 *       ticks (piège concave/U dont l'issue sort de la vision), ÉVASION : on longe
+	 *       l'obstacle ({@link #steerAroundObstacles}, anti-revisite) pour s'extraire de
+	 *       la poche sans abandonner la traque.</li>
+	 * </ol>
+	 * Met à jour {@code _orient} ; renvoie les contraintes de déplacement (amphibie).
+	 */
+	protected agents.ai.MoveConstraints pursuitStep(agents.ai.Percept p, int[] aim, int vision) {
+		// Suivi du record de rapprochement (gate « meilleur que jamais », robuste à
+		// l'oscillation — cf. homingStepToward).
+		double dAim = (aim[0] >= 0) ? world.distance(x, y, aim[0], aim[1]) : Double.MAX_VALUE;
+		if (dAim < huntBestDist) { huntBestDist = dAim; huntStuck = 0; }
+		else huntStuck++;
+
+		// PIÉGÉ (poche concave dont l'issue sort de la vision) : le BFS borné à la
+		// vision vise le fond de la poche. On replanifie sur un horizon ÉLARGI pour
+		// trouver le VRAI chemin de contournement (le 1er pas peut s'éloigner de la
+		// proie — sortir par l'ouverture). Coûteux mais calculé SEULEMENT quand bloqué.
+		if (huntStuck >= HUNT_STUCK_LIMIT && aim[0] >= 0) {
+			int escapeR = Math.min(HUNT_ESCAPE_VISION, Math.max(world.getWidth(), world.getHeight()));
+			int bfs = bfsStepToward(aim[0], aim[1], escapeR, true);
+			if (bfs >= 0) { _orient = bfs; return agents.ai.MoveConstraints.amphibious(); }
+			// Cible vraiment inatteignable (murée) : longe-mur en dernier recours.
+			int d = agents.ai.Perception.dirToCell(this, world, aim[0], aim[1]);
+			if (d >= 0) _orient = d;
+			return steerAroundObstacles(p, true, vision);
+		}
+
+		// Traque normale : pas direct, sinon BFS de contournement borné à la vision.
+		int dir = agents.ai.Perception.dirToCell(this, world, aim[0], aim[1]);
+		if (dir < 0) dir = (p.preyDir >= 0) ? p.preyDir : _orient;   // déjà sur la case / cas limite
+		if (aim[0] >= 0 && headingKind(dir, p, true, vision) < 0) {
+			int bfs = bfsStepToward(aim[0], aim[1], vision, true);
+			if (bfs >= 0) dir = bfs;
+		}
+		_orient = dir;
+		return agents.ai.MoveConstraints.amphibious();
+	}
 
 	/** Delta torique signé minimal de a vers b sur un axe de taille n. */
 	private int torusSignedDelta(int a, int b, int n) {

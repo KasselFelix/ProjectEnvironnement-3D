@@ -131,15 +131,9 @@ public class Ours extends Agent {
                 int[] aim = p.preyVisible() ? pursuitSeen(p) : pursuitGhost();
                 // Au sortir de la chasse, la recherche se ré-amorce vers la mémoire.
                 mem.spiralHeading = -1;
-                int dir = Perception.dirToCell(this, world, aim[0], aim[1]);
-                if (dir < 0) dir = (p.preyDir >= 0) ? p.preyDir : _orient;
-                // Contourne l'obstacle vers la cible si le pas direct est bloqué (BFS vision).
-                if (aim[0] >= 0 && headingKind(dir, p, true, vision) < 0) {
-                    int bfs = bfsStepToward(aim[0], aim[1], vision, true);
-                    if (bfs >= 0) dir = bfs;
-                }
-                _orient = dir;
-                return MoveConstraints.amphibious();
+                // Traque partagée avec le Loup (pas direct → BFS → évasion longe-mur si
+                // piégé dans un U) : Agent.pursuitStep, parité prédateurs.
+                return pursuitStep(p, aim, vision);
             }
             case SEEK_LAND:
                 // COMMIT : côte en vue droit devant → terminer la traversée
