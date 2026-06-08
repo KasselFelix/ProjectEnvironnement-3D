@@ -266,15 +266,26 @@ class HurlementTest {
         seeker.energie = 5;
 
         double d0 = w.distance(seeker.x, seeker.y, howler.x, howler.y);
+        // On exige les DEUX maillons de la chaîne, sinon le test serait tautologique : sur
+        // un tore, la spirale de recherche du chercheur refermerait seule l'écart de 20
+        // cases en ~60 ticks même si broadcastHowl était cassé (la distance baisserait sans
+        // qu'aucune balise n'ait été reçue). On latch donc explicitement (a) la réception
+        // d'une balise et (b) le rapprochement effectif PENDANT qu'une balise est active.
+        boolean baliseRecue = false;     // le hurlement a bien été diffusé et entendu
+        boolean rapproche   = false;     // le ralliement (LOCALISATION) a fait progresser
         for (int t = 0; t < 300; t++) {
             howler.energie = howler.energieD;   // reste repu (continue de pouvoir hurler)
             seeker.energie = 5;                 // reste affamé (5 << 350) et > 2 (canMove)
             w.setIteration(t);
             howler.step();
             seeker.step();
-            if (seeker.howlTargetX >= 0 && w.distance(seeker.x, seeker.y, howler.x, howler.y) < d0 - 3) break;
+            if (seeker.howlTargetX >= 0) {
+                baliseRecue = true;
+                if (w.distance(seeker.x, seeker.y, howler.x, howler.y) < d0 - 3) rapproche = true;
+            }
+            if (baliseRecue && rapproche) break;
         }
-        assertTrue(seeker.howlTargetX >= 0 || w.distance(seeker.x, seeker.y, howler.x, howler.y) < d0,
-                "le chercheur a entendu le hurlement et s'est rapproche");
+        assertTrue(baliseRecue, "le chercheur a recu une balise (le hurlement a ete diffuse correctement)");
+        assertTrue(rapproche, "le chercheur s'est rapproche du hurleur en ralliant la balise (LOCALISATION operationnel)");
     }
 }
