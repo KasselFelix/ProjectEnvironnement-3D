@@ -43,6 +43,17 @@ public class Agent extends UniqueDynamicObject{
 	/** Facteur de taille individuel héritable (§ 10.2), clampé [0.8, 1.2]. */
 	public double sizeFactor = 1.0;
 
+	// ===== Physique du corps (modèle de traînée du vent) =====
+	/** Masse corporelle (kg). Sert à la résistance au vent (lourd = moins poussé).
+	 *  Défaut = mouton (~70 kg) ; chaque espèce la fixe dans son constructeur. */
+	public double massKg = 70.0;
+	/** Surface frontale exposée au vent (m²). Grande voilure = plus poussé.
+	 *  Défaut = mouton (~0.35 m²) ; chaque espèce la fixe dans son constructeur. */
+	public double frontalAreaM2 = 0.35;
+	/** Référence de normalisation = masse/surface du mouton (kg/m²) → résistance 1.0,
+	 *  ce qui préserve le calibrage initial (WIND_DRAG_K) pour l'espèce de référence. */
+	private static final double WIND_RESISTANCE_REF = 70.0 / 0.35;
+
 	/** Stade de vie courant (§ 10.1) — un fondateur saute l'enfance. */
 	public agents.ai.LifeStage currentStage() {
 		agents.ai.LifeStage s = agents.ai.LifeStage.of(getAgeDays(), maxAgeDays);
@@ -335,7 +346,16 @@ public class Agent extends UniqueDynamicObject{
 	 *  INTRINSÈQUE (les muscles travaillent moins → moins d'énergie), alors que le
 	 *  vent est une force EXTERNE (l'agent fournit le même effort). */
 	protected double windDragFactor() {
-		return world.windSpeedFactor(orientDx(_orient), orientDy(_orient), sizeFactor);
+		return world.windSpeedFactor(orientDx(_orient), orientDy(_orient), windResistance());
+	}
+
+	/** Résistance de l'agent au vent (sans dimension, 1.0 = mouton de référence).
+	 *  Physique : masse / surface frontale (un corps lourd et peu exposé résiste
+	 *  mieux), normalisée par la réf mouton. Modulée par {@code sizeFactor} : à
+	 *  l'échelle d'un individu, masse ∝ taille³ et surface ∝ taille² ⇒ masse/surface
+	 *  ∝ taille ⇒ un gros individu résiste davantage (∝ sizeFactor). */
+	protected double windResistance() {
+		return (massKg / frontalAreaM2) / WIND_RESISTANCE_REF * sizeFactor;
 	}
 
 	// ===== Pilotage anti-obstacle (partagé Loup/Ours, recherche & errance) =====

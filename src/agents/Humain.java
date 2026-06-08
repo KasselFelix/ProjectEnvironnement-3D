@@ -30,6 +30,7 @@ public class Humain extends Agent {
 		_greenValue = 1.f;
 		_blueValue = 0.f;
 
+		massKg = 70.0; frontalAreaM2 = 0.65;   // debout, grande voilure → le plus sensible au vent
 	}
 
 	/** Accesseur public pour l'UI. */
@@ -91,12 +92,18 @@ public class Humain extends Agent {
 
 	@Override
 	protected agents.ai.MoveConstraints applyState(agents.ai.AgentState s, agents.ai.Percept p) {
+		// Vitesse re-dérivée CHAQUE tick selon l'état (comme Loup/Mouton/Ours) : sprint
+		// en panique/chasse, marche en garde/retour, pas en errance. Indispensable pour
+		// que la modulation par le vent (postMove) ne se cumule pas tick après tick.
+		vitesse = vpas;
 		if (s == agents.ai.AgentState.ON_FIRE) {
+			vitesse = vcourse;              // panique : sprint
 			if (p.waterDir >= 0) _orient = p.waterDir;
 			return dodgeObstacles(true);    // contourne les arbres ; l'eau éteint le feu
 		}
 		if (s == agents.ai.AgentState.FLEE_LAVA) {
 			// L2 — fuit à l'opposé de la lave la plus proche, à terre (eau interdite).
+			vitesse = vcourse;              // panique : sprint
 			if (p.lavaDir >= 0) _orient = agents.ai.AgentState.opposite(p.lavaDir);
 			return dodgeObstacles(false);   // contourne arbres/lave, reste à terre
 		}
@@ -108,7 +115,8 @@ public class Humain extends Agent {
 			return agents.ai.MoveConstraints.landBound();
 		}
 		if (s == agents.ai.AgentState.HOME) {
-			// La nuit, l'Humain rallie le foyer (bergerie).
+			// La nuit, l'Humain rallie le foyer (bergerie) d'un pas soutenu.
+			vitesse = vmarche;
 			worlds.WorldOfCells wc = (worlds.WorldOfCells) world;
 			int dir = agents.ai.Perception.dirToCell(this, world, wc.getBergerieX(), wc.getBergerieY());
 			if (dir >= 0) _orient = dir;
@@ -117,16 +125,25 @@ public class Humain extends Agent {
 		if (s == agents.ai.AgentState.HERD) {
 			// Suit le CENTRE DE MASSE du troupeau visible (pas la bête la plus
 			// proche) — un berger conduit le gros du troupeau, pas une traînarde.
+			vitesse = vmarche;
 			int dir = agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons);
 			if (dir >= 0) _orient = dir;
 			return agents.ai.MoveConstraints.landBound();
 		}
+		// Errance : pas tranquille (vitesse = vpas, déjà fixée plus haut).
 		if (Math.random() < 0.25) _orient = (int)(Math.random() * 4);
 		return agents.ai.MoveConstraints.landBound();
 	}
 
 	@Override
 	protected void postMove(agents.ai.Percept p) {
+		// Traînée du vent : module la vitesse (donc la cadence/distance) selon la
+		// direction de marche et la résistance au vent de l'Humain (le plus sensible
+		// des agents). vitesse est re-dérivée chaque tick (applyState/applyControlSpeed)
+		// → le facteur ne se cumule pas. Pas de coût métabolique pour l'Humain (il n'en
+		// a pas encore) → rien à découpler côté énergie.
+		vitesse *= windDragFactor();
+
 		// L3 — chasseur : tout loup sur la case de l'Humain est abattu (le berger
 		// chasse le prédateur de son troupeau). Le loup mort est purgé par
 		// WorldOfCells.stepAgents.

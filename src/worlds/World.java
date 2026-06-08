@@ -358,22 +358,24 @@ public abstract class World {
 	// ===== Vent — helpers physiques agents et feu =====
 	/** Bornes (multiplicateurs sans dimension) du facteur de vitesse agent dû au vent. */
 	public static final double WIND_SPEED_FACTOR_MIN = 0.6, WIND_SPEED_FACTOR_MAX = 1.4;
-	private static final double WIND_DRAG_K = 0.004;   // calibré ; structure physique (cos × force² × 1/taille)
-	private static final double SIZE_MIN = 0.3;
+	private static final double WIND_DRAG_K = 0.004;   // calibré ; structure : force² × (1/résistance)
+	private static final double WIND_RESISTANCE_MIN = 0.3;
 
 	/**
 	 * Facteur multiplicatif de vitesse dû au vent (traînée aérodynamique) pour un
-	 * agent se déplaçant dans (mdx, mdy), de taille corporelle sizeFactor.
-	 * Effet QUADRATIQUE (traînée), DIRECTIONNEL (produit scalaire), atténué par la
-	 * taille (∝ 1/L → gros = moins affecté). Borné, neutre si vent off ou dépl. nul.
+	 * agent se déplaçant dans (mdx, mdy). Effet QUADRATIQUE (traînée), DIRECTIONNEL
+	 * (produit scalaire), atténué par la {@code windResistance} de l'agent. Cette
+	 * résistance est sa MASSE rapportée à sa SURFACE FRONTALE (normalisée, cf.
+	 * {@code Agent.windResistance()}) : un corps lourd / peu exposé résiste mieux au
+	 * vent qu'un corps léger à grande voilure. Borné, neutre si vent off ou dépl. nul.
 	 */
-	public double windSpeedFactor(int mdx, int mdy, double sizeFactor) {
+	public double windSpeedFactor(int mdx, int mdy, double windResistance) {
 		if (!windEnabled || windForce <= 0.0) return 1.0;
 		double len = Math.sqrt((double) mdx * mdx + (double) mdy * mdy);
 		if (len == 0.0) return 1.0;
 		double ux = mdx / len, uy = mdy / len;
 		double windAlong = getWindX() * ux + getWindY() * uy;
-		double mult = 1.0 + WIND_DRAG_K * windAlong * Math.abs(windAlong) / Math.max(SIZE_MIN, sizeFactor);
+		double mult = 1.0 + WIND_DRAG_K * windAlong * Math.abs(windAlong) / Math.max(WIND_RESISTANCE_MIN, windResistance);
 		return Math.max(WIND_SPEED_FACTOR_MIN, Math.min(WIND_SPEED_FACTOR_MAX, mult));
 	}
 

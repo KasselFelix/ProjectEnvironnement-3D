@@ -28,11 +28,13 @@ class WindEffectTest {
     }
 
     @Test
-    void grosAnimalMoinsAffecte() {
+    void plusResistantMoinsAffecte() {
+        // 3e param = résistance au vent (masse/surface normalisée) : plus haute = moins
+        // affecté. Un animal lourd/compact (résistance 2) subit moins le malus de face.
         WorldOfCells w = windyWorld(0.0, 12.0);
-        double mouton = w.windSpeedFactor(-1, 0, 1.0);
-        double ours   = w.windSpeedFactor(-1, 0, 2.0);
-        assertTrue(ours > mouton, "le gros animal subit moins le malus (" + ours + " > " + mouton + ")");
+        double leger = w.windSpeedFactor(-1, 0, 1.0);   // résistance 1 (réf mouton)
+        double lourd = w.windSpeedFactor(-1, 0, 2.0);   // résistance 2 (plus lourd/compact)
+        assertTrue(lourd > leger, "le plus résistant subit moins le malus (" + lourd + " > " + leger + ")");
     }
 
     @Test

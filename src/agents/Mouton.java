@@ -232,6 +232,7 @@ public class Mouton extends Agent {
 		_greenValue = 0.f;
 		_blueValue = 1.f;
 
+		massKg = 70.0; frontalAreaM2 = 0.35;   // espèce de référence → résistance vent 1.0
 	}
 
 	/** Accesseur public pour l'UI (les champs restent package-private). */

@@ -112,6 +112,7 @@ public class Loup extends Agent {
 		_greenValue = 0.f;
 		_blueValue = 0.f;
 
+		massKg = 45.0; frontalAreaM2 = 0.30;   // quadrupède profilé → résistance vent intermédiaire
 	}
 
 	/** Accesseur public pour l'UI (les champs restent package-private). */
