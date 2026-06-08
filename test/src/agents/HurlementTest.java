@@ -190,12 +190,34 @@ class HurlementTest {
         l.energie = 5;                       // affamé (reste affamé : refill ; > 2 pour canMove)
         l.howlTargetX = 40; l.howlTargetY = 25;   // balise à l'EST
         double d0 = w.distance(l.x, l.y, 40, 25);
-        for (int t = 0; t < 400; t++) {
+        for (int t = 0; t < 600; t++) {
             l.energie = 5;                   // isole la navigation (affamé + peut bouger)
             w.setIteration(t); l.step();
-            if (w.distance(l.x, l.y, 40, 25) <= 1.0) break;
+            // applyState(LOCALISATION) efface la balise quand la distance est <= 1.0 AU DEBUT
+            // d'un tick actif (isMyTurn). La balise est relâchée exactement au tick où
+            // l'agent se trouve à portée ET c'est son tour d'agir.
+            if (l.howlTargetX < 0 || w.distance(l.x, l.y, 40, 25) <= 0.1) break;
         }
         assertTrue(w.distance(l.x, l.y, 40, 25) < d0, "le loup s'est rapproche de la balise");
+        if (w.distance(l.x, l.y, 40, 25) <= 1.0)
+            assertTrue(l.howlTargetX < 0, "balise relachee a l'arrivee");
+    }
+
+    @Test
+    void localisationVersHuntRelacheLaBaliseEtResetLaPoursuite() {
+        WorldOfCells w = flatWorld();
+        Loup l = new Loup(25, 25, w); w.loups.add(l);
+        l.energie = 5;                       // affamé (5 << 350) et > 2 (canMove)
+        l.howlTargetX = 45; l.howlTargetY = 25;   // une balise (lointaine)
+        l.huntStuck = 50;                    // simule un blocage accumulé en ralliant une balise murée
+        Mouton prey = new Mouton(27, 25, w); w.moutons.add(prey);   // proie en vue (dist 2)
+        Percept p = Perception.sense(l, w, l.predators(), l.prey());
+        assertTrue(p.preyVisible());
+
+        AgentState s = l.decideState(p);
+        assertEquals(AgentState.HUNT, s, "proie en vue => HUNT");
+        assertTrue(l.howlTargetX < 0, "spec §4 : la balise est relachee en entrant en HUNT");
+        assertEquals(0, l.huntStuck, "la poursuite repart propre (huntStuck reset) au lieu d'heriter du blocage de la balise");
     }
 
     @Test

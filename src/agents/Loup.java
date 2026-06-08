@@ -110,7 +110,9 @@ public class Loup extends Agent {
 	protected static int HOWL_COOLDOWN = 30;
 	/** Flou max (cases) de la position mémorisée à errProb=1.0. */
 	protected static int HOWL_NOISE_MAX = 16;
-	/** Non-progrès (huntStuck) au-delà duquel on abandonne une balise murée → SEARCH. */
+	/** Non-progrès (huntStuck) au-delà duquel on abandonne une balise murée → SEARCH.
+	 *  DOIT rester nettement > HUNT_STUCK_LIMIT pour laisser l'évasion BFS élargie de
+	 *  pursuitStep tenter de contourner avant qu'on abandonne. */
 	protected static int LOCALISATION_GIVEUP = 60;
 
 	/** Tours restants de hurlement (>0 = en train de hurler). */
@@ -432,6 +434,23 @@ public class Loup extends Agent {
 		boolean affame   = energie < energieD * HUNGER_RATIO;
 		boolean enChasse = affame || attaqueNuit == 1;
 		if (!enChasse) resetPursuit();        // plus en chasse → on oublie la piste
+		AgentState s = chooseState(p, affame, enChasse);
+		// spec §4 : une balise de hurlement devient caduque dès qu'un danger ou une vraie
+		// proie en vue prend le relais sur le ralliement. On la relâche ET on repart d'une
+		// poursuite propre : sinon le compteur de blocage (huntStuck) accumulé en ralliant
+		// une balise murée ferait entrer la chasse/fuite suivante directement en évasion BFS
+		// élargie (au lieu du pas direct). On conserve la balise UNIQUEMENT pendant le
+		// ralliement (LOCALISATION) et la traversée d'eau (SEEK_LAND : on reprend après).
+		if (hasHowlTarget() && s != AgentState.LOCALISATION && s != AgentState.SEEK_LAND) {
+			clearHowlTarget();
+			resetPursuit();
+		}
+		return s;
+	}
+
+	/** Sélection d'état pure (ladder de priorités). La gestion de la caducité de balise
+	 *  est faite par l'appelant {@link #decideState}. */
+	private AgentState chooseState(Percept p, boolean affame, boolean enChasse) {
 		if (isOnFire())                       return AgentState.ON_FIRE;
 		if (p.lavaVisible())                  return AgentState.FLEE_LAVA;       // L2 — la lave tue au contact
 		if (p.predatorVisible())              return AgentState.FLEE_PREDATOR;  // fuit l'Humain (prime sur la faim)
