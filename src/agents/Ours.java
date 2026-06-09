@@ -41,12 +41,15 @@ public class Ours extends Agent {
         super(x, y, w);
         _alive = true;
         _redValue = 0.45f; _greenValue = 0.27f; _blueValue = 0.10f;   // brun
-        massKg = 250.0; frontalAreaM2 = 0.70;   // lourd et massif → le moins affecté par le vent
+        baseMassKg = 250.0; frontalAreaM2 = 0.70;   // lourd et massif → le moins affecté par le vent
     }
 
     public int getEnergie() { return energie; }
     public int getEnergieMax() { return energieD; }
     public boolean isAlive() { return _alive; }
+
+    @Override protected double getEnergieForMass() { return energie; }
+    @Override public double energieMaxValue() { return energieD; }
 
     @Override public String getTypeName() { return "Ours"; }
 

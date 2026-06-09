@@ -139,13 +139,16 @@ public class Loup extends Agent {
 		_greenValue = 0.f;
 		_blueValue = 0.f;
 
-		massKg = 45.0; frontalAreaM2 = 0.30;   // quadrupède profilé → résistance vent intermédiaire
+		baseMassKg = 45.0; frontalAreaM2 = 0.30;   // quadrupède profilé → résistance vent intermédiaire
 	}
 
 	/** Accesseur public pour l'UI (les champs restent package-private). */
 	public int getEnergie() { return energie; }
 	public int getEnergieMax() { return energieD; }
 	public boolean isAlive() { return _alive; }
+
+	@Override protected double getEnergieForMass() { return energie; }
+	@Override public double energieMaxValue() { return energieD; }
 
 	@Override public String getTypeName() { return "Loup"; }
 

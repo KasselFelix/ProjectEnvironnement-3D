@@ -44,9 +44,10 @@ public class Agent extends UniqueDynamicObject{
 	public double sizeFactor = 1.0;
 
 	// ===== Physique du corps (modèle de traînée du vent) =====
-	/** Masse corporelle (kg). Sert à la résistance au vent (lourd = moins poussé).
-	 *  Défaut = mouton (~70 kg) ; chaque espèce la fixe dans son constructeur. */
-	public double massKg = 70.0;
+	/** Masse de référence (kg) — adulte sain. Sert à la résistance au vent ET aux
+	 *  carcasses. Défaut = mouton (~70 kg) ; chaque espèce la fixe dans son constructeur.
+	 *  (ex-massKg, renommé pour distinguer de bodyMassKg() qui est dynamique.) */
+	public double baseMassKg = 70.0;
 	/** Surface frontale exposée au vent (m²). Grande voilure = plus poussé.
 	 *  Défaut = mouton (~0.35 m²) ; chaque espèce la fixe dans son constructeur. */
 	public double frontalAreaM2 = 0.35;
@@ -349,13 +350,28 @@ public class Agent extends UniqueDynamicObject{
 		return world.windSpeedFactor(orientDx(_orient), orientDy(_orient), windResistance());
 	}
 
+	/** Énergie max de référence (santé = energie/energieMax). Surchargé par espèce ;
+	 *  défaut = énergie courante → healthFactor 1.0 (pas de modulation pour les agents
+	 *  sans max défini, ex. Humain → masse/vent inchangés). */
+	public double energieMaxValue() { return Math.max(1.0, getEnergieForMass()); }
+	/** Énergie courante exposée pour le calcul de masse (les sous-classes ont des champs
+	 *  {@code energie} de types différents). Défaut 1.0. Surchargé. */
+	protected double getEnergieForMass() { return 1.0; }
+
+	/** Masse vivante (kg) : référence × taille/âge (displaySize) × santé. Sert au vent
+	 *  ET à la carcasse. Un adulte sain de taille 1.0 ≈ baseMassKg. */
+	public double bodyMassKg() {
+		double health = 0.7 + 0.3 * Math.min(1.0, getEnergieForMass() / energieMaxValue());
+		return baseMassKg * displaySize() * health;
+	}
+
 	/** Résistance de l'agent au vent (sans dimension, 1.0 = mouton de référence).
 	 *  Physique : masse / surface frontale (un corps lourd et peu exposé résiste
-	 *  mieux), normalisée par la réf mouton. Modulée par {@code sizeFactor} : à
-	 *  l'échelle d'un individu, masse ∝ taille³ et surface ∝ taille² ⇒ masse/surface
-	 *  ∝ taille ⇒ un gros individu résiste davantage (∝ sizeFactor). */
+	 *  mieux), normalisée par la réf mouton. La dépendance à {@code sizeFactor} est
+	 *  déjà incluse dans {@link #bodyMassKg()} via {@code displaySize()} : masse ∝
+	 *  taille ⇒ un gros individu résiste davantage (∝ sizeFactor, linéaire). */
 	protected double windResistance() {
-		return (massKg / frontalAreaM2) / WIND_RESISTANCE_REF * sizeFactor;
+		return (bodyMassKg() / frontalAreaM2) / WIND_RESISTANCE_REF;
 	}
 
 	// ===== Pilotage anti-obstacle (partagé Loup/Ours, recherche & errance) =====

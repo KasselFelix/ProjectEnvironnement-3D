@@ -232,13 +232,16 @@ public class Mouton extends Agent {
 		_greenValue = 0.f;
 		_blueValue = 1.f;
 
-		massKg = 70.0; frontalAreaM2 = 0.35;   // espèce de référence → résistance vent 1.0
+		baseMassKg = 70.0; frontalAreaM2 = 0.35;   // espèce de référence → résistance vent 1.0
 	}
 
 	/** Accesseur public pour l'UI (les champs restent package-private). */
 	public double getEnergie() { return energie; }
 	public double getEnergieMax() { return energieMAX; }
 	public boolean isAlive() { return _alive; }
+
+	@Override protected double getEnergieForMass() { return energie; }
+	@Override public double energieMaxValue() { return energieMAX; }
 
 	@Override public String getTypeName() { return "Mouton"; }
 

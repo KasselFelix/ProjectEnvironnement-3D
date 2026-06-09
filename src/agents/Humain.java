@@ -30,7 +30,7 @@ public class Humain extends Agent {
 		_greenValue = 1.f;
 		_blueValue = 0.f;
 
-		massKg = 70.0; frontalAreaM2 = 0.65;   // debout, grande voilure → le plus sensible au vent
+		baseMassKg = 70.0; frontalAreaM2 = 0.65;   // debout, grande voilure → le plus sensible au vent
 	}
 
 	/** Accesseur public pour l'UI. */
