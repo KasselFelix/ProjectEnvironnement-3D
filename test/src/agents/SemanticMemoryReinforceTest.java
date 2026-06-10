@@ -38,6 +38,18 @@ class SemanticMemoryReinforceTest {
     }
 
     @Test
+    void foodConsolideAUsage2_dangerAUsage1() {
+        SemanticMemory m = new SemanticMemory();
+        m.reinforce(MemoryKind.FOOD, 10, 10, 70.0, 100, 3, EUCLID);    // usage 1
+        assertFalse(m.isConsolidated(MemoryKind.FOOD, 10, 10), "FOOD seuil 2 : usage 1 = provisoire");
+        m.reinforce(MemoryKind.FOOD, 10, 10, 70.0, 110, 3, EUCLID);    // usage 2
+        assertTrue(m.isConsolidated(MemoryKind.FOOD, 10, 10), "FOOD usage 2 = consolide");
+
+        m.reinforce(MemoryKind.DANGER, 5, 5, 0.0, 100, 3, EUCLID);     // usage 1
+        assertTrue(m.isConsolidated(MemoryKind.DANGER, 5, 5), "DANGER consolide des usage 1");
+    }
+
+    @Test
     void teachPreserveValueEtLastSeen() {
         // Professeur qui connait une carcasse de masse 55.0 vue a l'iteration 200
         SemanticMemory teacher = new SemanticMemory();

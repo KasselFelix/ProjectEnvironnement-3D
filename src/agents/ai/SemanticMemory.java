@@ -117,6 +117,18 @@ public final class SemanticMemory {
         entries.add(new Entry(kind, x, y, now, value));
     }
 
+    /** Seuil d'usage a partir duquel un souvenir est ACTIONNABLE (consolide / LTM).
+     *  Survie = immediat (1) ; nourriture = corroboration requise (2). */
+    public static int consolidationThreshold(MemoryKind kind) {
+        return kind == MemoryKind.FOOD ? 2 : 1;
+    }
+
+    /** true si le souvenir existe ET est consolide (usage >= seuil de sa categorie). */
+    public boolean isConsolidated(MemoryKind kind, int x, int y) {
+        Entry e = find(kind, x, y);
+        return e != null && e.usage >= consolidationThreshold(kind);
+    }
+
     /** Oublie le souvenir exact (lose-shift : carcasse trouvee absente a l'arrivee). */
     public void forget(MemoryKind kind, int x, int y) {
         Entry e = find(kind, x, y);
