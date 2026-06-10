@@ -2285,12 +2285,15 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            		                    selectedAgent, selectedAgentIndex, cameraFollow);
 	            	}
 	            	// V3 — bulle d'info au survol (nom + énergie) sans cliquer.
-	            	if (hoverAgent != null && hoverAgent != selectedAgent
-	            			&& isAgentStillAlive(hoverAgent)) {
+	            	boolean agentTooltipShown = hoverAgent != null && hoverAgent != selectedAgent
+	            			&& isAgentStillAlive(hoverAgent);
+	            	if (agentTooltipShown) {
 	            		drawHoverTooltip(gl, hoverAgent, hoverX, hoverY);
 	            	}
-	            	// Task 4.1 — tooltip carcasse au survol (espece + poids).
-	            	if (hoveredCarcass != null) {
+	            	// Task 4.1 — tooltip carcasse au survol (espece + poids). Supprimé si une
+	            	// bulle d'agent est déjà affichée (un prédateur sur sa carcasse) pour éviter
+	            	// le chevauchement des deux bulles au même ancrage.
+	            	if (hoveredCarcass != null && !agentTooltipShown) {
 	            		drawCarcassTooltip(gl, hoveredCarcass, hoverX, hoverY);
 	            	}
 	            	// Graphe populations (Phase 9) — coin haut-GAUCHE, donc il ne
