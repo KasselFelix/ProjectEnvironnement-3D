@@ -68,6 +68,19 @@ class RecallFoodTest {
         assertTrue(w.distance(o.x, o.y, 40, 25) < d0, "l'ours affame se rapproche du lieu memorise");
     }
 
+    @Test
+    void oursOublieLeLieuSiCarcasseAbsenteALArrivee() {
+        // Test DISCRIMINANT du chemin RECALL_FOOD : seul recallFoodStep appelle memory.forget(FOOD),
+        // jamais SEARCH (qui home sur HUNTING). Un oubli prouve donc que RECALL_FOOD s'est execute.
+        WorldOfCells w = flat();
+        Ours o = new Ours(24, 25, w); o.isFounder = true; w.ours.add(o);
+        o.energie = 50;
+        o.memory.reinforce(agents.ai.MemoryKind.FOOD, 25, 25, 300.0, 0, 3, o.memDistanceForTest());
+        o.memory.reinforce(agents.ai.MemoryKind.FOOD, 25, 25, 300.0, 0, 3, o.memDistanceForTest());
+        for (int t = 1; t < 300; t++) { w.setIteration(t); o.step(); if (!o.memory.contains(agents.ai.MemoryKind.FOOD, 25, 25)) break; }
+        assertFalse(o.memory.contains(agents.ai.MemoryKind.FOOD, 25, 25), "arrive, aucune carcasse => oubli (lose-shift)");
+    }
+
     private static WorldOfCells flat() {
         WorldOfCells w = AgentTestSupport.buildWorld();
         int W = w.getWidth(), H = w.getHeight();
