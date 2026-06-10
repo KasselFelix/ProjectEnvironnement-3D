@@ -118,4 +118,23 @@ class CarcasseTest {
         // pas de bond instantane de +energieD/2 (le gain passe desormais par les bouchees, Task 5)
         assertTrue(l.energie <= avant + 5, "pas de gain instantane massif au kill");
     }
+
+    @Test
+    void oursPrendUnePlusGrosseBoucheeQuLeLoup() {
+        WorldOfCells w = flat();
+        Loup l  = new Loup(10, 10, w);  l.isFounder = true;  l.energie = 50;  w.loups.add(l);
+        Ours o  = new Ours(30, 30, w);  o.isFounder = true;  o.energie = 50;  w.ours.add(o);
+        w.spawnCarcass(10, 10, 500.0, objects.Species.MOUTON);   // sous le loup
+        w.spawnCarcass(30, 30, 500.0, objects.Species.LOUP);     // sous l'ours
+        objects.Carcass cl = w.carcassAt(10, 10);
+        objects.Carcass co = w.carcassAt(30, 30);
+        double ml0 = cl.mass, mo0 = co.mass;
+        double loupMange = 0, oursMange = 0;
+        for (int t = 0; t < 200; t++) {
+            l.energie = 50; o.energie = 50; w.setIteration(t); l.step(); o.step();
+            loupMange = ml0 - cl.mass; oursMange = mo0 - co.mass;
+            if (loupMange > 0 && oursMange > 0) break;
+        }
+        assertTrue(oursMange > loupMange, "l'ours retire plus de masse par bouchee que le loup");
+    }
 }

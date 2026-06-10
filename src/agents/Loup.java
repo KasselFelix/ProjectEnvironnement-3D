@@ -493,11 +493,6 @@ public class Loup extends Agent {
 		return AgentState.WANDER;                                                 // flânerie économe
 	}
 
-	/** True si une carcasse comestible se trouve dans le 9-voisinage (distance ≤ 1.5 en tore). */
-	private boolean carcassAdjacente(Percept p) {
-		return p.carcassVisible() && world.distance(x, y, p.carcassX, p.carcassY) <= 1.5;
-	}
-
 	public MoveConstraints applyState(AgentState s, Percept p) {
 		switch (s) {
 			case ON_FIRE: {

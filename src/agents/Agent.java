@@ -1057,6 +1057,12 @@ public class Agent extends UniqueDynamicObject{
 		return pursuitStep(p, new int[]{p.carcassX, p.carcassY}, visionRange);
 	}
 
+	/** Carcasse à portée de bouchée : sur l'une des 9 cases (cellule + 8 voisines →
+	 *  distance euclidienne torique ≤ 1.5, diagonale = √2 ≈ 1.41). Partagé Loup/Ours. */
+	protected boolean carcassAdjacente(agents.ai.Percept p) {
+		return p.carcassVisible() && world.distance(x, y, p.carcassX, p.carcassY) <= 1.5;
+	}
+
 	/**
 	 * Vecteur unitaire (udx, udy) de la dernière direction de déplacement.
 	 * Renvoie (0, 1) = Nord si l'agent n'a pas encore bougé (lastDx/Dy

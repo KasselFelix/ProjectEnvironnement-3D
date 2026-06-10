@@ -42,6 +42,7 @@ public class Ours extends Agent {
         _alive = true;
         _redValue = 0.45f; _greenValue = 0.27f; _blueValue = 0.10f;   // brun
         baseMassKg = 250.0; frontalAreaM2 = 0.70;   // lourd et massif → le moins affecté par le vent
+        biteBaseKg = 8.0;   // grosse bouchée (ours)
     }
 
     public int getEnergie() { return energie; }
@@ -51,6 +52,12 @@ public class Ours extends Agent {
     @Override protected double getEnergieForMass() { return energie; }
     @Override public double energieMaxValue() { return energieD; }
 
+    /** Écriture d'énergie depuis Agent.eatStep — bornée à energieD. */
+    @Override protected void gainEnergie(int delta) { energie = Math.min(energie + delta, energieD); }
+
+    /** Stabilise la vitesse à vpas pendant EAT (évite la dérive par postMove). */
+    @Override protected void applyEatSpeed() { vitesse = vpas; }
+
     @Override public String getTypeName() { return "Ours"; }
 
     @Override public String getCurrentBehavior() {
@@ -58,12 +65,14 @@ public class Ours extends Agent {
         if (m == 1)          return "Devore loup";
         if (playerControlled) return "Pilote";
         switch (currentState) {
-            case FLEE_LAVA: return "Fuit lave";
-            case REST:      return "Repos";
-            case HUNT:      return "Chasse loup";
-            case SEARCH:    return "Cherche proie";
-            case SEEK_LAND: return "Cherche terre";
-            default:        return "Errance";
+            case FLEE_LAVA:  return "Fuit lave";
+            case REST:       return "Repos";
+            case HUNT:       return "Chasse loup";
+            case SEARCH:     return "Cherche proie";
+            case SEEK_LAND:  return "Cherche terre";
+            case EAT:        return "Mange";
+            case SEEK_FOOD:  return "Cherche carcasse";
+            default:         return "Errance";
         }
     }
 
@@ -106,8 +115,12 @@ public class Ours extends Agent {
     public AgentState decideState(Percept p) {
         boolean affame = energie < energieD * HUNGER_RATIO;
         if (!affame) resetPursuit();                       // plus en chasse → oublie la piste
+        if (p.carcassVisible() && !memory.contains(agents.ai.MemoryKind.FOOD, p.carcassX, p.carcassY))
+            memory.remember(agents.ai.MemoryKind.FOOD, p.carcassX, p.carcassY);
         if (isOnFire())                  return AgentState.ON_FIRE;
         if (p.lavaVisible())             return AgentState.FLEE_LAVA;   // L2
+        if (affame && carcassAdjacente(p)) return AgentState.EAT;         // carcasse adjacente : festin
+        if (affame && p.carcassVisible()) return AgentState.SEEK_FOOD;  // carcasse en vue : s'y rendre
         if (affame && p.preyVisible())   return AgentState.HUNT;        // proie en vue (prioritaire)
         if (affame && hasFreshTrack())   return AgentState.HUNT;        // proie perdue de vue mais piste fraîche → persistance
         if (p.inWater)                   return AgentState.SEEK_LAND;
@@ -166,6 +179,12 @@ public class Ours extends Agent {
                 vitesse = vtrot;
                 _orient = mem.spiralHeading;
                 return steerAroundObstacles(p, true, vision);
+            }
+            case EAT:
+                return eatStep(p);
+            case SEEK_FOOD: {
+                agents.ai.MoveConstraints c = seekCarcassStep(p, vision);
+                return c != null ? c : steerAroundObstacles(p, true, vision);
             }
             case WANDER:
             default:
