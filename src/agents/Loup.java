@@ -120,6 +120,9 @@ public class Loup extends Agent {
 	 *  pursuitStep tenter de contourner avant qu'on abandonne. */
 	protected static int LOCALISATION_GIVEUP = 60;
 
+	/** Cible mémorisée courante du fourragement (RECALL_FOOD) ; null = aucune. */
+	private int[] recallTarget = null;
+
 	/** Tours restants de hurlement (>0 = en train de hurler). */
 	private int howlDurationLeft = 0;
 	/** Ticks restants avant de pouvoir re-hurler. */
@@ -190,6 +193,7 @@ public class Loup extends Agent {
 			case SEEK_LAND: return "Cherche terre";
 			case HOWL:         return "Hurle";
 			case LOCALISATION: return "Rallie le cri";
+			case RECALL_FOOD:  return "Va vers nourriture";
 			default:        return attaqueNuit == 1 ? "Rode (nuit)" : "Errance";
 		}
 	}
@@ -466,9 +470,14 @@ public class Loup extends Agent {
 		boolean affame   = energie < energieD * HUNGER_RATIO;
 		boolean enChasse = affame || attaqueNuit == 1;
 		if (!enChasse) resetPursuit();        // plus en chasse → on oublie la piste
-		// Forward hook (travaux futurs : revenir vers une carcasse mémorisée). Écrit une seule
-		// fois par cellule pour ne pas gonfler le compteur d'usage LFU de la mémoire.
+		// Renforce la mémoire FOOD au front montant (edge-triggered) d'une carcasse perçue.
 		reinforceFoodSighting(p);
+		// Purge les souvenirs FOOD forcément périmés (carcasse déjà décomposée).
+		memory.purgeStale(agents.ai.MemoryKind.FOOD, world.getIteration(), foodTtlTicks());
+		// Calcule la cible de fourragement (RECALL_FOOD) depuis la mémoire.
+		double[] food = bestRememberedFood();
+		recallTarget = (food != null && food[2] >= acceptThreshold(energie, energieD * HUNGER_RATIO))
+				? new int[]{(int) food[0], (int) food[1]} : null;
 		AgentState s = chooseState(p, affame, enChasse);
 		// spec §4 : une balise de hurlement devient caduque dès qu'un danger ou une vraie
 		// proie en vue prend le relais sur le ralliement. On la relâche ET on repart d'une
@@ -502,6 +511,7 @@ public class Loup extends Agent {
 		if (enChasse && hasFreshTrack())      return AgentState.HUNT;            // persistance
 		if (p.inWater)                        return AgentState.SEEK_LAND;
 		if (affame && hasHowlTarget())        return AgentState.LOCALISATION;    // a entendu un hurlement
+		if (affame && recallTarget != null)   return AgentState.RECALL_FOOD;    // rejoint une carcasse memorisee
 		if (enChasse)                         return AgentState.SEARCH;          // balayage spirale
 		if (energie >= energieD)              return AgentState.REST;            // repu plein → repos
 		return AgentState.WANDER;                                                 // flânerie économe
@@ -622,6 +632,9 @@ public class Loup extends Agent {
 				if (huntStuck >= LOCALISATION_GIVEUP) clearHowlTarget();
 				return c;
 			}
+			case RECALL_FOOD:
+				vitesse = vtrot;
+				return recallFoodStep(p, recallTarget, vision);
 			case WANDER:
 			default:
 				lazyWander();

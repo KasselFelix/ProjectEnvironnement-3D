@@ -9,6 +9,42 @@ import worlds.WorldOfCells;
 
 class RecallFoodTest {
     @Test
+    void loupAffameRetourneVersCarcasseMemorisee() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 25, w); l.isFounder = true; w.loups.add(l);
+        l.energie = 50;
+        // souvenir FOOD consolide (usage 2) a l'EST, sans carcasse en vue
+        l.memory.reinforce(agents.ai.MemoryKind.FOOD, 40, 25, 200.0, 0, 3, l.memDistanceForTest());
+        l.memory.reinforce(agents.ai.MemoryKind.FOOD, 40, 25, 200.0, 0, 3, l.memDistanceForTest());
+        double d0 = w.distance(l.x, l.y, 40, 25);
+        for (int t = 1; t < 400; t++) { w.setIteration(t); l.step(); if (w.distance(l.x,l.y,40,25) < d0 - 2) break; }
+        assertTrue(w.distance(l.x, l.y, 40, 25) < d0, "le loup affame se rapproche du lieu memorise");
+    }
+
+    @Test
+    void oublieLeLieuSiCarcasseAbsenteALArrivee() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(24, 25, w); l.isFounder = true; w.loups.add(l);
+        l.energie = 50;
+        l.memory.reinforce(agents.ai.MemoryKind.FOOD, 25, 25, 70.0, 0, 3, l.memDistanceForTest());
+        l.memory.reinforce(agents.ai.MemoryKind.FOOD, 25, 25, 70.0, 0, 3, l.memDistanceForTest());
+        for (int t = 1; t < 200; t++) { w.setIteration(t); l.step(); if (!l.memory.contains(agents.ai.MemoryKind.FOOD, 25, 25)) break; }
+        assertFalse(l.memory.contains(agents.ai.MemoryKind.FOOD, 25, 25), "arrive, aucune carcasse => oubli (lose-shift)");
+    }
+
+    @Test
+    void proieVisiblePrimeSurSouvenir() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(25, 25, w); l.isFounder = true; w.loups.add(l);
+        l.energie = 50;
+        l.memory.reinforce(agents.ai.MemoryKind.FOOD, 45, 25, 200.0, 0, 3, l.memDistanceForTest());
+        l.memory.reinforce(agents.ai.MemoryKind.FOOD, 45, 25, 200.0, 0, 3, l.memDistanceForTest());
+        Mouton proie = new Mouton(27, 25, w); proie.isFounder = true; w.moutons.add(proie);
+        agents.ai.Percept p = agents.ai.Perception.sense(l, w, l.predators(), l.prey());
+        assertEquals(agents.ai.AgentState.HUNT, l.decideState(p), "proie en vue prime sur le souvenir");
+    }
+
+    @Test
     void audaceFourragementSuitEndurance() {
         Genome neutre = new Genome();
         assertEquals(1.0, neutre.foragingBoldnessFactor(), 1e-9);

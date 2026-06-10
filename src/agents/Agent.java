@@ -641,6 +641,49 @@ public class Agent extends UniqueDynamicObject{
 		lastFoodSeenX = p.carcassX; lastFoodSeenY = p.carcassY;
 	}
 
+	// ===== Fourragement mémorisé (§ spec M4 — RECALL_FOOD) =====
+
+	/** Paramètres de fourragement mémorisé (§ spec M4 ; calibrables). */
+	protected static double FORAGE_W_DIST = 1.0;
+	protected static double FORAGE_DANGER_PENALTY = 0.1;
+	protected static int    FORAGE_DANGER_RADIUS = 5;
+	protected static double FORAGE_PAYOFF_REF = 70.0;
+	protected static double FORAGE_BASE_ACCEPT = 0.15;
+	protected static double FORAGE_MIN_ACCEPT = 0.0;
+
+	/** TTL d'un souvenir FOOD en ticks = durée de vie max d'une carcasse. */
+	protected int foodTtlTicks() {
+		return Math.max(1, (int) Math.round((objects.Carcass.FRESH_SEC + objects.Carcass.ROT_SEC) * simulationHz()));
+	}
+
+	/** Seuil d'acceptation du score, sensible au risque (param 1) ET au génome (param 5) :
+	 *  un loup à peine affamé exige un score élevé ; un loup mourant accepte peu. Un loup
+	 *  audacieux (ENDURANCE+) abaisse son seuil. {@code hungerMax} = seuil de faim de l'espèce. */
+	protected double acceptThreshold(double energie, double hungerMax) {
+		double frac = Math.max(0.0, Math.min(1.0, energie / Math.max(1.0, hungerMax)));
+		double base = FORAGE_MIN_ACCEPT + (FORAGE_BASE_ACCEPT - FORAGE_MIN_ACCEPT) * frac;
+		return base / Math.max(0.1, genome.foragingBoldnessFactor());
+	}
+
+	/** Meilleure carcasse mémorisée actionnable (score), ou null. wDist abaissé par l'audace. */
+	protected double[] bestRememberedFood() {
+		double wDist = FORAGE_W_DIST / Math.max(0.1, genome.foragingBoldnessFactor());
+		return memory.bestFood(x, y, world.getIteration(), wDist, FORAGE_DANGER_PENALTY,
+				FORAGE_DANGER_RADIUS, foodTtlTicks(), FORAGE_PAYOFF_REF, memDistance);
+	}
+
+	/** Va vers la carcasse mémorisée {@code target} ; à l'arrivée si aucune carcasse, oublie.
+	 *  {@code visionRange} passé par l'appelant (vision est un champ de la sous-classe). */
+	protected agents.ai.MoveConstraints recallFoodStep(agents.ai.Percept p, int[] target, int visionRange) {
+		if (target == null) return steerAroundObstacles(p, true, visionRange);
+		if (world.distance(x, y, target[0], target[1]) <= 1.0
+				&& world.carcassAt(target[0], target[1]) == null) {
+			memory.forget(agents.ai.MemoryKind.FOOD, target[0], target[1]);   // lose-shift
+			return steerAroundObstacles(p, true, visionRange);
+		}
+		return pursuitStep(p, target, visionRange);
+	}
+
 	/** Rayon d'évasion effectif : borné pour que la fenêtre BFS (2·r+1) ne dépasse pas
 	 *  la plus petite dimension du monde (sinon repli torique → double-comptage). */
 	protected int escapeRadius() {
