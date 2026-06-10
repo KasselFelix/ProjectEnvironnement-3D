@@ -120,6 +120,28 @@ class CarcasseTest {
     }
 
     @Test
+    void deuxLoupsPartagentUneCarcasse() {
+        WorldOfCells w = flat();
+        Loup a = new Loup(24, 25, w); a.isFounder = true; w.loups.add(a);   // ouest de la carcasse
+        Loup b = new Loup(26, 25, w); b.isFounder = true; w.loups.add(b);   // est de la carcasse
+        w.spawnCarcass(25, 25, 400.0, objects.Species.MOUTON);
+        objects.Carcass c = w.carcasses.get(0);
+        double m0 = c.mass;
+        boolean aMange = false, bMange = false;
+        for (int t = 0; t < 2000; t++) {
+            a.energie = 50; b.energie = 50;   // restent affamés => mangent en continu
+            w.setIteration(t); a.step(); b.step();
+            if (a.energie > 50) aMange = true;   // énergie montée => bouchée prise par a
+            if (b.energie > 50) bMange = true;   // énergie montée => bouchée prise par b
+            if (c.isGone()) break;               // carcasse vidée => fini
+        }
+        assertTrue(aMange, "le loup a (ouest) a mange de la carcasse");
+        assertTrue(bMange, "le loup b (est) a mange de la carcasse");
+        assertTrue(c.mass < m0 - 100.0 || w.carcasses.isEmpty(),
+                "les deux loups ensemble vident la carcasse plus vite (festin partage)");
+    }
+
+    @Test
     void oursPrendUnePlusGrosseBoucheeQuLeLoup() {
         WorldOfCells w = flat();
         Loup l  = new Loup(10, 10, w);  l.isFounder = true;  l.energie = 50;  w.loups.add(l);
