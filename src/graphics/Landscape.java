@@ -355,6 +355,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         // sous le pointeur (calculé chaque frame en 3D), pour la bulle d'info.
         private int hoverX = -1, hoverY = -1;
         private Agent hoverAgent = null;
+        // Task 4.1 — carcasse sous le curseur (tooltip espece + poids).
+        private objects.Carcass hoveredCarcass = null;
         private final AgentInfoPanel agentInfoPanel = new AgentInfoPanel();
         private final PopulationGraph populationGraph = new PopulationGraph();
         private boolean showPopulationGraph = false;  // masqué au démarrage ; toggle par la touche `g`
@@ -606,6 +608,80 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         	ui.drawQuad(gl, bx, by, wBox, hBox, 0.05f, 0.07f, 0.10f, 0.88f);
         	ui.drawBorder(gl, bx, by, wBox, hBox, 0.4f, 0.7f, 1f, 1f);
         	ui.drawText(gl, bx + 6, by + 13, viewportHeight, txt, 0.85f, 0.95f, 1f);
+        }
+
+        /**
+         * Task 4.1 — détermine la carcasse sous le curseur (la plus proche dans
+         * une tolérance), pour le tooltip espece + poids. Doit tourner pendant que
+         * MODELVIEW porte encore la caméra (même contrainte que doPicking /
+         * computeHoverAgent). Stocke le résultat dans {@link #hoveredCarcass}.
+         */
+        private void updateHoveredCarcass(GL2 gl) {
+            hoveredCarcass = null;
+            if (hoverX < 0 || !(_myWorld instanceof WorldOfCells)) return;
+            WorldOfCells wc = (WorldOfCells) _myWorld;
+            if (wc.carcasses == null || wc.carcasses.isEmpty()) return;
+
+            double[] mv   = new double[16];
+            double[] proj = new double[16];
+            int[]    view = new int[] { 0, 0, viewportWidth, viewportHeight };
+            double[] win  = new double[3];
+            gl.glGetDoublev(GL2.GL_MODELVIEW_MATRIX,  mv,   0);
+            gl.glGetDoublev(GL2.GL_PROJECTION_MATRIX, proj, 0);
+
+            int    w   = _myWorld.getWidth();
+            int    h   = _myWorld.getHeight();
+            double best = PICK_TOLERANCE_PX;
+
+            for (objects.Carcass c : wc.carcasses) {
+                // Position rendue : même formule que Carcass.displayUniqueObject
+                // et projectScreenDist pour les agents (pan-offset + coin de cellule).
+                int cx = c.getX(), cy = c.getY();
+                int x2 = ((cx - (movingX % w)) % w + w) % w;
+                int y2 = ((cy - (movingY % h)) % h + h) % h;
+                double worldX = offset + x2 * stepX - lenX;
+                double worldY = offset + y2 * stepY - lenY;
+                // Altitude : sommet de la pile, carcasse à plat au sol.
+                double worldZ = (double) _myWorld.getCellTopAltitude(cx, cy);
+
+                boolean ok = pickGlu.gluProject(worldX, worldY, worldZ,
+                        mv, 0, proj, 0, view, 0, win, 0);
+                if (!ok) continue;
+                if (win[2] < 0 || win[2] > 1) continue; // hors frustum
+
+                double sx = win[0];
+                double sy = viewportHeight - win[1]; // NEWT Y-flip : OpenGL bas-gauche → AWT haut-gauche
+                double ddx = sx - hoverX;
+                double ddy = sy - hoverY;
+                double dist = Math.sqrt(ddx * ddx + ddy * ddy);
+                if (dist < best) { best = dist; hoveredCarcass = c; }
+            }
+        }
+
+        /** Étiquette d'espèce ASCII pour le tooltip carcasse. */
+        private static String speciesLabel(objects.Species s) {
+            switch (s) {
+                case MOUTON: return "mouton";
+                case LOUP:   return "loup";
+                case OURS:   return "ours";
+                case HUMAIN: return "humain";
+                default:     return "animal";
+            }
+        }
+
+        /**
+         * Task 4.1 — tooltip de carcasse au survol : espece + poids, pres du curseur.
+         */
+        private void drawCarcassTooltip(GL2 gl, objects.Carcass c, int mx, int my) {
+            String label = "Carcasse de " + speciesLabel(c.source) + " : "
+                    + Math.round(c.mass) + "kg";
+            int wBox = label.length() * 6 + 12;
+            int hBox = 18;
+            int bx = Math.min(mx + 14, viewportWidth - wBox - 4);
+            int by = Math.max(2, my - 8);
+            ui.drawQuad(gl, bx, by, wBox, hBox, 0.10f, 0.05f, 0.05f, 0.88f);
+            ui.drawBorder(gl, bx, by, wBox, hBox, 0.8f, 0.4f, 0.3f, 1f);
+            ui.drawText(gl, bx + 6, by + 13, viewportHeight, label, 0.95f, 0.80f, 0.70f);
         }
 
         /** Énergie (courante ou max) d'un agent, par espèce. */
@@ -2168,6 +2244,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            // V3 — agent sous le curseur (bulle d'info au survol). Calculé ici,
 	            // tant que MODELVIEW porte encore la caméra (comme le picking).
 	            computeHoverAgent(gl);
+	            // Task 4.1 — carcasse sous le curseur (tooltip espece + poids).
+	            updateHoveredCarcass(gl);
 
 	            // Restaurer la projection perspective si on était passé en ortho
 	            // pour la vue de dessus. Doit être fait AVANT begin2D car
@@ -2210,6 +2288,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	if (hoverAgent != null && hoverAgent != selectedAgent
 	            			&& isAgentStillAlive(hoverAgent)) {
 	            		drawHoverTooltip(gl, hoverAgent, hoverX, hoverY);
+	            	}
+	            	// Task 4.1 — tooltip carcasse au survol (espece + poids).
+	            	if (hoveredCarcass != null) {
+	            		drawCarcassTooltip(gl, hoveredCarcass, hoverX, hoverY);
 	            	}
 	            	// Graphe populations (Phase 9) — coin haut-GAUCHE, donc il ne
 	            	// chevauche plus le menu in-game (panneau droit) : on l'affiche
