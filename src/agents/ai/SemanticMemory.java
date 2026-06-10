@@ -14,10 +14,13 @@ public final class SemanticMemory {
     /** Un lieu mémorisé : sa catégorie, sa position, son score d'utilisation. */
     static final class Entry {
         final MemoryKind kind;
-        final int x, y;
+        int x, y;                 // mutables : la fusion met a jour sur la derniere observation
         int usage;
-        Entry(MemoryKind kind, int x, int y) {
+        int lastSeen;             // iteration monde du dernier renforcement (recence)
+        double value;             // charge utile (FOOD = masse de la carcasse ; 0 sinon)
+        Entry(MemoryKind kind, int x, int y, int lastSeen, double value) {
             this.kind = kind; this.x = x; this.y = y; this.usage = 1;
+            this.lastSeen = lastSeen; this.value = value;
         }
     }
 
@@ -57,7 +60,7 @@ public final class SemanticMemory {
      *  utilisés jusqu'à rentrer dans la nouvelle capacité. */
     public void setCapacity(int capacity) {
         this.capacity = Math.max(1, capacity);
-        while (entries.size() > this.capacity) forgetLeastUsed();
+        while (entries.size() > this.capacity) forgetLowestPriority();
     }
 
     /**
@@ -71,8 +74,47 @@ public final class SemanticMemory {
             existing.usage++;
             return;
         }
-        if (entries.size() >= capacity) forgetLeastUsed();
-        entries.add(new Entry(kind, x, y));
+        if (entries.size() >= capacity) forgetLowestPriority();
+        entries.add(new Entry(kind, x, y, 0, 0.0));
+    }
+
+    /**
+     * Renforce un souvenir par FUSION DE PROXIMITE : s'il existe deja un souvenir de
+     * meme categorie a distance <= {@code mergeRadius}, on incremente son usage, on
+     * met a jour sa position (derniere observation), sa date ({@code now}) et on
+     * retient le plus gros butin connu. Sinon on cree un nouveau souvenir (eviction
+     * LFU/priorite si plein). {@code dist} = distance tore-aware injectee.
+     */
+    public void reinforce(MemoryKind kind, int x, int y, double value, int now,
+                          int mergeRadius, Distance dist) {
+        Entry near = null;
+        double bestD = Double.MAX_VALUE;
+        for (Entry e : entries) {
+            if (e.kind != kind) continue;
+            double d = dist.between(e.x, e.y, x, y);
+            if (d <= mergeRadius && d < bestD) { bestD = d; near = e; }
+        }
+        if (near != null) {
+            near.usage++;
+            near.x = x; near.y = y;
+            near.lastSeen = now;
+            near.value = Math.max(near.value, value);
+            return;
+        }
+        if (entries.size() >= capacity) forgetLowestPriority();
+        entries.add(new Entry(kind, x, y, now, value));
+    }
+
+    /** Oublie le souvenir exact (lose-shift : carcasse trouvee absente a l'arrivee). */
+    public void forget(MemoryKind kind, int x, int y) {
+        Entry e = find(kind, x, y);
+        if (e != null) entries.remove(e);
+    }
+
+    /** Charge utile memorisee d'un lieu (FOOD = masse de la carcasse ; 0 si absent). */
+    public double valueOf(MemoryKind kind, int x, int y) {
+        Entry e = find(kind, x, y);
+        return e == null ? 0.0 : e.value;
     }
 
     /** Nombre total de souvenirs. */
@@ -129,7 +171,7 @@ public final class SemanticMemory {
     }
 
     /** Oublie le souvenir au plus faible score d'usage (LFU). */
-    private void forgetLeastUsed() {
+    private void forgetLowestPriority() {
         if (entries.isEmpty()) return;
         Entry least = entries.get(0);
         for (Entry e : entries) {
