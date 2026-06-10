@@ -704,6 +704,17 @@ public abstract class World {
 		for ( int i = 0 ; i < uniqueDynamicObjects.size(); i++ )
 			uniqueDynamicObjects.get(i).displayUniqueObject(_myWorld,gl,offsetCA_x,offsetCA_y,offset,stepX,stepY,lenX,lenY,normalizeHeight);
 	}
+
+	/**
+	 * Carcasses : toujours affichées (comme les agents). À appeler HORS d'un
+	 * glBegin — les display lists GLB ouvrent leur propre glBegin.
+	 */
+	public void displayCarcasses(World _myWorld, GL2 gl, int offsetCA_x, int offsetCA_y,
+			float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight)
+	{
+		for (int i = 0; i < carcasses.size(); i++)
+			carcasses.get(i).displayUniqueObject(_myWorld, gl, offsetCA_x, offsetCA_y, offset, stepX, stepY, lenX, lenY, normalizeHeight);
+	}
     
 	public int getWidth() { return dxCA; }
 	public int getHeight() { return dyCA; }

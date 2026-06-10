@@ -2118,6 +2118,12 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            			movingX, movingY, offset, stepX, stepY,
 	            			lenX, lenY, normalizeHeightMoutons, dayFactor);
 	            	}
+
+	            	// Passe 2e : carcasses (dépouilles couchées, rétrécissantes).
+	            	// Toujours affichées (pas de toggle `o`) — comme les agents.
+	            	_myWorld.displayCarcasses(_myWorld, gl,
+	            			movingX, movingY, offset, stepX, stepY,
+	            			lenX, lenY, normalizeHeightMoutons);
 	            }
 
 	            // V3 — halo de sélection au sol sous l'agent suivi (cercle pulsant).

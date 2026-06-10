@@ -46,6 +46,10 @@ public final class GLBModel {
      *  {@link #opengldraw(GL2, float)} et modulable par le facteur jour/nuit —
      *  PAS figée dans la display list, sinon l'agent brillerait la nuit. */
     private float emissionLevel = 0f;
+    /** Primitives conservées après la construction de la display list.
+     *  Utilisées uniquement par {@link #opengldrawTinted} (chemin immédiat
+     *  pour les carcasses). Null si le modèle n'a pas besoin de tint. */
+    private List<Prim> primsRetained = null;
 
     /** Données décodées d'une primitive (un matériau). */
     private static final class Prim {
@@ -218,6 +222,9 @@ public final class GLBModel {
         gl.glCullFace(GL2.GL_FRONT);
         gl.glEndList();
 
+        // Conserver les primitives pour le chemin de rendu teinté (immédiat).
+        primsRetained = prims;
+
         int totalTris = 0, totalVerts = 0;
         for (Prim p : prims) { totalTris += p.indices.length/3; totalVerts += p.positions.length/3; }
         System.out.println("[GLBModel] " + glbPath + " : " + prims.size() + " prim(s), "
@@ -246,6 +253,80 @@ public final class GLBModel {
             gl.glMaterialfv(GL2.GL_FRONT_AND_BACK, GL2.GL_EMISSION, noEm, 0);
         }
         gl.glDisable(GL2.GL_TEXTURE_2D);
+        gl.glDisable(GL2.GL_COLOR_MATERIAL);
+    }
+
+    /**
+     * Chemin de rendu teinté en mode immédiat (glBegin/glEnd).
+     *
+     * <p>La display list compile des appels {@code glColor4f} littéraux par
+     * primitive et ne peut pas être modulée de l'extérieur : tout {@code glColor}
+     * posé avant {@code glCallList} est écrasé par les couleurs figées dans la
+     * liste. {@code GL_COLOR_MATERIAL} est également activé à l'intérieur de la
+     * liste, ce qui neutralise toute tentative de tint via {@code glMaterial}.
+     * La seule façon de teinter sans reconstruire la liste est d'émettre la
+     * géométrie en mode immédiat en multipliant chaque couleur primitive par le
+     * facteur de tint souhaité — ce que fait cette méthode.
+     *
+     * <p>Cette méthode doit être réservée aux objets rares (carcasses). Pour les
+     * agents vivants utiliser {@link #opengldraw(GL2, float)} (display list).
+     *
+     * @param emissionScale modulateur d'émission (0 = pas de glow — corpse).
+     * @param tintR, tintG, tintB  facteurs multiplicatifs [0..1] appliqués à la
+     *   couleur de chaque primitive (texture blanche → (tintR,tintG,tintB) ;
+     *   couleur plate (r,g,b) → (r×tintR, g×tintG, b×tintB)).
+     */
+    public void opengldrawTinted(GL2 gl, float emissionScale,
+            float tintR, float tintG, float tintB) {
+        if (primsRetained == null) { opengldraw(gl, emissionScale); return; }
+
+        // Même état que la display list : cull BACK (le terrain cull FRONT),
+        // two-sided, GL_COLOR_MATERIAL, GL_MODULATE.
+        gl.glCullFace(GL2.GL_BACK);
+        gl.glLightModeli(GL2.GL_LIGHT_MODEL_TWO_SIDE, 1);
+        gl.glEnable(GL2.GL_COLOR_MATERIAL);
+        gl.glTexEnvi(GL2.GL_TEXTURE_ENV, GL2.GL_TEXTURE_ENV_MODE, GL2.GL_MODULATE);
+
+        float e = emissionLevel * emissionScale;
+        if (e > 0f) {
+            float[] em = { e, e * 0.97f, e * 0.9f, 1f };
+            gl.glMaterialfv(GL2.GL_FRONT_AND_BACK, GL2.GL_EMISSION, em, 0);
+        }
+
+        for (Prim p : primsRetained) {
+            if (p.texture != null) {
+                gl.glEnable(GL2.GL_TEXTURE_2D);
+                p.texture.bind(gl);
+                // Texture blanche (1,1,1) → tint pur; GL_MODULATE multiplie la
+                // couleur de vertex par la texel → résultat teinté.
+                gl.glColor4f(tintR, tintG, tintB, 1f);
+            } else {
+                gl.glDisable(GL2.GL_TEXTURE_2D);
+                gl.glColor4f(
+                        p.baseColor[0] * tintR,
+                        p.baseColor[1] * tintG,
+                        p.baseColor[2] * tintB,
+                        p.baseColor[3]);
+            }
+            gl.glBegin(GL2.GL_TRIANGLES);
+            for (int t = 0; t < p.indices.length; t++) {
+                int v = p.indices[t];
+                if (p.normals != null) gl.glNormal3f(p.normals[v*3], p.normals[v*3+1], p.normals[v*3+2]);
+                if (p.uvs != null)     gl.glTexCoord2f(p.uvs[v*2], p.uvs[v*2+1]);
+                gl.glVertex3f(p.positions[v*3], p.positions[v*3+1], p.positions[v*3+2]);
+            }
+            gl.glEnd();
+        }
+
+        if (e > 0f) {
+            float[] noEm = { 0f, 0f, 0f, 1f };
+            gl.glMaterialfv(GL2.GL_FRONT_AND_BACK, GL2.GL_EMISSION, noEm, 0);
+        }
+
+        // Restauration identique à la display list + opengldraw.
+        gl.glDisable(GL2.GL_TEXTURE_2D);
+        gl.glLightModeli(GL2.GL_LIGHT_MODEL_TWO_SIDE, 0);
+        gl.glCullFace(GL2.GL_FRONT);
         gl.glDisable(GL2.GL_COLOR_MATERIAL);
     }
 

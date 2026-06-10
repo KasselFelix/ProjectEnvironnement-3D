@@ -27,6 +27,9 @@ public class Loup extends Agent {
 		}
 	}
 
+	/** Accesseur statique pour la carcasse : renvoie le modèle GLB déjà chargé (ou null). */
+	public static GLBModel getModel() { return loupModel; }
+
 	/**
 	 * Rend un loup via la display list GLB. À appeler HORS d'un glBegin.
 	 * Pattern identique à {@link Mouton#displayMoutonAt}. Scale ×2.0 (prédateur

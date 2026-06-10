@@ -32,6 +32,9 @@ public class Mouton extends Agent {
 		}
 	}
 
+	/** Accesseur statique pour la carcasse : renvoie le modèle GLB déjà chargé (ou null). */
+	public static GLBModel getModel() { return moutonModel; }
+
 	/**
 	 * Rend un mouton via la display list GLB. À appeler HORS d'un glBegin.
 	 *
