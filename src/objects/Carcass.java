@@ -18,6 +18,10 @@ public class Carcass extends UniqueObject {
 	/** Fraîcheur minimale (∈[0,1]) pour qu'un loup repu hurle (défaut = fenêtre pleine). */
 	public static double FRESH_HOWL_THRESHOLD = 1.0;
 
+	/** Teinte chair fraîche (rougeâtre) -> teinte pourrie (verdâtre/grisâtre terne). */
+	private static final float[] FRESH_RGB = { 0.55f, 0.32f, 0.28f };
+	private static final float[] ROT_RGB   = { 0.32f, 0.34f, 0.22f };
+
 	/** Temps écoulé depuis l'apparition (sec réelles) — axe pourriture, indépendant de la masse. */
 	public double ageSeconds = 0.0;
 
@@ -119,11 +123,16 @@ public class Carcass extends UniqueObject {
 		gl.glRotatef(90f, 1f, 0f, 0f);
 		gl.glScalef(scale, scale, scale);
 
-		// Tint brun-rougeâtre sombre : appliqué en mode immédiat par
-		// opengldrawTinted, qui multiplie chaque couleur primitive (glColor4f
-		// de la display list) par ce facteur — contourne l'écrasement par la
-		// display list. Émission 0 : corpse inerte, ne brille pas la nuit.
-		model.opengldrawTinted(gl, 0f, 0.55f, 0.32f, 0.28f);
+		// Tint interpolé selon la fraîcheur : rougeâtre (fraîche) → verdâtre/grisâtre (pourrie).
+		// À freshness=1 : FRESH_RGB = (0.55, 0.32, 0.28) — identique à l'ancien fixe.
+		// opengldrawTinted est le chemin immédiat qui multiplie chaque couleur primitive
+		// par ce facteur — contourne l'écrasement par la display list.
+		// Émission 0 : corpse inerte, ne brille pas la nuit.
+		float f = (float) freshness();                      // 1 = fraiche, 0 = pourrie
+		float tr = ROT_RGB[0] + (FRESH_RGB[0] - ROT_RGB[0]) * f;
+		float tg = ROT_RGB[1] + (FRESH_RGB[1] - ROT_RGB[1]) * f;
+		float tb = ROT_RGB[2] + (FRESH_RGB[2] - ROT_RGB[2]) * f;
+		model.opengldrawTinted(gl, 0f, tr, tg, tb);
 
 		gl.glPopAttrib();
 		gl.glPopMatrix();
