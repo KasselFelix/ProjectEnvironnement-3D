@@ -201,6 +201,27 @@ class CarcasseTest {
         assertFalse(p.predatorVisible(), "tete baissee : menace a 8 cases non percue (vision reduite)");
     }
 
+    // ===== Fix C1 : l'ours doit prendre PLUSIEURS bouchees =====
+
+    @Test
+    void oursVideProgressivementUneCarcasse() {
+        WorldOfCells w = flat();
+        Ours o = new Ours(25, 25, w); o.isFounder = true; w.ours.add(o);
+        o.energie = 50;
+        w.spawnCarcass(25, 25, 300.0, objects.Species.LOUP);   // sous l'ours
+        objects.Carcass c = w.carcasses.get(0);
+        double m0 = c.mass;
+        int bouchees = 0; double prev = m0;
+        for (int t = 0; t < 2000; t++) {
+            o.energie = 50;                       // reste affame => mange en continu
+            w.setIteration(t); o.step();
+            if (c.mass < prev - 1e-9) { bouchees++; prev = c.mass; }
+            if (c.isGone() || bouchees >= 3) break;
+        }
+        assertTrue(bouchees >= 3, "l'ours prend plusieurs bouchees successives (pas une seule)");
+        assertTrue(c.mass < m0, "la carcasse a diminue");
+    }
+
     @Test
     void dangerPreempteLeRepasUneFoisPercu() {
         WorldOfCells w = flat();

@@ -3,7 +3,7 @@ package agents.ai;
 /**
  * États d'un agent dans la FSM de décision. L'ordre n'a pas de sémantique de
  * priorité (la priorité est portée par decideState). EAT = état réel retourné
- * par decideState pour un carnivore (Loup) qui mange une carcasse présente sur
+ * par decideState pour un carnivore (Loup ou Ours) qui mange une carcasse présente sur
  * sa cellule ou une case adjacente. SEEK_FOOD = le mouton affamé se dirige
  * vers l'herbe la plus proche en vue (cf. Mouton).
  */

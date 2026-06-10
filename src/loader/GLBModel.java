@@ -62,7 +62,7 @@ public final class GLBModel {
     }
 
     public GLBModel(String glbPath, boolean centerit, GL2 gl) throws IOException {
-        this(glbPath, centerit, gl, 0.0f);
+        this(glbPath, centerit, gl, 0.0f, false);
     }
 
     /**
@@ -73,6 +73,19 @@ public final class GLBModel {
      *   délaver.
      */
     public GLBModel(String glbPath, boolean centerit, GL2 gl, float emissionLevel) throws IOException {
+        this(glbPath, centerit, gl, emissionLevel, false);
+    }
+
+    /**
+     * @param retainPrimsForTinting si {@code true}, conserve les tableaux de
+     *   sommets après la construction de la display list pour permettre le rendu
+     *   teinté en mode immédiat via {@link #opengldrawTinted}. Ne passer
+     *   {@code true} que pour les modèles utilisés comme source de carcasse
+     *   (mouton, loup) — les autres (arbre, etc.) n'en ont pas besoin et la
+     *   rétention est inutilement coûteuse en mémoire.
+     */
+    public GLBModel(String glbPath, boolean centerit, GL2 gl, float emissionLevel,
+            boolean retainPrimsForTinting) throws IOException {
         this.emissionLevel = emissionLevel;
         byte[] raw = readAll(glbPath);
         ByteBuffer buf = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN);
@@ -223,7 +236,9 @@ public final class GLBModel {
         gl.glEndList();
 
         // Conserver les primitives pour le chemin de rendu teinté (immédiat).
-        primsRetained = prims;
+        // Opt-in : uniquement pour les modèles utilisés comme source de carcasse
+        // (mouton, loup) — activer via retainPrimsForTinting=true à l'appel.
+        if (retainPrimsForTinting) primsRetained = prims;
 
         int totalTris = 0, totalVerts = 0;
         for (Prim p : prims) { totalTris += p.indices.length/3; totalVerts += p.positions.length/3; }

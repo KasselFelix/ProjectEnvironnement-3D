@@ -25,7 +25,7 @@ public class Mouton extends Agent {
 
 	public static void initModel(GL2 gl) {
 		try {
-			moutonModel = new GLBModel("models/Mouton_chibi.glb", false, gl, 0.32f);
+			moutonModel = new GLBModel("models/Mouton_chibi.glb", false, gl, 0.32f, true); // true = retenir prims pour carcasse tintee
 		} catch (Exception e) {
 			System.out.println("[Mouton] erreur chargement GLB: " + e.getMessage());
 			e.printStackTrace();

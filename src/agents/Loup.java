@@ -20,7 +20,7 @@ public class Loup extends Agent {
 
 	public static void initModel(GL2 gl) {
 		try {
-			loupModel = new GLBModel("models/Loup_chibi.glb", false, gl, 0.32f);
+			loupModel = new GLBModel("models/Loup_chibi.glb", false, gl, 0.32f, true); // true = retenir prims pour carcasse tintee
 		} catch (Exception e) {
 			System.out.println("[Loup] erreur chargement GLB: " + e.getMessage());
 			e.printStackTrace();

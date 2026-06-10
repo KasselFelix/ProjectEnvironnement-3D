@@ -279,6 +279,10 @@ public class Ours extends Agent {
             if (world.getIteration() % ticksPerGameSecond() == 0) energie -= energieD / 10;
             if (energie <= 0) _alive = false;
         }
+        // Cooldown de bouchee (meme logique que Loup.postTick) — sans ce
+        // decrement le cooldown reste a 10 apres la premiere bouchee et l'ours
+        // ne mange plus jamais. C1.
+        if (eatBiteCooldown > 0) eatBiteCooldown--;
         trainMindAndCharacter();   // L1
     }
 
