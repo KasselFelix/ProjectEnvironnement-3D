@@ -126,10 +126,17 @@ public class Loup extends Agent {
 	int howlCooldown = 0;
 	/** Balise entendue (position bruitée d'un hurlement), -1 = aucune. */
 	public int howlTargetX = -1, howlTargetY = -1;
+	/** Sujet du hurlement courant : HUNTING (proie) ou FOOD (carcasse fraîche). */
+	private MemoryKind howlSubject = MemoryKind.HUNTING;
 
 	private boolean howlReady()      { return howlCooldown == 0; }
 	private boolean hasHowlTarget()  { return howlTargetX >= 0; }
 	private void    clearHowlTarget(){ howlTargetX = -1; howlTargetY = -1; }
+	/** true si la carcasse perçue est assez fraîche pour déclencher un hurlement-nourriture. */
+	private boolean perceivedCarcassFresh(Percept p) {
+		objects.Carcass c = world.carcassAt(p.carcassX, p.carcassY);
+		return c != null && c.isFresh();
+	}
 
 	// Génome, cycle de vie (isFounder/currentStage/growthScale/displaySize) et
 	// taille héritable : factorisés dans Agent (consolidation C3).
@@ -488,6 +495,8 @@ public class Loup extends Agent {
 		if (affame && p.preyVisible())        return AgentState.HUNT;            // affamé : chasse/tue en solo
 		if (!affame && p.preyVisible() && howlReady() && !p.inWater)
 		                                      return AgentState.HOWL;            // repu : hurle pour rallier la meute
+		if (!affame && p.carcassVisible() && howlReady() && !p.inWater && perceivedCarcassFresh(p))
+		                                      return AgentState.HOWL;            // repu : hurle pour signaler une carcasse fraiche
 		if (enChasse && p.preyVisible())      return AgentState.HUNT;            // repu de nuit hors cooldown : effraie
 		if (enChasse && hasFreshTrack())      return AgentState.HUNT;            // persistance
 		if (p.inWater)                        return AgentState.SEEK_LAND;
@@ -550,12 +559,25 @@ public class Loup extends Agent {
 				vitesse = vcourse;   // ralenti dans l'eau par swimFactor (postMove)
 				return dodgeObstacles(true);   // contourne les arbres vers la terre
 			case HOWL: {
-				if (howlDurationLeft <= 0) howlDurationLeft = HOWL_DURATION;   // debut du hurlement
+				if (howlDurationLeft <= 0) {
+					howlDurationLeft = HOWL_DURATION;   // debut du hurlement
+					// sujet : proie en vue prime ; sinon carcasse fraiche
+					howlSubject = p.preyVisible() ? MemoryKind.HUNTING : MemoryKind.FOOD;
+					if (howlSubject == MemoryKind.FOOD && p.carcassVisible()) {
+						howlTargetX = p.carcassX; howlTargetY = p.carcassY;   // centre de diffusion = la carcasse
+					}
+				}
 				vitesse = vpas;               // isMyTurn() gate sur vitesse : la fixer a vpas (~9 ticks/tour) decouple la cadence de diffusion de l'etat precedent (ex. vcourse herite de HUNT). Le hurleur ne se deplace pas : vitesse n'est QUE la periode ici (ne pas supprimer cette ligne).
 				wantsToMove = false;          // BALISE FIXE : reste sur place
 				broadcastHowl();              // diffuse a chaque tour (capte ceux qui entrent a portee)
 				howlDurationLeft--;
-				if (howlDurationLeft <= 0) howlCooldown = HOWL_COOLDOWN;       // fin -> cooldown
+				if (howlDurationLeft <= 0) {
+					howlCooldown = HOWL_COOLDOWN;       // fin -> cooldown
+					// Libère la balise carcasse si le hurlement était de type FOOD, puis
+					// remet le sujet par défaut pour le prochain hurlement.
+					if (howlSubject == MemoryKind.FOOD) clearHowlTarget();
+					howlSubject = MemoryKind.HUNTING;
+				}
 				return MoveConstraints.landBound();
 			}
 			case EAT:
@@ -659,16 +681,24 @@ public class Loup extends Agent {
 	}
 
 	/** Diffuse le hurlement (omnidirectionnel) : chaque loup vivant à portée
-	 *  HOWL_RADIUS mémorise la zone de chasse, bruitée selon SON propre sens
-	 *  d'orientation (noisyLocation). Seuls les loups AFFAMÉS adoptent une balise et
-	 *  partiront (LOCALISATION) ; en cas de balise déjà présente, on rebascule vers la
-	 *  plus proche. Comme l'alerte du troupeau : seul l'émetteur diffuse (pas de cascade). */
+	 *  HOWL_RADIUS mémorise la zone (HUNTING ou FOOD selon howlSubject), bruitée
+	 *  selon SON propre sens d'orientation (noisyLocation). Seuls les loups AFFAMÉS
+	 *  adoptent une balise et partiront (LOCALISATION) ; en cas de balise déjà
+	 *  présente, on rebascule vers la plus proche. Pour un hurlement FOOD, la masse
+	 *  de la carcasse est portée comme charge utile du souvenir. Comme l'alerte du
+	 *  troupeau : seul l'émetteur diffuse (pas de cascade). */
 	void broadcastHowl() {
+		double mass = 0.0;
+		if (howlSubject == MemoryKind.FOOD && howlTargetX >= 0) {
+			objects.Carcass c = world.carcassAt(howlTargetX, howlTargetY);
+			if (c != null) mass = c.mass;
+		}
 		for (Loup l : world.loups) {
 			if (l == this || !l._alive) continue;
 			if (world.distance(l.x, l.y, x, y) > HOWL_RADIUS) continue;
 			int[] pos = l.noisyLocation(x, y, l.genome.orientationErrorProb(), HOWL_NOISE_MAX, EVO_RNG);
-			l.memory.remember(MemoryKind.HUNTING, pos[0], pos[1]);
+			l.memory.reinforce(howlSubject, pos[0], pos[1], mass, world.getIteration(),
+					MEMORY_MERGE_RADIUS, l.memDistance);
 			if (l.energie < l.energieD * HUNGER_RATIO) {        // affamé → se déplace
 				if (!l.hasHowlTarget()
 						|| world.distance(l.x, l.y, pos[0], pos[1])
