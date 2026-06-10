@@ -129,6 +129,13 @@ public final class SemanticMemory {
         return e != null && e.usage >= consolidationThreshold(kind);
     }
 
+    /** Retire les souvenirs de {@code kind} plus vieux que {@code ttlTicks}
+     *  (now − lastSeen). Pour FOOD : un lieu plus vieux que la durée de vie max
+     *  d'une carcasse pointe vers quelque chose de forcément pourri/mangé. */
+    public void purgeStale(MemoryKind kind, int now, int ttlTicks) {
+        entries.removeIf(e -> e.kind == kind && (now - e.lastSeen) > ttlTicks);
+    }
+
     /** Oublie le souvenir exact (lose-shift : carcasse trouvee absente a l'arrivee). */
     public void forget(MemoryKind kind, int x, int y) {
         Entry e = find(kind, x, y);

@@ -64,6 +64,18 @@ class SemanticMemoryReinforceTest {
     }
 
     @Test
+    void purgeRetireFoodTropVieux() {
+        SemanticMemory m = new SemanticMemory();
+        m.reinforce(MemoryKind.FOOD, 10, 10, 70.0, 100, 3, EUCLID);   // lastSeen=100
+        m.purgeStale(MemoryKind.FOOD, 100 + 50, 40);    // age 50 > ttl 40 => purge
+        assertEquals(0, m.size());
+
+        m.reinforce(MemoryKind.FOOD, 10, 10, 70.0, 200, 3, EUCLID);   // lastSeen=200
+        m.purgeStale(MemoryKind.FOOD, 200 + 30, 40);    // age 30 <= ttl 40 => garde
+        assertEquals(1, m.size());
+    }
+
+    @Test
     void teachPreserveValueEtLastSeen() {
         // Professeur qui connait une carcasse de masse 55.0 vue a l'iteration 200
         SemanticMemory teacher = new SemanticMemory();
