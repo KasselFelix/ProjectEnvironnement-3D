@@ -50,6 +50,20 @@ class SemanticMemoryReinforceTest {
     }
 
     @Test
+    void evictionSacrifieFoodProvisoireAvantDanger() {
+        SemanticMemory m = new SemanticMemory();
+        m.setCapacity(3);
+        m.reinforce(MemoryKind.DANGER, 1, 1, 0.0, 100, 0, EUCLID);   // usage1 consolide (survie)
+        m.reinforce(MemoryKind.DANGER, 2, 2, 0.0, 100, 0, EUCLID);   // usage1 consolide (survie)
+        m.reinforce(MemoryKind.FOOD,   3, 3, 0.0, 100, 0, EUCLID);   // usage1 provisoire
+        m.reinforce(MemoryKind.WATER,  4, 4, 0.0, 100, 0, EUCLID);   // declenche une eviction
+        assertEquals(3, m.size());
+        assertFalse(m.contains(MemoryKind.FOOD, 3, 3), "le FOOD provisoire est sacrifie en premier");
+        assertTrue(m.contains(MemoryKind.DANGER, 1, 1), "les DANGER de survie sont preserves");
+        assertTrue(m.contains(MemoryKind.DANGER, 2, 2));
+    }
+
+    @Test
     void teachPreserveValueEtLastSeen() {
         // Professeur qui connait une carcasse de masse 55.0 vue a l'iteration 200
         SemanticMemory teacher = new SemanticMemory();

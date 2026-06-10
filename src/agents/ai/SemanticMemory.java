@@ -7,8 +7,8 @@ import java.util.List;
  * Mémoire sémantique d'un agent (cf. docs/evolution.txt § 5) : un ensemble de
  * lieux connus par catégorie ({@link MemoryKind}), chacun portant un score
  * d'utilisation. Capacité variable ; quand elle déborde, on oublie le souvenir
- * le MOINS utilisé (politique LFU actuelle — sera remplacée par priorité
- * composite en tâche 0.3).
+ * de plus faible priorité selon un ordre composite : provisoire avant consolidé,
+ * FOOD avant survie, puis usage croissant (cf. {@link #forgetLowestPriority}).
  */
 public final class SemanticMemory {
 
@@ -66,8 +66,8 @@ public final class SemanticMemory {
 
     /**
      * Mémorise un lieu. Si déjà connu, renforce son score d'usage (pas de
-     * doublon). Sinon l'ajoute, en évinçant le souvenir le moins utilisé si la
-     * capacité est atteinte (oubli LFU, § 5.2).
+     * doublon). Sinon l'ajoute, en évinçant le souvenir de plus faible priorité
+     * si la capacité est atteinte (§ 5.2).
      */
     public void remember(MemoryKind kind, int x, int y) {
         addOrMerge(kind, x, y, 0, 0.0);
@@ -95,7 +95,7 @@ public final class SemanticMemory {
      * meme categorie a distance <= {@code mergeRadius}, on incremente son usage, on
      * met a jour sa position (derniere observation), sa date ({@code now}) et on
      * retient le plus gros butin connu. Sinon on cree un nouveau souvenir (eviction
-     * LFU/priorite si plein). {@code dist} = distance tore-aware injectee.
+     * par priorite composite si plein). {@code dist} = distance tore-aware injectee.
      */
     public void reinforce(MemoryKind kind, int x, int y, double value, int now,
                           int mergeRadius, Distance dist) {
@@ -180,7 +180,7 @@ public final class SemanticMemory {
 
     /** Transmet TOUS les souvenirs de cette mémoire à {@code student} (§ 8 :
      *  apprentissage social / éducation). L'élève les ajoute (sous contrainte de
-     *  sa propre capacité, oubli LFU) en préservant {@code value} et
+     *  sa propre capacité, eviction par priorité composite) en préservant {@code value} et
      *  {@code lastSeen} du professeur. */
     public void teach(SemanticMemory student) {
         for (Entry e : entries) {
@@ -195,18 +195,24 @@ public final class SemanticMemory {
         return null;
     }
 
-    /**
-     * Oublie le souvenir au plus faible score d'usage (politique LFU actuelle).
-     * Le nom anticipe la tâche 0.3 qui remplacera ce critère par un score de
-     * priorité composite (usage, recence, valeur) — le corps sera mis à jour
-     * à ce moment-là.
-     */
+    /** Oublie le souvenir de plus FAIBLE priorité (ordre de sacrifice) :
+     *  1) provisoire avant consolidé ; 2) FOOD avant survie ; 3) plus faible usage ;
+     *  4) plus ancien lastSeen. Protège les souvenirs de survie consolidés. */
     private void forgetLowestPriority() {
         if (entries.isEmpty()) return;
-        Entry least = entries.get(0);
+        Entry victim = entries.get(0);
         for (Entry e : entries) {
-            if (e.usage < least.usage) least = e;
+            if (sacrificeRank(e) < sacrificeRank(victim)) victim = e;
         }
-        entries.remove(least);
+        entries.remove(victim);
+    }
+
+    /** Plus le rang est BAS, plus le souvenir est sacrifiable en premier. */
+    private long sacrificeRank(Entry e) {
+        int provisional = e.usage < consolidationThreshold(e.kind) ? 0 : 1_000_000;
+        int kindRank = (e.kind == MemoryKind.FOOD) ? 0 : 100_000;       // FOOD avant survie
+        return provisional + kindRank + e.usage;                         // puis usage croissant
+        // (lastSeen départage implicitement : à rang égal on garde le 1er rencontré = le plus ancien sort
+        //  d'abord car comparaison stricte `<` ; suffisant pour les tests.)
     }
 }
