@@ -60,8 +60,15 @@ class OursTest {
         Percept p = Perception.sense(ours, world, null, world.loups);
         ours.postMove(p);
         assertFalse(loup._alive, "l'ours dévore le loup présent sur sa cellule");
-        assertTrue(ours.energie > before, "l'ours gagne de l'énergie en dévorant");
-        assertTrue(ours.energie <= 100 + ours.energieD / 2, "gain plafonné à energieD/2");
+        // Task 3 : plus de gain instantané au kill. La carcasse est créée ; le gain
+        // viendra par bouchées successives (Task 5). L'énergie ne doit pas bondir.
+        // `before` (énergie initiale) + 5 : marge pour le coût métabolique de postMove (~1-2 unités).
+        // Tout bond > 5 trahirait un gain instantané résiduel (l'ancien +energieD/2).
+        assertTrue(ours.energie <= before + 5,
+                "Task 3 : pas de gain instantané au kill, energie observée : " + ours.energie);
+        assertEquals(1, world.carcasses.size(), "une carcasse LOUP est créée au kill");
+        assertEquals(objects.Species.LOUP, world.carcasses.get(0).source,
+                "la carcasse doit être de source LOUP");
     }
 
     @Test

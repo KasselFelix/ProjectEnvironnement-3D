@@ -41,15 +41,16 @@ class LoupTest {
     }
 
     /**
-     * C3 — Rééquilibrage du gain énergétique à la prédation.
+     * Task 3 (carcasse) — La mise à mort ne donne plus de gain instantané.
      *
-     * Attendu après correctif : un loup à énergie 100 qui mange un mouton
-     * doit voir son énergie passer à 100 + energieD/2 = 600, et non à
-     * energieD = 1000 (restauration totale, code original).
+     * Avant Task 3 : un loup qui tuait un mouton gagnait immédiatement
+     * energieD/2 énergie (correctif C3). Désormais, la proie laisse une
+     * carcasse sur la cellule du kill et le loup n'obtient aucun bonus
+     * immédiat d'énergie. Le gain passera par des bouchées successives (Task 5).
      *
      * Robustesse : on place un mouton à la position du loup ET sur les 4
      * cases cardinales adjacentes, donc quel que soit le mouvement du loup
-     * dans son step(), il finira sur une case contenant un mouton et le mangera.
+     * dans son step(), il finira sur une case contenant un mouton et le tuera.
      */
     @Test
     void loupGainEnergieBornéEnMangeantMouton() {
@@ -88,19 +89,22 @@ class LoupTest {
         int dead = 0;
         for (Mouton m : moutons) if (!m._alive) dead++;
         assertEquals(1, dead,
-                "Exactement un mouton doit être mangé par step (boucle break dans Loup.step).");
+                "Exactement un mouton doit être tué par step (boucle break dans Loup.step).");
 
-        // Après prédation, le bloc "mise à jour énergie" de Loup.step() décrémente
-        // energie de 1 à 4 unités (base + eau + descente). On vérifie donc la borne :
-        // C3 impose un gain plafonné à energieD/2, donc energie ≤ 100 + energieD/2,
-        // alors que le code original ramène energie à energieD = 1000.
-        int gainMaxAttendu = 100 + loup.energieD / 2;
-        assertTrue(loup.energie > 100,
-                "Le loup a dû gagner de l'énergie en mangeant le mouton (energie > 100 initial).");
-        assertTrue(loup.energie <= gainMaxAttendu,
-                "C3 : gain plafonné à energieD/2. Attendu energie ≤ "
-                + gainMaxAttendu + ", observé " + loup.energie
-                + " (probable restauration totale à energieD du code original).");
+        // Task 3 : plus de gain instantané au kill. L'énergie ne doit pas
+        // bondir de +energieD/2 — la petite décroissance métabolique du step
+        // est autorisée (quelques unités), mais pas un grand bond.
+        // 100 (énergie initiale) + 5 : marge pour le coût métabolique d'un step (~1-2 unités).
+        // Tout bond > 5 trahirait un gain instantané résiduel (l'ancien +energieD/2).
+        assertTrue(loup.energie <= 105,
+                "Task 3 : pas de gain instantané au kill. energie observée : " + loup.energie
+                + " (attendu ≤ 105 = 100 + marge métabolique).");
+
+        // La carcasse est créée sur la cellule du kill.
+        assertEquals(1, world.carcasses.size(),
+                "Une carcasse doit être créée sur la cellule du kill.");
+        assertEquals(objects.Species.MOUTON, world.carcasses.get(0).source,
+                "La carcasse doit être de source MOUTON.");
     }
 
     /**

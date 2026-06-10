@@ -188,12 +188,14 @@ public class Ours extends Agent {
 
     @Override
     protected void postMove(Percept p) {
-        // L4 — dévore tout loup sur la case (gain plafonné à energieD/2).
+        // L4 — dévore tout loup sur la case ; depuis Task 3 la mise à mort crée une carcasse (plus de gain instantané).
         if (energie < energieD * HUNGER_RATIO) {
             for (Loup l : world.loups) {
                 if (l._alive && l.x == x && l.y == y) {
+                    // Task 3 (carcasse) : plus de gain instantané. La mise à mort
+                    // laisse une carcasse LOUP ; l'énergie viendra par bouchées (Task 5).
+                    world.spawnCarcass(l.x, l.y, l.bodyMassKg(), objects.Species.LOUP);
                     l._alive = false;
-                    energie = Math.min(energieD, energie + energieD / 2);
                     m = 1;
                     vitesse = vpas;
                     memory.remember(MemoryKind.HUNTING, x, y);   // L1

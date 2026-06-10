@@ -252,10 +252,10 @@ public class Loup extends Agent {
 				UniqueDynamicObject pag = (UniqueDynamicObject) ag;
 				if (pag.x == x && pag.y == y) {
 					ag._alive = false;
-					// C3 (analyse ALife) : gain énergétique plafonné à energieD/2 au lieu
-					// d'une restauration totale à energieD. Force le loup à chasser
-					// régulièrement plutôt que de "faire le plein" en un seul kill.
-					energie = Math.min(energieD, energie + energieD / 2);
+					// Task 3 (carcasse) : plus de gain instantané. La mise à mort
+					// laisse une carcasse sur la cellule du kill ; l'énergie viendra
+					// par des bouchées successives (Task 5).
+					world.spawnCarcass(x, y, ag.bodyMassKg(), objects.Species.MOUTON);
 					m = 1;
 					vitesse = vpas;
 					// L1 — mémoire de chasse : la cellule où la prédation a réussi
