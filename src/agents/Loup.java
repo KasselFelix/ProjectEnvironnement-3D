@@ -140,7 +140,18 @@ public class Loup extends Agent {
 		_blueValue = 0.f;
 
 		baseMassKg = 45.0; frontalAreaM2 = 0.30;   // quadrupède profilé → résistance vent intermédiaire
+		biteBaseKg = 3.0;   // bouchée de base du loup (kg)
 	}
+
+	/** Écriture d'énergie depuis Agent.eatStep (le champ energie est sur Loup, pas Agent).
+	 *  Plafonné à energieD pour éviter une sursaturation impossible. */
+	@Override
+	protected void gainEnergie(int delta) { energie = Math.min(energie + delta, energieD); }
+
+	/** Stabilise la vitesse à vpas pendant EAT pour éviter la dérive (postMove applique
+	 *  le facteur hauteur à vitesse, qui tomberait vers 0 et ralentirait isMyTurn). */
+	@Override
+	protected void applyEatSpeed() { vitesse = vpas; }
 
 	/** Accesseur public pour l'UI (les champs restent package-private). */
 	public int getEnergie() { return energie; }
@@ -161,6 +172,7 @@ public class Loup extends Agent {
 			case FLEE_PREDATOR: return "Fuit berger";
 			case REST:      return "Repos";
 			case HUNT:      return "Chasse";
+			case EAT:       return "Mange";
 			case SEARCH:    return "Cherche proie";
 			case SEEK_LAND: return "Cherche terre";
 			case HOWL:         return "Hurle";
@@ -384,6 +396,8 @@ public class Loup extends Agent {
 
 		// Cooldown du hurlement : décrémenté à chaque tick (pas gated par isMyTurn).
 		if (howlCooldown > 0) howlCooldown--;
+		// Cooldown des bouchées : décrémenté à chaque tick (pas gated par isMyTurn).
+		if (eatBiteCooldown > 0) eatBiteCooldown--;
 	}
 
 	/** Rayon (cases) en deçà duquel un congénère « rompt » l'isolement de meute (§ 7.3). */
@@ -460,6 +474,7 @@ public class Loup extends Agent {
 		if (p.lavaVisible())                  return AgentState.FLEE_LAVA;       // L2 — la lave tue au contact
 		if (p.predatorVisible())              return AgentState.FLEE_PREDATOR;  // fuit l'Humain (prime sur la faim)
 		if (howlDurationLeft > 0 && !p.inWater) return AgentState.HOWL;           // hurlement en cours → jusqu'au bout (pas dans l'eau)
+		if (affame && carcassAdjacente(p))    return AgentState.EAT;             // carcasse à portée de bouchée
 		if (affame && p.preyVisible())        return AgentState.HUNT;            // affamé : chasse/tue en solo
 		if (!affame && p.preyVisible() && howlReady() && !p.inWater)
 		                                      return AgentState.HOWL;            // repu : hurle pour rallier la meute
@@ -470,6 +485,11 @@ public class Loup extends Agent {
 		if (enChasse)                         return AgentState.SEARCH;          // balayage spirale
 		if (energie >= energieD)              return AgentState.REST;            // repu plein → repos
 		return AgentState.WANDER;                                                 // flânerie économe
+	}
+
+	/** True si une carcasse comestible se trouve dans le 9-voisinage (distance ≤ 1.5 en tore). */
+	private boolean carcassAdjacente(Percept p) {
+		return p.carcassVisible() && world.distance(x, y, p.carcassX, p.carcassY) <= 1.5;
 	}
 
 	public MoveConstraints applyState(AgentState s, Percept p) {
@@ -533,6 +553,8 @@ public class Loup extends Agent {
 				if (howlDurationLeft <= 0) howlCooldown = HOWL_COOLDOWN;       // fin -> cooldown
 				return MoveConstraints.landBound();
 			}
+			case EAT:
+				return eatStep(p);
 			case REST:
 				// Repu (énergie pleine) : repos sur place (économie d'énergie).
 				wantsToMove = false;

@@ -34,6 +34,13 @@ public abstract class World {
 		carcasses.add(new Carcass(x, y, this, mass, source));
 	}
 
+	/** Renvoie la carcasse non-vide à la cellule (x,y), ou null si aucune. */
+	public Carcass carcassAt(int x, int y) {
+		for (Carcass c : carcasses)
+			if (!c.isGone() && c.getX() == x && c.getY() == y) return c;
+		return null;
+	}
+
 	/** Pourriture : chaque carcasse perd (initialMass / LIFETIME_SEC) × dt ; retire celles
 	 *  épuisées. dt en secondes réelles. */
 	public void rotCarcasses(double dtSeconds) {

@@ -2,9 +2,10 @@ package agents.ai;
 
 /**
  * États d'un agent dans la FSM de décision. L'ordre n'a pas de sémantique de
- * priorité (la priorité est portée par decideState). EAT n'est pas choisi par
- * decideState : c'est un libellé positionné en post-mouvement. SEEK_FOOD = le
- * mouton affamé se dirige vers l'herbe la plus proche en vue (cf. Mouton).
+ * priorité (la priorité est portée par decideState). EAT = état réel retourné
+ * par decideState pour un carnivore (Loup) qui mange une carcasse présente sur
+ * sa cellule ou une case adjacente. SEEK_FOOD = le mouton affamé se dirige
+ * vers l'herbe la plus proche en vue (cf. Mouton).
  */
 public enum AgentState {
     ON_FIRE, FLEE_LAVA, FLEE_PREDATOR, HUNT, HOWL, LOCALISATION, SEARCH, EAT, SEEK_LAND, SEEK_WATER, SEEK_FOOD, FOLLOW_PARENT, HERD, HOME, REST, WANDER, CONTROLLED;

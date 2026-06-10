@@ -46,6 +46,37 @@ class CarcasseTest {
     }
 
     @Test
+    void loupAffameMangeLaCarcasseEtSArreteRassasie() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(25, 25, w); l.isFounder = true; w.loups.add(l);
+        l.energie = 50;                                   // affamé
+        w.spawnCarcass(25, 25, 200.0, objects.Species.MOUTON);   // sur la case du loup
+        for (int t = 0; t < 2000; t++) {
+            w.setIteration(t); l.step();
+            if (l.energie >= (int) (l.energieD * Loup.HUNGER_RATIO)) break;
+        }
+        assertTrue(l.energie >= (int) (l.energieD * Loup.HUNGER_RATIO), "le loup a mange jusqu'a ne plus etre affame");
+        assertTrue(w.carcasses.get(0).mass < 200.0, "la carcasse a diminue");
+    }
+
+    @Test
+    void carcasseDisparaitQuandVidee() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(25, 25, w); l.isFounder = true; w.loups.add(l);
+        l.energie = 50;
+        w.spawnCarcass(25, 25, 6.0, objects.Species.MOUTON);   // petite carcasse
+        boolean aGagne = false;
+        for (int t = 0; t < 3000; t++) {
+            l.energie = 50;                                    // reste affamé => mange tout
+            w.setIteration(t); l.step();
+            if (l.energie > 50) aGagne = true;                // énergie montée => bouchée prise
+            if (w.carcasses.isEmpty()) break;
+        }
+        assertTrue(w.carcasses.isEmpty(), "carcasse videe par les bouchees => disparue");
+        assertTrue(aGagne, "le loup a bien gagne de l'energie en mangeant");
+    }
+
+    @Test
     void miseAMortLaisseUneCarcasseSansGainInstantane() {
         WorldOfCells w = flat();
         Loup l = new Loup(25, 25, w); l.isFounder = true; w.loups.add(l);

@@ -1006,6 +1006,50 @@ public class Agent extends UniqueDynamicObject{
 		return 20;
 	}
 
+	/** Hz de simulation (pour convertir sec → ticks). Délègue à ticksPerGameSecond()
+	 *  (même accès config.simulationHz, même fallback 20). */
+	protected double simulationHz() { return ticksPerGameSecond(); }
+
+	// ===== Festin (EAT) : bouchées cadencées sur une carcasse (Task 5) =====
+	/** Délai (sec réelles) entre deux bouchées. Hz-invariant via simulationHz(). */
+	protected static final double EAT_BITE_SEC = 0.5;
+	/** Masse (kg) d'une bouchée de base (0 = non-carnivore). Surchargé au ctor de l'espèce carnivore. */
+	public double biteBaseKg = 0.0;
+	/** Ticks restants avant la prochaine bouchée (0 = prêt). */
+	protected int eatBiteCooldown = 0;
+
+	/** Hook d'écriture d'énergie depuis eatStep. Surchargé par les espèces carnivores
+	 *  (Loup, Ours) pour faire {@code energie += delta}. No-op par défaut (Mouton, etc.). */
+	protected void gainEnergie(int delta) {}
+
+	/** Fixe la vitesse à "pas" (vpas) avant de manger, pour stabiliser isMyTurn()
+	 *  pendant le festin (empêche vitesse de dériver sous les facteurs terrain).
+	 *  Surchargé par les espèces carnivores (Loup, Ours) pour faire {@code vitesse = vpas}. */
+	protected void applyEatSpeed() {}
+
+	/** Une étape de festin : si une carcasse est sur la cellule courante ou une
+	 *  case adjacente (9-voisinage) ET que le cooldown est écoulé, prend une bouchée.
+	 *  Reste sur place (wantsToMove=false). Renvoie les contraintes de déplacement. */
+	protected agents.ai.MoveConstraints eatStep(agents.ai.Percept p) {
+		applyEatSpeed();   // stabilise vitesse avant postMove (empêche la dérive vers 0)
+		wantsToMove = false;
+		if (!p.carcassVisible()) return agents.ai.MoveConstraints.landBound();
+		objects.Carcass c = world.carcassAt(p.carcassX, p.carcassY);
+		if (c == null) return agents.ai.MoveConstraints.landBound();
+		// S'orienter vers la carcasse si on n'y est pas déjà dessus.
+		int dir = agents.ai.Perception.dirToCell(this, world, c.getX(), c.getY());
+		if (dir >= 0 && _orient != dir) { _orient = dir; return agents.ai.MoveConstraints.landBound(); }
+		// Prend une bouchée quand le cooldown est écoulé.
+		if (eatBiteCooldown == 0) {
+			double bite = biteBaseKg * Math.max(0.2, displaySize()); // plancher 0.2 : garde une bouchée non nulle même si la taille devient minuscule
+			double taken = c.eat(bite);
+			gainEnergie((int) Math.round(taken * objects.Carcass.ENERGY_PER_KG));
+			eatBiteCooldown = Math.max(1, (int) Math.round(EAT_BITE_SEC * simulationHz()));
+			if (c.isGone()) world.carcasses.remove(c);
+		}
+		return agents.ai.MoveConstraints.landBound();
+	}
+
 	/**
 	 * Vecteur unitaire (udx, udy) de la dernière direction de déplacement.
 	 * Renvoie (0, 1) = Nord si l'agent n'a pas encore bougé (lastDx/Dy
