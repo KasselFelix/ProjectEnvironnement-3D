@@ -6,7 +6,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Phase C du système d'évolution (cf. docs/evolution.txt § 5) : mémoire de
  * CONNAISSANCES (points d'eau, zones de chasse/danger, lieux sûrs) à capacité
- * variable, avec oubli LFU (least-frequently-used) lié à l'âge.
+ * variable, avec éviction par priorité (provisoire avant consolidé, FOOD avant
+ * survie, puis usage) lorsqu'elle déborde.
  */
 class SemanticMemoryTest {
 
@@ -31,8 +32,8 @@ class SemanticMemoryTest {
         assertEquals(2, mem.usageOf(MemoryKind.WATER, 5, 5), "usage renforcé à chaque rappel");
     }
 
-    /** Oubli LFU (§ 5.2) : à capacité pleine, l'arrivée d'un nouveau souvenir
-     *  évince le moins utilisé. */
+    /** Éviction (§ 5.2) : à capacité pleine, entre souvenirs de même catégorie/
+     *  consolidation, l'arrivée d'un nouveau souvenir évince le moins utilisé. */
     @Test
     void oublieLeMoinsUtiliseQuandPlein() {
         SemanticMemory mem = new SemanticMemory();

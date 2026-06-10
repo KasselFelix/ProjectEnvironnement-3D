@@ -196,8 +196,9 @@ public final class SemanticMemory {
     }
 
     /** Oublie le souvenir de plus FAIBLE priorité (ordre de sacrifice) :
-     *  1) provisoire avant consolidé ; 2) FOOD avant survie ; 3) plus faible usage ;
-     *  4) plus ancien lastSeen. Protège les souvenirs de survie consolidés. */
+     *  1) provisoire avant consolidé ; 2) FOOD avant survie ; 3) plus faible usage.
+     *  À rang égal, l'ordre d'insertion départage (le 1er rencontré reste, via la
+     *  comparaison stricte `<`). Protège les souvenirs de survie consolidés. */
     private void forgetLowestPriority() {
         if (entries.isEmpty()) return;
         Entry victim = entries.get(0);
