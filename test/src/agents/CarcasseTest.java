@@ -77,6 +77,34 @@ class CarcasseTest {
     }
 
     @Test
+    void loupAffameRejointUneCarcasseEnVuePuisLaMange() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 25, w); l.isFounder = true; w.loups.add(l);
+        l.energie = 50;
+        w.spawnCarcass(20, 25, 300.0, objects.Species.MOUTON);   // à l'EST, dist 10 (= vision)
+        double d0 = w.distance(l.x, l.y, 20, 25);
+        boolean aMange = false;
+        for (int t = 0; t < 2000; t++) {
+            l.energie = Math.min(l.energie, 200);   // garde-le affamé tant qu'il n'a pas atteint
+            w.setIteration(t); l.step();
+            if (w.carcasses.get(0).mass < 300.0) { aMange = true; break; }
+        }
+        assertTrue(aMange, "le loup a rejoint la carcasse et commence a manger");
+        assertTrue(w.distance(l.x, l.y, 20, 25) < d0, "il s'est rapproche");
+    }
+
+    @Test
+    void loupAffameMemoriseLaCarcasseCommeFOOD() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 25, w); l.isFounder = true; w.loups.add(l);
+        l.energie = 50;                                     // affamé
+        w.spawnCarcass(15, 25, 70.0, objects.Species.MOUTON);   // en vue (dist 5 <= vision 10)
+        for (int t = 0; t < 3; t++) { w.setIteration(t); l.step(); }
+        assertTrue(l.memory.contains(agents.ai.MemoryKind.FOOD, 15, 25),
+                "un loup affame voyant une carcasse memorise sa position comme FOOD");
+    }
+
+    @Test
     void miseAMortLaisseUneCarcasseSansGainInstantane() {
         WorldOfCells w = flat();
         Loup l = new Loup(25, 25, w); l.isFounder = true; w.loups.add(l);

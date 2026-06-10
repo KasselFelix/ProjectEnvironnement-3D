@@ -12,5 +12,7 @@ public enum MemoryKind {
     /** Cases où un prédateur / un danger a été rencontré. */
     DANGER,
     /** Lieux sûrs (p. ex. la bergerie pour un mouton). */
-    SAFE_PLACE;
+    SAFE_PLACE,
+    /** Positions de carcasses perçues (charognade). */
+    FOOD;
 }

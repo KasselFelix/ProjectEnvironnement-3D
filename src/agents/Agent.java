@@ -1050,6 +1050,13 @@ public class Agent extends UniqueDynamicObject{
 		return agents.ai.MoveConstraints.landBound();
 	}
 
+	/** Se dirige vers la carcasse perçue la plus proche (pursuitStep, fiable contre les
+	 *  pièges concaves). Renvoie la contrainte de mouvement, ou null si aucune carcasse. */
+	protected agents.ai.MoveConstraints seekCarcassStep(agents.ai.Percept p, int visionRange) {
+		if (!p.carcassVisible()) return null;
+		return pursuitStep(p, new int[]{p.carcassX, p.carcassY}, visionRange);
+	}
+
 	/**
 	 * Vecteur unitaire (udx, udy) de la dernière direction de déplacement.
 	 * Renvoie (0, 1) = Nord si l'agent n'a pas encore bougé (lastDx/Dy

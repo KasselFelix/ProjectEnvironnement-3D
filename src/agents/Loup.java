@@ -173,6 +173,7 @@ public class Loup extends Agent {
 			case REST:      return "Repos";
 			case HUNT:      return "Chasse";
 			case EAT:       return "Mange";
+			case SEEK_FOOD: return "Cherche carcasse";
 			case SEARCH:    return "Cherche proie";
 			case SEEK_LAND: return "Cherche terre";
 			case HOWL:         return "Hurle";
@@ -453,6 +454,10 @@ public class Loup extends Agent {
 		boolean affame   = energie < energieD * HUNGER_RATIO;
 		boolean enChasse = affame || attaqueNuit == 1;
 		if (!enChasse) resetPursuit();        // plus en chasse → on oublie la piste
+		// Forward hook (travaux futurs : revenir vers une carcasse mémorisée). Écrit une seule
+		// fois par cellule pour ne pas gonfler le compteur d'usage LFU de la mémoire.
+		if (p.carcassVisible() && !memory.contains(agents.ai.MemoryKind.FOOD, p.carcassX, p.carcassY))
+			memory.remember(agents.ai.MemoryKind.FOOD, p.carcassX, p.carcassY);
 		AgentState s = chooseState(p, affame, enChasse);
 		// spec §4 : une balise de hurlement devient caduque dès qu'un danger ou une vraie
 		// proie en vue prend le relais sur le ralliement. On la relâche ET on repart d'une
@@ -475,6 +480,7 @@ public class Loup extends Agent {
 		if (p.predatorVisible())              return AgentState.FLEE_PREDATOR;  // fuit l'Humain (prime sur la faim)
 		if (howlDurationLeft > 0 && !p.inWater) return AgentState.HOWL;           // hurlement en cours → jusqu'au bout (pas dans l'eau)
 		if (affame && carcassAdjacente(p))    return AgentState.EAT;             // carcasse à portée de bouchée
+		if (affame && p.carcassVisible())     return AgentState.SEEK_FOOD;       // une carcasse en vue : charogner (moins cher que chasser)
 		if (affame && p.preyVisible())        return AgentState.HUNT;            // affamé : chasse/tue en solo
 		if (!affame && p.preyVisible() && howlReady() && !p.inWater)
 		                                      return AgentState.HOWL;            // repu : hurle pour rallier la meute
@@ -555,6 +561,10 @@ public class Loup extends Agent {
 			}
 			case EAT:
 				return eatStep(p);
+			case SEEK_FOOD: {
+				agents.ai.MoveConstraints c = seekCarcassStep(p, vision);
+				return c != null ? c : steerAroundObstacles(p, true, vision);
+			}
 			case REST:
 				// Repu (énergie pleine) : repos sur place (économie d'énergie).
 				wantsToMove = false;
