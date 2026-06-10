@@ -91,6 +91,16 @@ public final class Genome {
         }
     }
 
+    /** Audace de fourragement (§ param 5) : un agent ENDURANT accepte d'aller plus
+     *  loin / plus incertain pour de la nourriture mémorisée. Dérivé de l'axe ENDURANCE. */
+    public double foragingBoldnessFactor() {
+        switch (get(Axis.ENDURANCE)) {
+            case POSITIVE: return 1.3;
+            case NEGATIVE: return 0.7;
+            default:       return 1.0;
+        }
+    }
+
     /** Probabilité de dévier du cap en navigation LONGUE DISTANCE (axe
      *  Orientation, § 4.1/§ 9) : BON_SENS 0.0 (cap exact), NEUTRE 0.15,
      *  DÉSORIENTÉ 0.5. Sans effet quand la cible est en vue (cf. § 9). */
