@@ -3,6 +3,7 @@ package worlds;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import javax.media.opengl.GL2;
 
@@ -23,6 +24,26 @@ public abstract class World {
 
 	protected ArrayList<UniqueObject> uniqueObjects = new ArrayList<UniqueObject>();
 	public ArrayList<UniqueDynamicObject> uniqueDynamicObjects = new ArrayList<UniqueDynamicObject>();
+
+	/** Liste vivante des carcasses présentes dans le monde. */
+	public List<Carcass> carcasses = new ArrayList<Carcass>();
+
+	/** Crée une carcasse à (x,y) avec une masse (kg) et l'espèce source. */
+	public void spawnCarcass(int x, int y, double mass, Species source) {
+		if (mass <= 0.0) return;
+		carcasses.add(new Carcass(x, y, this, mass, source));
+	}
+
+	/** Pourriture : chaque carcasse perd (initialMass / LIFETIME_SEC) × dt ; retire celles
+	 *  épuisées. dt en secondes réelles. */
+	public void rotCarcasses(double dtSeconds) {
+		Iterator<Carcass> it = carcasses.iterator();
+		while (it.hasNext()) {
+			Carcass c = it.next();
+			c.mass = Math.max(0.0, c.mass - (c.initialMass / Carcass.LIFETIME_SEC) * dtSeconds);
+			if (c.isGone()) it.remove();
+		}
+	}
 	
 	public ArrayList<Agent> agents = new ArrayList<Agent>();
 	public ArrayList<Humain> humains = new ArrayList<Humain>();
@@ -178,6 +199,10 @@ public abstract class World {
     	stepAgents();
     	before=jour;
     	iteration++;
+    	// Pourriture des carcasses : dt = 1 tick réel.
+    	double hz = ui.SimulationConfig.getInstance().simulationHz;
+    	if (hz <= 0) hz = 20.0;
+    	rotCarcasses(1.0 / hz);
     }
     
     public int getIteration()
