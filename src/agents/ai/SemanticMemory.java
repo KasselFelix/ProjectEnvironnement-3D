@@ -7,7 +7,8 @@ import java.util.List;
  * Mémoire sémantique d'un agent (cf. docs/evolution.txt § 5) : un ensemble de
  * lieux connus par catégorie ({@link MemoryKind}), chacun portant un score
  * d'utilisation. Capacité variable ; quand elle déborde, on oublie le souvenir
- * le MOINS utilisé (politique LFU).
+ * le MOINS utilisé (politique LFU actuelle — sera remplacée par priorité
+ * composite en tâche 0.3).
  */
 public final class SemanticMemory {
 
@@ -69,13 +70,24 @@ public final class SemanticMemory {
      * capacité est atteinte (oubli LFU, § 5.2).
      */
     public void remember(MemoryKind kind, int x, int y) {
+        addOrMerge(kind, x, y, 0, 0.0);
+    }
+
+    /**
+     * Ajoute ou fusionne un souvenir exact (même kind/x/y) en préservant
+     * {@code value} et {@code lastSeen}. Usage interne partagé par
+     * {@link #remember} et {@link #teach}.
+     */
+    private void addOrMerge(MemoryKind kind, int x, int y, int lastSeen, double value) {
         Entry existing = find(kind, x, y);
         if (existing != null) {
             existing.usage++;
+            existing.value = Math.max(existing.value, value);
+            existing.lastSeen = Math.max(existing.lastSeen, lastSeen);
             return;
         }
         if (entries.size() >= capacity) forgetLowestPriority();
-        entries.add(new Entry(kind, x, y, 0, 0.0));
+        entries.add(new Entry(kind, x, y, lastSeen, value));
     }
 
     /**
@@ -156,10 +168,11 @@ public final class SemanticMemory {
 
     /** Transmet TOUS les souvenirs de cette mémoire à {@code student} (§ 8 :
      *  apprentissage social / éducation). L'élève les ajoute (sous contrainte de
-     *  sa propre capacité, oubli LFU). */
+     *  sa propre capacité, oubli LFU) en préservant {@code value} et
+     *  {@code lastSeen} du professeur. */
     public void teach(SemanticMemory student) {
         for (Entry e : entries) {
-            student.remember(e.kind, e.x, e.y);
+            student.addOrMerge(e.kind, e.x, e.y, e.lastSeen, e.value);
         }
     }
 
@@ -170,7 +183,12 @@ public final class SemanticMemory {
         return null;
     }
 
-    /** Oublie le souvenir au plus faible score d'usage (LFU). */
+    /**
+     * Oublie le souvenir au plus faible score d'usage (politique LFU actuelle).
+     * Le nom anticipe la tâche 0.3 qui remplacera ce critère par un score de
+     * priorité composite (usage, recence, valeur) — le corps sera mis à jour
+     * à ce moment-là.
+     */
     private void forgetLowestPriority() {
         if (entries.isEmpty()) return;
         Entry least = entries.get(0);

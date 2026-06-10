@@ -36,4 +36,20 @@ class SemanticMemoryReinforceTest {
         m.forget(MemoryKind.FOOD, 10, 10);
         assertEquals(0, m.size());
     }
+
+    @Test
+    void teachPreserveValueEtLastSeen() {
+        // Professeur qui connait une carcasse de masse 55.0 vue a l'iteration 200
+        SemanticMemory teacher = new SemanticMemory();
+        teacher.reinforce(MemoryKind.FOOD, 5, 7, 55.0, 200, 1, EUCLID);
+
+        // Eleve vierge
+        SemanticMemory student = new SemanticMemory();
+        teacher.teach(student);
+
+        assertTrue(student.contains(MemoryKind.FOOD, 5, 7),
+                "l'eleve doit connaitre la position enseignee");
+        assertEquals(55.0, student.valueOf(MemoryKind.FOOD, 5, 7), 1e-9,
+                "teach doit preserver la valeur (masse carcasse)");
+    }
 }
