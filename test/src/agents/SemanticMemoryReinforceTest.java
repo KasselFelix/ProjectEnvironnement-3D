@@ -100,6 +100,9 @@ class SemanticMemoryReinforceTest {
                 "souvenir provisoire => ignore");
         m.reinforce(MemoryKind.FOOD, 10, 10, 70.0, 110, 3, EUCLID);   // usage 2 (consolide)
         assertNotNull(m.bestFood(0, 0, 110, 1.0, 0.1, 5, 1800, 70.0, EUCLID));
+        // consolide mais PERIME (age 2000 > ttl 1800) => ignore
+        assertNull(m.bestFood(0, 0, 110 + 2000, 1.0, 0.1, 5, 1800, 70.0, EUCLID),
+                "souvenir consolide mais perime => ignore");
     }
 
     @Test

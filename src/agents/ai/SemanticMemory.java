@@ -194,6 +194,7 @@ public final class SemanticMemory {
     public double[] bestFood(int fromX, int fromY, int now, double wDist,
                              double dangerPenaltyWeight, int dangerAvoidRadius,
                              int foodTtlTicks, double payoffRef, Distance dist) {
+        if (foodTtlTicks <= 0) return null;   // garde anti-NaN (division par 0 dans la fraicheur)
         Entry best = null;
         double bestScore = Double.NEGATIVE_INFINITY;
         for (Entry e : entries) {
