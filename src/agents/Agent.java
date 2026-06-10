@@ -657,8 +657,8 @@ public class Agent extends UniqueDynamicObject{
 	}
 
 	/** Seuil d'acceptation du score, sensible au risque (param 1) ET au génome (param 5) :
-	 *  un loup à peine affamé exige un score élevé ; un loup mourant accepte peu. Un loup
-	 *  audacieux (ENDURANCE+) abaisse son seuil. {@code hungerMax} = seuil de faim de l'espèce. */
+	 *  un loup à peine affamé exige un score élevé ; un loup mourant accepte tout (seuil→0).
+	 *  Un loup audacieux (ENDURANCE+) abaisse son seuil. {@code hungerMax} = seuil de faim de l'espèce. */
 	protected double acceptThreshold(double energie, double hungerMax) {
 		double frac = Math.max(0.0, Math.min(1.0, energie / Math.max(1.0, hungerMax)));
 		double base = FORAGE_MIN_ACCEPT + (FORAGE_BASE_ACCEPT - FORAGE_MIN_ACCEPT) * frac;
