@@ -41,13 +41,13 @@ public abstract class World {
 		return null;
 	}
 
-	/** Pourriture : chaque carcasse perd (initialMass / LIFETIME_SEC) × dt ; retire celles
-	 *  épuisées. dt en secondes réelles. */
+	/** Vieillit les carcasses (axe pourriture) ; retire celles entièrement pourries.
+	 *  La MASSE n'est PLUS touchée ici (elle ne baisse qu'en mangeant). dt en secondes réelles. */
 	public void rotCarcasses(double dtSeconds) {
 		Iterator<Carcass> it = carcasses.iterator();
 		while (it.hasNext()) {
 			Carcass c = it.next();
-			c.mass = Math.max(0.0, c.mass - (c.initialMass / Carcass.LIFETIME_SEC) * dtSeconds);
+			c.ageSeconds += dtSeconds;
 			if (c.isGone()) it.remove();
 		}
 	}

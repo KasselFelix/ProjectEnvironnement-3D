@@ -45,8 +45,8 @@ class CarcasseTest {
     void carcasseIgnoreePourritEtDisparait() {
         WorldOfCells w = flat();
         w.spawnCarcass(10, 10, 70.0, Species.MOUTON);
-        // rotCarcasses(dt) appelé manuellement : dt = LIFETIME complet => masse à 0.
-        w.rotCarcasses(Carcass.LIFETIME_SEC);
+        // rotCarcasses(dt) appelé manuellement : dt > FRESH_SEC + ROT_SEC => fraicheur epuisee => retiree.
+        w.rotCarcasses(Carcass.FRESH_SEC + Carcass.ROT_SEC + 1.0);
         assertTrue(w.carcasses.isEmpty(), "une carcasse non mangee pourrit et est retiree");
     }
 

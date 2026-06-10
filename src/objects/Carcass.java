@@ -11,8 +11,15 @@ import worlds.World;
 public class Carcass extends UniqueObject {
 	/** Énergie gagnée par kg de masse mangée. */
 	public static double ENERGY_PER_KG = 10.0;
-	/** Durée (sec réelles) avant pourriture complète d'une carcasse ignorée. */
-	public static double LIFETIME_SEC = 90.0;
+	/** Durée (sec réelles) de pleine fraîcheur avant que la pourriture ne commence. */
+	public static double FRESH_SEC = 30.0;
+	/** Durée (sec réelles) de pourriture après la fenêtre fraîche, jusqu'à disparition. */
+	public static double ROT_SEC = 60.0;
+	/** Fraîcheur minimale (∈[0,1]) pour qu'un loup repu hurle (défaut = fenêtre pleine). */
+	public static double FRESH_HOWL_THRESHOLD = 1.0;
+
+	/** Temps écoulé depuis l'apparition (sec réelles) — axe pourriture, indépendant de la masse. */
+	public double ageSeconds = 0.0;
 
 	public double mass;
 	public final double initialMass;
@@ -32,7 +39,19 @@ public class Carcass extends UniqueObject {
 		return taken;
 	}
 
-	public boolean isGone() { return mass <= 0.0; }
+	/** Fraîcheur ∈ [0,1] : 1 pendant FRESH_SEC, puis décroît linéairement sur ROT_SEC. */
+	public double freshness() {
+		if (ageSeconds <= FRESH_SEC) return 1.0;
+		return Math.max(0.0, 1.0 - (ageSeconds - FRESH_SEC) / ROT_SEC);
+	}
+
+	/** Assez fraîche pour déclencher un hurlement-nourriture. */
+	public boolean isFresh() { return freshness() >= FRESH_HOWL_THRESHOLD; }
+
+	/** Valeur énergétique totale restante (pour la fiche UI). */
+	public double energyValue() { return mass * ENERGY_PER_KG; }
+
+	public boolean isGone() { return mass <= 0.0 || freshness() <= 0.0; }
 
 	/**
 	 * Rend la carcasse : même mesh que l'espèce source, couchée à plat
