@@ -117,8 +117,7 @@ public class Ours extends Agent {
     public AgentState decideState(Percept p) {
         boolean affame = energie < energieD * HUNGER_RATIO;
         if (!affame) resetPursuit();                       // plus en chasse → oublie la piste
-        if (p.carcassVisible() && !memory.contains(agents.ai.MemoryKind.FOOD, p.carcassX, p.carcassY))
-            memory.remember(agents.ai.MemoryKind.FOOD, p.carcassX, p.carcassY);
+        reinforceFoodSighting(p);
         if (isOnFire())                  return AgentState.ON_FIRE;
         if (p.lavaVisible())             return AgentState.FLEE_LAVA;   // L2
         if (affame && carcassAdjacente(p)) return AgentState.EAT;         // carcasse adjacente : festin

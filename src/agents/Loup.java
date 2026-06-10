@@ -461,8 +461,7 @@ public class Loup extends Agent {
 		if (!enChasse) resetPursuit();        // plus en chasse → on oublie la piste
 		// Forward hook (travaux futurs : revenir vers une carcasse mémorisée). Écrit une seule
 		// fois par cellule pour ne pas gonfler le compteur d'usage LFU de la mémoire.
-		if (p.carcassVisible() && !memory.contains(agents.ai.MemoryKind.FOOD, p.carcassX, p.carcassY))
-			memory.remember(agents.ai.MemoryKind.FOOD, p.carcassX, p.carcassY);
+		reinforceFoodSighting(p);
 		AgentState s = chooseState(p, affame, enChasse);
 		// spec §4 : une balise de hurlement devient caduque dès qu'un danger ou une vraie
 		// proie en vue prend le relais sur le ralliement. On la relâche ET on repart d'une

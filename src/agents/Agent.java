@@ -614,6 +614,35 @@ public class Agent extends UniqueDynamicObject{
 	 *  quand bloqué) ET portée de recherche d'eau en ON_FIRE. Borné (garde-fou CPU). */
 	protected static final int HUNT_ESCAPE_VISION = 30;
 
+	// ===== Mémoire FOOD : renforcement edge-triggered (Task 2.2) =====
+
+	/** Distance tore-aware exposée à SemanticMemory (réutilisée par reinforce/bestFood). */
+	protected final agents.ai.SemanticMemory.Distance memDistance =
+		new agents.ai.SemanticMemory.Distance() {
+			public double between(int x1, int y1, int x2, int y2) { return world.distance(x1, y1, x2, y2); }
+		};
+
+	/** Exposé pour les tests (mémoire) : la distance tore-aware. */
+	public agents.ai.SemanticMemory.Distance memDistanceForTest() { return memDistance; }
+
+	/** Rayon de fusion des souvenirs (cellules). */
+	protected static int MEMORY_MERGE_RADIUS = 3;
+
+	/** Dernière cellule de carcasse renforcée par OBSERVATION (edge-trigger). */
+	private int lastFoodSeenX = -1, lastFoodSeenY = -1;
+
+	/** Renforce la mémoire FOOD au FRONT MONTANT de perception d'une carcasse
+	 *  (évite l'inflation d'usage par vue continue). Porte la masse (payoff) + la date. */
+	protected void reinforceFoodSighting(agents.ai.Percept p) {
+		if (!p.carcassVisible()) { lastFoodSeenX = -1; lastFoodSeenY = -1; return; }
+		if (p.carcassX == lastFoodSeenX && p.carcassY == lastFoodSeenY) return;   // déjà compté cette visite
+		objects.Carcass c = world.carcassAt(p.carcassX, p.carcassY);
+		double mass = (c != null) ? c.mass : 0.0;
+		memory.reinforce(agents.ai.MemoryKind.FOOD, p.carcassX, p.carcassY, mass,
+				world.getIteration(), MEMORY_MERGE_RADIUS, memDistance);
+		lastFoodSeenX = p.carcassX; lastFoodSeenY = p.carcassY;
+	}
+
 	/** Rayon d'évasion effectif : borné pour que la fenêtre BFS (2·r+1) ne dépasse pas
 	 *  la plus petite dimension du monde (sinon repli torique → double-comptage). */
 	protected int escapeRadius() {
