@@ -156,6 +156,12 @@ public class Mouton extends Agent {
 	// initMind / evolutionSummary / stageLabel / socialLabel / activityLevel /
 	// refreshMemoryCapacity : hissés dans Agent (L1), hérités tels quels.
 
+	/** true si la carcasse perçue ({@code p.carcassX/Y}) est une carcasse de mouton. */
+	private boolean isMoutonCarcass(agents.ai.Percept p) {
+		objects.Carcass c = world.carcassAt(p.carcassX, p.carcassY);
+		return c != null && c.source == objects.Species.MOUTON;
+	}
+
 	/** Mémorise comme DANGER la position du loup visible le plus proche (§ 5). */
 	private void recordNearestPredatorAsDanger() {
 		Loup nearest = null;
@@ -512,6 +518,11 @@ public class Mouton extends Agent {
 	 *  ne cherche de l'herbe que s'il n'est ni en feu, ni poursuivi, ni dans
 	 *  l'eau. Affamé = énergie sous 50% du max ET de l'herbe en vue. */
 	public AgentState decideState(Percept p) {
+		// Une carcasse de congénère = signal de prédateur récent → zone à éviter.
+		if (p.carcassVisible() && isMoutonCarcass(p)
+				&& !memory.contains(agents.ai.MemoryKind.DANGER, p.carcassX, p.carcassY))
+			memory.remember(agents.ai.MemoryKind.DANGER, p.carcassX, p.carcassY);
+
 		if (isOnFire())          return AgentState.ON_FIRE;
 		if (p.lavaVisible())     return AgentState.FLEE_LAVA;   // L2 — la lave tue au contact : priorité absolue
 		if (p.predatorVisible()) return AgentState.FLEE_PREDATOR;

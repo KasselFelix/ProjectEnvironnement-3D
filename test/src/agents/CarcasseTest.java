@@ -142,6 +142,24 @@ class CarcasseTest {
     }
 
     @Test
+    void moutonMemoriseUneCarcasseDeMoutonCommeDanger() {
+        WorldOfCells w = flat();
+        Mouton m = new Mouton(25, 25, w); w.moutons.add(m);
+        w.spawnCarcass(27, 25, 70.0, objects.Species.MOUTON);   // carcasse de mouton en vue
+        for (int t = 0; t < 3; t++) { w.setIteration(t); m.step(); }
+        assertTrue(m.memory.contains(agents.ai.MemoryKind.DANGER, 27, 25),
+                "un mouton voyant une carcasse de mouton la memorise comme DANGER");
+
+        // une carcasse de LOUP ne declenche pas la peur du mouton
+        WorldOfCells w2 = flat();
+        Mouton m2 = new Mouton(25, 25, w2); w2.moutons.add(m2);
+        w2.spawnCarcass(27, 25, 45.0, objects.Species.LOUP);
+        for (int t = 0; t < 3; t++) { w2.setIteration(t); m2.step(); }
+        assertFalse(m2.memory.contains(agents.ai.MemoryKind.DANGER, 27, 25),
+                "une carcasse de loup n'effraie pas le mouton");
+    }
+
+    @Test
     void oursPrendUnePlusGrosseBoucheeQuLeLoup() {
         WorldOfCells w = flat();
         Loup l  = new Loup(10, 10, w);  l.isFounder = true;  l.energie = 50;  w.loups.add(l);
