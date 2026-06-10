@@ -476,7 +476,8 @@ public class Loup extends Agent {
 		// une balise murée ferait entrer la chasse/fuite suivante directement en évasion BFS
 		// élargie (au lieu du pas direct). On conserve la balise UNIQUEMENT pendant le
 		// ralliement (LOCALISATION) et la traversée d'eau (SEEK_LAND : on reprend après).
-		if (hasHowlTarget() && s != AgentState.LOCALISATION && s != AgentState.SEEK_LAND) {
+		if (hasHowlTarget() && s != AgentState.LOCALISATION && s != AgentState.SEEK_LAND
+				&& s != AgentState.HOWL) {
 			clearHowlTarget();
 			resetPursuit();
 		}
