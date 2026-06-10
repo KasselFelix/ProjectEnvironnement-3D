@@ -34,6 +34,9 @@ public class Ours extends Agent {
     /** Sous ce seuil de faim (fraction de energieD) l'ours chasse et dévore. */
     public static final double HUNGER_RATIO = 0.7;
 
+    /** Cible mémorisée courante du fourragement (RECALL_FOOD) ; null = aucune. */
+    private int[] recallTarget = null;
+
     public int m = 0;        // 1 si a mangé ce tour
     public int lastX, lastY;
 
@@ -74,6 +77,7 @@ public class Ours extends Agent {
             case SEEK_LAND:  return "Cherche terre";
             case EAT:        return "Mange";
             case SEEK_FOOD:  return "Cherche carcasse";
+            case RECALL_FOOD: return "Va vers nourriture";
             default:         return "Errance";
         }
     }
@@ -118,6 +122,12 @@ public class Ours extends Agent {
         boolean affame = energie < energieD * HUNGER_RATIO;
         if (!affame) resetPursuit();                       // plus en chasse → oublie la piste
         reinforceFoodSighting(p);
+        // Purge les souvenirs FOOD forcément périmés (carcasse déjà décomposée).
+        memory.purgeStale(agents.ai.MemoryKind.FOOD, world.getIteration(), foodTtlTicks());
+        // Calcule la cible de fourragement (RECALL_FOOD) depuis la mémoire.
+        double[] food = bestRememberedFood();
+        recallTarget = (food != null && food[2] >= acceptThreshold(energie, energieD * HUNGER_RATIO))
+                ? new int[]{(int) food[0], (int) food[1]} : null;
         if (isOnFire())                  return AgentState.ON_FIRE;
         if (p.lavaVisible())             return AgentState.FLEE_LAVA;   // L2
         if (affame && carcassAdjacente(p)) return AgentState.EAT;         // carcasse adjacente : festin
@@ -125,6 +135,7 @@ public class Ours extends Agent {
         if (affame && p.preyVisible())   return AgentState.HUNT;        // proie en vue (prioritaire)
         if (affame && hasFreshTrack())   return AgentState.HUNT;        // proie perdue de vue mais piste fraîche → persistance
         if (p.inWater)                   return AgentState.SEEK_LAND;
+        if (affame && recallTarget != null) return AgentState.RECALL_FOOD; // rejoint une carcasse mémorisée
         if (affame)                      return AgentState.SEARCH;
         if (energie >= energieD)         return AgentState.REST;
         return AgentState.WANDER;
@@ -181,6 +192,9 @@ public class Ours extends Agent {
                 _orient = mem.spiralHeading;
                 return steerAroundObstacles(p, true, vision);
             }
+            case RECALL_FOOD:
+                vitesse = vtrot;
+                return recallFoodStep(p, recallTarget, vision);
             case EAT:
                 return eatStep(p);
             case SEEK_FOOD: {

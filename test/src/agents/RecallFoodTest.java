@@ -56,6 +56,18 @@ class RecallFoodTest {
         assertTrue(fragile.foragingBoldnessFactor() < 1.0);
     }
 
+    @Test
+    void oursAffameRetourneVersCarcasseMemorisee() {
+        WorldOfCells w = flat();
+        Ours o = new Ours(10, 25, w); o.isFounder = true; w.ours.add(o);
+        o.energie = 50;
+        o.memory.reinforce(agents.ai.MemoryKind.FOOD, 40, 25, 300.0, 0, 3, o.memDistanceForTest());
+        o.memory.reinforce(agents.ai.MemoryKind.FOOD, 40, 25, 300.0, 0, 3, o.memDistanceForTest());
+        double d0 = w.distance(o.x, o.y, 40, 25);
+        for (int t = 1; t < 600; t++) { w.setIteration(t); o.step(); if (w.distance(o.x,o.y,40,25) < d0 - 2) break; }
+        assertTrue(w.distance(o.x, o.y, 40, 25) < d0, "l'ours affame se rapproche du lieu memorise");
+    }
+
     private static WorldOfCells flat() {
         WorldOfCells w = AgentTestSupport.buildWorld();
         int W = w.getWidth(), H = w.getHeight();
