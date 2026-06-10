@@ -12,7 +12,7 @@ import objects.Species;
  *   Carcasse
  *   Espece   : <mouton|loup|ours|humain>
  *   Poids    : <mass> / <initialMass> kg
- *   Etat     : Frais <freshness%>% / Pourri <rot%>%
+ *   Fraicheur: <displayFreshness%>%        (ou "Etat : Pourrie" une fois la pourriture entamee)
  *   Energie  : <ENERGY_PER_KG>/kg  (total <energyValue>)
  */
 public class CarcassInfoPanel {
@@ -60,14 +60,22 @@ public class CarcassInfoPanel {
                     0.95f, 0.90f, 0.85f);
         textY += ROW_HEIGHT;
 
-        double fresh = c.freshness();
-        int freshPct = (int) Math.round(fresh * 100.0);
-        int rotPct   = 100 - freshPct;
-        ui.drawText(gl, px + 10, textY, viewportHeight,
-                    String.format("Etat     : Frais %d%% / Pourri %d%%", freshPct, rotPct),
-                    freshPct > 50 ? 0.65f : 0.85f,
-                    freshPct > 50 ? 0.90f : 0.65f,
-                    freshPct > 50 ? 0.60f : 0.40f);
+        // État : une seule jauge de fraîcheur qui décroît sur la fenêtre fraîche ;
+        // une fois la pourriture entamée on affiche "Pourrie" et la barre reste à 0%.
+        boolean rotten = c.isRotten();
+        float barFresh = rotten ? 0f : (float) c.displayFreshness();
+        if (rotten) {
+            ui.drawText(gl, px + 10, textY, viewportHeight,
+                        "Etat     : Pourrie",
+                        0.55f, 0.45f, 0.30f);
+        } else {
+            int freshPct = (int) Math.round(barFresh * 100.0);
+            ui.drawText(gl, px + 10, textY, viewportHeight,
+                        String.format("Fraicheur: %d%%", freshPct),
+                        freshPct > 50 ? 0.65f : 0.85f,
+                        freshPct > 50 ? 0.90f : 0.65f,
+                        freshPct > 50 ? 0.60f : 0.40f);
+        }
         textY += ROW_HEIGHT;
 
         ui.drawText(gl, px + 10, textY, viewportHeight,
@@ -77,8 +85,8 @@ public class CarcassInfoPanel {
                     0.95f, 0.90f, 0.85f);
         textY += ROW_HEIGHT;
 
-        // Barre de fraicheur
-        drawFreshnessBar(gl, ui, px + 10, textY - 10, PANEL_WIDTH - 20, 5, (float) fresh);
+        // Barre de fraicheur (0% une fois pourrie)
+        drawFreshnessBar(gl, ui, px + 10, textY - 10, PANEL_WIDTH - 20, 5, barFresh);
     }
 
     /** Barre horizontale verte→rouge selon la fraicheur. */

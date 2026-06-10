@@ -12,7 +12,7 @@ public class Carcass extends UniqueObject {
 	/** Énergie gagnée par kg de masse mangée. */
 	public static double ENERGY_PER_KG = 10.0;
 	/** Durée (sec réelles) de pleine fraîcheur avant que la pourriture ne commence. */
-	public static double FRESH_SEC = 30.0;
+	public static double FRESH_SEC = 120.0;
 	/** Durée (sec réelles) de pourriture après la fenêtre fraîche, jusqu'à disparition. */
 	public static double ROT_SEC = 60.0;
 	/** Fraîcheur minimale (∈[0,1]) pour qu'un loup repu hurle (défaut = fenêtre pleine). */
@@ -52,15 +52,28 @@ public class Carcass extends UniqueObject {
 	/** Assez fraîche pour déclencher un hurlement-nourriture. */
 	public boolean isFresh() { return freshness() >= FRESH_HOWL_THRESHOLD; }
 
+	/** true dès que la fenêtre fraîche est dépassée (phase de pourriture, jusqu'à disparition). */
+	public boolean isRotten() { return ageSeconds >= FRESH_SEC; }
+
+	/** Fraîcheur AFFICHÉE ∈ [0,1] pour la fiche/jauge : décroît linéairement sur toute
+	 *  la fenêtre fraîche (1 à l'apparition → 0 quand la pourriture commence), puis 0.
+	 *  (Distincte de {@link #freshness()}, qui pilote couleur + hurlement et reste à 1
+	 *  pendant toute la fenêtre fraîche.) */
+	public double displayFreshness() {
+		if (FRESH_SEC <= 0) return isRotten() ? 0.0 : 1.0;
+		return Math.max(0.0, Math.min(1.0, (FRESH_SEC - ageSeconds) / FRESH_SEC));
+	}
+
 	/** Valeur énergétique totale restante (pour la fiche UI). */
 	public double energyValue() { return mass * ENERGY_PER_KG; }
 
 	public boolean isGone() { return mass <= 0.0 || freshness() <= 0.0; }
 
 	/**
-	 * Rend la carcasse : même mesh que l'espèce source, couchée à plat
-	 * (rotation 90° autour de X), désaturée brun-rougeâtre foncé, rétrécie
-	 * au fur et à mesure de la consommation.
+	 * Rend la carcasse : même mesh que l'espèce source, couchée SUR LE FLANC
+	 * (roulis 90° autour de Y = axe long du corps), désaturée brun-rougeâtre →
+	 * verdâtre selon la fraîcheur, et DÉCOUPÉE de l'arrière-train vers la tête
+	 * au fur et à mesure de la consommation (plan de coupe, plus de rétrécissement).
 	 *
 	 * <p>Convention : à appeler HORS d'un glBegin (la display list GLB ouvre
 	 * son propre glBegin en interne — cf. GLBModel.opengldraw).
@@ -106,21 +119,28 @@ public class Carcass extends UniqueObject {
 		float px = offset + x2 * stepX - lenX;
 		float py = offset + y2 * stepY - lenY;
 
-		// --- Facteur de rétrécissement : 1.0 quand pleine, 0.4 quand vide ---
-		float shrink = 0.4f + 0.6f * (float) Math.max(0.0, mass / initialMass);
-		float scale  = Math.abs(lenX) * baseScale * shrink;
+		// --- Taille PLEINE (plus de rétrécissement) ---
+		// La consommation n'est plus rendue en rétrécissant tout le corps mais en
+		// DÉCOUPANT l'arrière-train mangé via un plan de coupe (cf. plus bas) — plus réaliste.
+		float ratio = (float) Math.max(0.0, Math.min(1.0, mass / initialMass));
+		float scale = Math.abs(lenX) * baseScale;
+
+		// Demi-largeur du mesh (axe X = flanc) : sert à reposer le corps sur le sol
+		// une fois couché sur le flanc, sinon il s'enfonce de sa demi-épaisseur.
+		float halfWidth = Math.max(Math.abs(model.leftpoint), Math.abs(model.rightpoint));
 
 		// --- Rendu ---
 		// La scène cull globalement GL_FRONT ; GLBModel.opengldrawTinted force
 		// GL_BACK en interne et restaure l'état — pas besoin de toucher glCullFace ici.
 		gl.glPushMatrix();
-		gl.glPushAttrib(GL2.GL_CURRENT_BIT | GL2.GL_LIGHTING_BIT);
+		gl.glPushAttrib(GL2.GL_CURRENT_BIT | GL2.GL_LIGHTING_BIT | GL2.GL_ENABLE_BIT | GL2.GL_TRANSFORM_BIT);
 
-		// Positionner, coucher à plat, mettre à l'échelle.
-		gl.glTranslatef(px, py, altitude);
-		// Rotation X +90° : bascule le mesh Z-up vers la position couchée
-		// (le «dos» du modèle regarde vers le haut, les pattes à plat).
-		gl.glRotatef(90f, 1f, 0f, 0f);
+		// Couché SUR LE FLANC : roulis +90° autour de l'axe long du corps (Y = nez→queue).
+		// La tête reste à l'horizontale vers −Y (avant), les pattes pointent sur le côté.
+		// (L'ancienne rotation autour de X plantait le museau dans le sol.)
+		// Le +halfWidth×scale relève le corps de sa demi-épaisseur pour qu'il repose au sol.
+		gl.glTranslatef(px, py, altitude + halfWidth * scale);
+		gl.glRotatef(90f, 0f, 1f, 0f);
 		gl.glScalef(scale, scale, scale);
 
 		// Tint interpolé selon la fraîcheur : rougeâtre (fraîche) → verdâtre/grisâtre (pourrie).
@@ -132,7 +152,20 @@ public class Carcass extends UniqueObject {
 		float tr = ROT_RGB[0] + (FRESH_RGB[0] - ROT_RGB[0]) * f;
 		float tg = ROT_RGB[1] + (FRESH_RGB[1] - ROT_RGB[1]) * f;
 		float tb = ROT_RGB[2] + (FRESH_RGB[2] - ROT_RGB[2]) * f;
+
+		// Disparition progressive : on découpe l'arrière-train (Y croissant = queue) au
+		// fur et à mesure de la consommation ; la tête (−Y) reste visible en dernier.
+		// Plan EN COORDS MODÈLE (émis après translate/rotate/scale) : garde y ≤ yCut.
+		boolean clipped = ratio < 0.999f;
+		if (clipped) {
+			double yCut = model.bottompoint + (model.toppoint - model.bottompoint) * ratio;
+			gl.glClipPlane(GL2.GL_CLIP_PLANE0, new double[]{ 0.0, -1.0, 0.0, yCut }, 0);
+			gl.glEnable(GL2.GL_CLIP_PLANE0);
+		}
+
 		model.opengldrawTinted(gl, 0f, tr, tg, tb);
+
+		if (clipped) gl.glDisable(GL2.GL_CLIP_PLANE0);
 
 		gl.glPopAttrib();
 		gl.glPopMatrix();
