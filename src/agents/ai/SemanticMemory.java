@@ -185,6 +185,39 @@ public final class SemanticMemory {
         return best == null ? null : new int[]{best.x, best.y};
     }
 
+    /**
+     * Meilleur souvenir FOOD ACTIONNABLE selon le score de fourragement
+     * {@code usage × fraîcheur × payoff / (1 + wDist·distance) − pénalité_danger}.
+     * Ignore les souvenirs provisoires (non consolidés) et périmés (age > ttl).
+     * @return {@code {x, y, score}} du meilleur, ou {@code null} si aucun.
+     */
+    public double[] bestFood(int fromX, int fromY, int now, double wDist,
+                             double dangerPenaltyWeight, int dangerAvoidRadius,
+                             int foodTtlTicks, double payoffRef, Distance dist) {
+        Entry best = null;
+        double bestScore = Double.NEGATIVE_INFINITY;
+        for (Entry e : entries) {
+            if (e.kind != MemoryKind.FOOD) continue;
+            if (e.usage < consolidationThreshold(MemoryKind.FOOD)) continue;   // provisoire
+            int age = now - e.lastSeen;
+            if (age > foodTtlTicks) continue;                                   // périmé
+            double freshness = Math.max(0.0, 1.0 - (double) age / foodTtlTicks);
+            double payoff = 1.0 + e.value / payoffRef;
+            double d = dist.between(fromX, fromY, e.x, e.y);
+            double dangerNear = 0.0;
+            for (Entry g : entries) {
+                if (g.kind == MemoryKind.DANGER
+                        && dist.between(g.x, g.y, e.x, e.y) <= dangerAvoidRadius) {
+                    dangerNear = 1.0; break;
+                }
+            }
+            double score = (e.usage * freshness * payoff) / (1.0 + wDist * d)
+                         - dangerPenaltyWeight * dangerNear;
+            if (score > bestScore) { bestScore = score; best = e; }
+        }
+        return best == null ? null : new double[]{best.x, best.y, bestScore};
+    }
+
     /** Transmet TOUS les souvenirs de cette mémoire à {@code student} (§ 8 :
      *  apprentissage social / éducation). L'élève les ajoute (sous contrainte de
      *  sa propre capacité, eviction par priorité composite) en préservant {@code value} et

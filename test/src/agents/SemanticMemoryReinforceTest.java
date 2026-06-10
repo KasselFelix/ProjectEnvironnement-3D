@@ -90,4 +90,42 @@ class SemanticMemoryReinforceTest {
         assertEquals(55.0, student.valueOf(MemoryKind.FOOD, 5, 7), 1e-9,
                 "teach doit preserver la valeur (masse carcasse)");
     }
+
+    @Test
+    void bestFoodIgnoreProvisoireEtPerime() {
+        SemanticMemory m = new SemanticMemory();
+        m.reinforce(MemoryKind.FOOD, 10, 10, 70.0, 100, 3, EUCLID);   // usage 1 (provisoire)
+        // now=100, ttl=1800, wDist=1, pen=0.1, avoidR=5, payoffRef=70
+        assertNull(m.bestFood(0, 0, 100, 1.0, 0.1, 5, 1800, 70.0, EUCLID),
+                "souvenir provisoire => ignore");
+        m.reinforce(MemoryKind.FOOD, 10, 10, 70.0, 110, 3, EUCLID);   // usage 2 (consolide)
+        assertNotNull(m.bestFood(0, 0, 110, 1.0, 0.1, 5, 1800, 70.0, EUCLID));
+    }
+
+    @Test
+    void bestFoodChoisitLeMeilleurScore() {
+        SemanticMemory m = new SemanticMemory();
+        // A : proche (dist ~5) mais peu fiable (usage 2)
+        m.reinforce(MemoryKind.FOOD, 3, 4, 70.0, 100, 3, EUCLID);
+        m.reinforce(MemoryKind.FOOD, 3, 4, 70.0, 100, 3, EUCLID);
+        // B : loin (dist ~50) mais tres fiable (usage 6) et gros butin
+        for (int i = 0; i < 6; i++) m.reinforce(MemoryKind.FOOD, 30, 40, 200.0, 100, 3, EUCLID);
+        double[] r = m.bestFood(0, 0, 100, 1.0, 0.1, 5, 1800, 70.0, EUCLID);
+        assertNotNull(r);
+        // A: usage2 fresh1 payoff(1+1)=2 /(1+5)=0.66 ; B: usage6 fresh1 payoff(1+2.86)=3.86 /(1+50)=0.45
+        assertEquals(3, (int) r[0]); assertEquals(4, (int) r[1]);   // A gagne (proche l'emporte ici)
+        assertTrue(r[2] > 0, "score positif");
+    }
+
+    @Test
+    void bestFoodPenaliseProximiteDanger() {
+        SemanticMemory m = new SemanticMemory();
+        m.reinforce(MemoryKind.FOOD, 10, 0, 70.0, 100, 3, EUCLID);
+        m.reinforce(MemoryKind.FOOD, 10, 0, 70.0, 100, 3, EUCLID);   // FOOD A consolide
+        m.reinforce(MemoryKind.FOOD, -10, 0, 70.0, 100, 3, EUCLID);
+        m.reinforce(MemoryKind.FOOD, -10, 0, 70.0, 100, 3, EUCLID);  // FOOD B consolide (symetrique)
+        m.reinforce(MemoryKind.DANGER, 11, 0, 0.0, 100, 3, EUCLID);  // danger colle a A
+        double[] r = m.bestFood(0, 0, 100, 1.0, 0.5, 5, 1800, 70.0, EUCLID);
+        assertEquals(-10, (int) r[0], "B (sans danger) gagne malgre la symetrie");
+    }
 }
