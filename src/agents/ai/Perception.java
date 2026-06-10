@@ -26,6 +26,11 @@ public final class Perception {
         if (smokyAround(self, world)) {
             vision = Math.max(1, (int) Math.round(vision * SMOKE_VISION_FACTOR));
         }
+        // Task 10 — tête baissée : un agent qui mange (loup/ours sur carcasse,
+        // mouton qui broute) voit deux fois moins loin → il réagit plus tard aux prédateurs.
+        if (self instanceof agents.Agent && ((agents.Agent) self).isFeeding()) {
+            vision = Math.max(1, (int) Math.round(vision * EATING_VISION_FACTOR));
+        }
 
         int predatorDir = -1; double predatorDist = vision + 1;
         int preyDir = -1;     double preyDist = vision + 1;
@@ -195,6 +200,8 @@ public final class Perception {
 
     /** Fraction de la vision conservée quand l'agent est dans la fumée (L7). */
     static final double SMOKE_VISION_FACTOR = 0.5;
+    /** Fraction de la vision conservée quand l'agent mange (tête baissée — Task 10). */
+    private static final double EATING_VISION_FACTOR = 0.5;
     /** Rayon (cases) de détection de fumée autour de l'agent (feu ou lave). */
     static final int SMOKE_RADIUS = 3;
 
@@ -216,6 +223,7 @@ public final class Perception {
         if (self instanceof agents.Loup)   return ((agents.Loup) self).vision;
         if (self instanceof agents.Mouton) return ((agents.Mouton) self).vision;
         if (self instanceof agents.Humain) return ((agents.Humain) self).vision;
+        if (self instanceof agents.Ours)   return ((agents.Ours) self).vision;
         return 10;
     }
 }

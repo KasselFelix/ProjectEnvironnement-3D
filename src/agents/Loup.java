@@ -163,6 +163,8 @@ public class Loup extends Agent {
 
 	@Override public String getTypeName() { return "Loup"; }
 
+	@Override public boolean isFeeding() { return currentState == agents.ai.AgentState.EAT; }
+
 	@Override public String getCurrentBehavior() {
 		if (_fireState == 1) return "Fuit feu";
 		if (m == 1)          return "Mange";

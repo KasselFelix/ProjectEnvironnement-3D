@@ -60,6 +60,8 @@ public class Ours extends Agent {
 
     @Override public String getTypeName() { return "Ours"; }
 
+    @Override public boolean isFeeding() { return currentState == agents.ai.AgentState.EAT; }
+
     @Override public String getCurrentBehavior() {
         if (_fireState == 1) return "Fuit feu";
         if (m == 1)          return "Devore loup";

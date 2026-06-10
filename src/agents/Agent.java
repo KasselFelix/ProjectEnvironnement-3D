@@ -994,6 +994,9 @@ public class Agent extends UniqueDynamicObject{
 
 	public boolean isOnFire() { return _fireState == 1; }
 
+	/** true si l'agent est en train de manger (tête baissée → vigilance réduite). Surchargé. */
+	public boolean isFeeding() { return false; }
+
 	/** Période (en ticks) équivalant à ~1 seconde-jeu, pour les drains « horaires »
 	 *  comme le feu. Suit simulationHz pour rester cohérente quel que soit le Hz de
 	 *  simulation (sinon un `% 20` codé en dur change la létalité du feu quand on

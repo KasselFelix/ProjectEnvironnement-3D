@@ -251,6 +251,16 @@ public class Mouton extends Agent {
 
 	@Override public String getTypeName() { return "Mouton"; }
 
+	/** Conditions de broutage : pas en fuite, faim modérée, sur de l'herbe. Partagé par
+	 *  postMove (effet) et isFeeding (vigilance réduite) pour rester synchrones. */
+	private boolean isGrazingNow() {
+		return fuite == 0 && energie < (energieMAX * 0.75) && world.getGrassCAValue(x, y) == 1;
+	}
+
+	@Override public boolean isFeeding() {
+		return isGrazingNow();
+	}
+
 	/** La proie ne bloque pas son prédateur : un Loup peut entrer sur sa case
 	 *  pour la dévorer (chevauchement transitoire). Bloque tous les autres. */
 	@Override
@@ -340,15 +350,13 @@ public class Mouton extends Agent {
 	@Override
 	protected void postMove(Percept p) {
 		//Broute
-		if(energie<(energieMAX*0.75) &&fuite==0) {
-			if(world.getGrassCAValue( x, y)==1){
-				// V4 — broutage : la cellule passe en herbe RASE (markGrazed) au lieu
-				// de disparaître net → repousse différée + rendu « tondu » visible.
-				((worlds.WorldOfCells) world).grassCA.markGrazed(x, y);
-				energie+=energieMAX/100;
-				m=1;
-				//System.out.println("broute");
-			}
+		if (isGrazingNow()) {
+			// V4 — broutage : la cellule passe en herbe RASE (markGrazed) au lieu
+			// de disparaître net → repousse différée + rendu « tondu » visible.
+			((worlds.WorldOfCells) world).grassCA.markGrazed(x, y);
+			energie+=energieMAX/100;
+			m=1;
+			//System.out.println("broute");
 		}
 
 

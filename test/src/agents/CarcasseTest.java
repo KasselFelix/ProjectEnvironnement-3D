@@ -6,6 +6,11 @@ import org.junit.jupiter.api.Test;
 import worlds.WorldOfCells;
 import static org.junit.jupiter.api.Assertions.*;
 
+// Task 10 imports
+// Note: Humain IS a wolf predator — Loup.predators() returns world.humains + world.ours.
+// A Humain at dist 8 (25,25 -> 33,25) is within full wolf vision (10) but outside
+// reduced vision (10 * 0.5 = 5). At dist 1 (26,25) it is seen even at reduced vision.
+
 class CarcasseTest {
     private static WorldOfCells flat() {
         WorldOfCells w = AgentTestSupport.buildWorld();
@@ -176,5 +181,37 @@ class CarcasseTest {
             if (loupMange > 0 && oursMange > 0) break;
         }
         assertTrue(oursMange > loupMange, "l'ours retire plus de masse par bouchee que le loup");
+    }
+
+    // ===== Task 10 : vision réduite en mangeant =====
+
+    @Test
+    void visionReduiteEnMangeant() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(25, 25, w); l.isFounder = true; w.loups.add(l);
+        l.energie = 50;
+        w.spawnCarcass(25, 25, 200.0, objects.Species.MOUTON);   // il va manger ici
+        // amène-le en état EAT
+        for (int t = 0; t < 50; t++) { w.setIteration(t); l.step(); if (l.isFeeding()) break; }
+        assertTrue(l.isFeeding(), "le loup mange");
+        // Un Humain (chasseur=true) à dist 8 : dans world.humains => dans l.predators().
+        // Vision pleine = 10 : dist 8 <= 10 => vu. Vision réduite = 5 : dist 8 > 5 => non vu.
+        Humain h = new Humain(33, 25, w); h.chasseur = true; w.humains.add(h);   // dist 8 < vision 10
+        agents.ai.Percept p = agents.ai.Perception.sense(l, w, l.predators(), l.prey());
+        assertFalse(p.predatorVisible(), "tete baissee : menace a 8 cases non percue (vision reduite)");
+    }
+
+    @Test
+    void dangerPreempteLeRepasUneFoisPercu() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(25, 25, w); l.isFounder = true; w.loups.add(l);
+        l.energie = 50;
+        w.spawnCarcass(25, 25, 200.0, objects.Species.MOUTON);
+        for (int t = 0; t < 50; t++) { w.setIteration(t); l.step(); if (l.isFeeding()) break; }
+        // prédateur COLLÉ (dist 1) : perçu même en vision réduite => fuite préempte le repas.
+        Humain h = new Humain(26, 25, w); h.chasseur = true; w.humains.add(h);
+        agents.ai.Percept p = agents.ai.Perception.sense(l, w, l.predators(), l.prey());
+        assertTrue(p.predatorVisible(), "menace collee : percue malgre la vision reduite");
+        assertEquals(agents.ai.AgentState.FLEE_PREDATOR, l.decideState(p), "le danger preempte le repas");
     }
 }
