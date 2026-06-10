@@ -22,6 +22,7 @@ import agents.Agent;
 import cellularautomata.ecosystem.LavaCA;
 import worlds.WorldOfCells;
 import ui.AgentInfoPanel;
+import ui.CarcassInfoPanel;
 import ui.Hud;
 import ui.InGameMenu;
 import ui.LaunchMenu;
@@ -357,7 +358,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         private Agent hoverAgent = null;
         // Task 4.1 — carcasse sous le curseur (tooltip espece + poids).
         private objects.Carcass hoveredCarcass = null;
+        // Task 4.2 — carcasse selectionnee (double-clic) pour la fiche detaillee.
+        private objects.Carcass selectedCarcass = null;
         private final AgentInfoPanel agentInfoPanel = new AgentInfoPanel();
+        private final CarcassInfoPanel carcassInfoPanel = new CarcassInfoPanel();
         private final PopulationGraph populationGraph = new PopulationGraph();
         private boolean showPopulationGraph = false;  // masqué au démarrage ; toggle par la touche `g`
         private final ui.Minimap minimap = new ui.Minimap();   // V7
@@ -374,6 +378,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         private boolean pickRequested = false;
         private int pickClickX = 0;
         private int pickClickY = 0;
+        // Task 4.2 — double-clic carcasse : meme pattern deferred que pickRequested.
+        private boolean pickCarcassRequested = false;
+        private int pickCarcassX = 0;
+        private int pickCarcassY = 0;
         private final javax.media.opengl.glu.GLU pickGlu = new javax.media.opengl.glu.GLU();
         
         public static int lastItStamp = 0;
@@ -655,6 +663,64 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 double ddy = sy - hoverY;
                 double dist = Math.sqrt(ddx * ddx + ddy * ddy);
                 if (dist < best) { best = dist; hoveredCarcass = c; }
+            }
+        }
+
+        /**
+         * Task 4.2 — picking carcasse au double-clic. Meme logique de projection que
+         * updateHoveredCarcass, mais cible le point de clic (pickCarcassX/Y) au lieu
+         * du curseur. Met a jour selectedCarcass.
+         */
+        private void doPickingCarcass(GL2 gl) {
+            if (!(_myWorld instanceof WorldOfCells)) return;
+            WorldOfCells wc = (WorldOfCells) _myWorld;
+            if (wc.carcasses == null || wc.carcasses.isEmpty()) {
+                selectedCarcass = null;
+                return;
+            }
+
+            double[] mv   = new double[16];
+            double[] proj = new double[16];
+            int[]    view = new int[] { 0, 0, viewportWidth, viewportHeight };
+            double[] win  = new double[3];
+            gl.glGetDoublev(GL2.GL_MODELVIEW_MATRIX,  mv,   0);
+            gl.glGetDoublev(GL2.GL_PROJECTION_MATRIX, proj, 0);
+
+            int    w    = _myWorld.getWidth();
+            int    h    = _myWorld.getHeight();
+            double best = PICK_TOLERANCE_PX;
+            objects.Carcass found = null;
+
+            for (objects.Carcass c : wc.carcasses) {
+                int cx = c.getX(), cy = c.getY();
+                int x2 = ((cx - (movingX % w)) % w + w) % w;
+                int y2 = ((cy - (movingY % h)) % h + h) % h;
+                double worldX = offset + x2 * stepX - lenX;
+                double worldY = offset + y2 * stepY - lenY;
+                double worldZ = (double) _myWorld.getCellTopAltitude(cx, cy);
+
+                boolean ok = pickGlu.gluProject(worldX, worldY, worldZ,
+                        mv, 0, proj, 0, view, 0, win, 0);
+                if (!ok) continue;
+                if (win[2] < 0 || win[2] > 1) continue;
+
+                double sx  = win[0];
+                double sy  = viewportHeight - win[1];
+                double ddx = sx - pickCarcassX;
+                double ddy = sy - pickCarcassY;
+                double dist = Math.sqrt(ddx * ddx + ddy * ddy);
+                if (dist < best) { best = dist; found = c; }
+            }
+            // On met a jour selectedCarcass : null si aucune carcasse trouvee,
+            // sinon la carcasse la plus proche. Pas de deselectionnement automatique
+            // ici si found == null (un double-clic dans le vide ne change rien —
+            // un simple clic hors-panneau suffit pour deselecter via pickRequested).
+            if (found != null) {
+                selectedCarcass = found;
+                // Un double-clic sur une carcasse deselectionne l'agent pour eviter
+                // que les deux fiches se chevauchent en bas-gauche.
+                selectedAgent = null;
+                selectedAgentIndex = -1;
             }
         }
 
@@ -2239,6 +2305,13 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            if (pickRequested) {
 	            	doPicking(gl);
 	            	pickRequested = false;
+	            	// Task 4.2 — simple clic (sans double-clic carcasse) deselectionne la fiche.
+	            	if (!pickCarcassRequested) selectedCarcass = null;
+	            }
+	            // Task 4.2 — picking carcasse sur double-clic.
+	            if (pickCarcassRequested) {
+	            	doPickingCarcass(gl);
+	            	pickCarcassRequested = false;
 	            }
 
 	            // V3 — agent sous le curseur (bulle d'info au survol). Calculé ici,
@@ -2283,6 +2356,18 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	if (selectedAgent != null) {
 	            		agentInfoPanel.draw(gl, ui, viewportWidth, viewportHeight,
 	            		                    selectedAgent, selectedAgentIndex, cameraFollow);
+	            	}
+	            	// Task 4.2 — fiche carcasse selectionnee (double-clic).
+	            	// Affichee uniquement quand aucun agent n'est selectionne (pas de
+	            	// chevauchement en bas-gauche : les deux panels ont la meme position).
+	            	if (selectedCarcass != null) {
+	            		if (selectedCarcass.isGone()) {
+	            			// Auto-fermeture : la carcasse a ete mangee ou est pourrie.
+	            			selectedCarcass = null;
+	            		} else if (selectedAgent == null) {
+	            			carcassInfoPanel.draw(gl, ui, viewportWidth, viewportHeight,
+	            			                      selectedCarcass);
+	            		}
 	            	}
 	            	// V3 — bulle d'info au survol (nom + énergie) sans cliquer.
 	            	boolean agentTooltipShown = hoverAgent != null && hoverAgent != selectedAgent
@@ -2861,6 +2946,13 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				pickRequested = true;
 				pickClickX = mouse.getX();
 				pickClickY = mouse.getY();
+				// Task 4.2 — double-clic : tente aussi un picking de carcasse.
+				// Resolu dans display() en priorite sur le picking d'agent.
+				if (mouse.getClickCount() == 2) {
+					pickCarcassRequested = true;
+					pickCarcassX = mouse.getX();
+					pickCarcassY = mouse.getY();
+				}
 			}
 		}
 
