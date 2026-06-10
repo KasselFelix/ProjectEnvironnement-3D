@@ -12,8 +12,8 @@ import objects.Species;
  *   Carcasse
  *   Espece   : <mouton|loup|ours|humain>
  *   Poids    : <mass> / <initialMass> kg
- *   Fraicheur: <displayFreshness%>%        (ou "Etat : Pourrie" une fois la pourriture entamee)
  *   Energie  : <ENERGY_PER_KG>/kg  (total <energyValue>)
+ *   Fraicheur: <displayFreshness%>%        (ou "Etat : Pourrie" une fois la pourriture entamee)
  */
 public class CarcassInfoPanel {
 
@@ -60,8 +60,16 @@ public class CarcassInfoPanel {
                     0.95f, 0.90f, 0.85f);
         textY += ROW_HEIGHT;
 
+        ui.drawText(gl, px + 10, textY, viewportHeight,
+                    String.format("Energie  : %d/kg  (total %d)",
+                                  Math.round(Carcass.ENERGY_PER_KG),
+                                  Math.round(c.energyValue())),
+                    0.95f, 0.90f, 0.85f);
+        textY += ROW_HEIGHT;
+
         // État : une seule jauge de fraîcheur qui décroît sur la fenêtre fraîche ;
         // une fois la pourriture entamée on affiche "Pourrie" et la barre reste à 0%.
+        // (Ligne placée APRÈS Energie, juste au-dessus de la barre.)
         boolean rotten = c.isRotten();
         float barFresh = rotten ? 0f : (float) c.displayFreshness();
         if (rotten) {
@@ -76,13 +84,6 @@ public class CarcassInfoPanel {
                         freshPct > 50 ? 0.90f : 0.65f,
                         freshPct > 50 ? 0.60f : 0.40f);
         }
-        textY += ROW_HEIGHT;
-
-        ui.drawText(gl, px + 10, textY, viewportHeight,
-                    String.format("Energie  : %d/kg  (total %d)",
-                                  Math.round(Carcass.ENERGY_PER_KG),
-                                  Math.round(c.energyValue())),
-                    0.95f, 0.90f, 0.85f);
         textY += ROW_HEIGHT;
 
         // Barre de fraicheur (0% une fois pourrie)
