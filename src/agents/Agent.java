@@ -618,9 +618,7 @@ public class Agent extends UniqueDynamicObject{
 
 	/** Distance tore-aware exposée à SemanticMemory (réutilisée par reinforce/bestFood). */
 	protected final agents.ai.SemanticMemory.Distance memDistance =
-		new agents.ai.SemanticMemory.Distance() {
-			public double between(int x1, int y1, int x2, int y2) { return world.distance(x1, y1, x2, y2); }
-		};
+		(x1, y1, x2, y2) -> world.distance(x1, y1, x2, y2);
 
 	/** Exposé pour les tests (mémoire) : la distance tore-aware. */
 	public agents.ai.SemanticMemory.Distance memDistanceForTest() { return memDistance; }
