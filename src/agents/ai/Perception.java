@@ -30,6 +30,8 @@ public final class Perception {
         int predatorDir = -1; double predatorDist = vision + 1;
         int preyDir = -1;     double preyDist = vision + 1;
         int preyX = -1, preyY = -1;   // cellule de la proie la plus proche (pour le pathfinding)
+        int carcassDir = -1;  double carcassDist = vision + 1;
+        int carcassX = -1, carcassY = -1;
         int waterDir = -1;    double waterDist = vision + 1;
         int landDir = -1;     double landDist = vision + 1;
         int grassDir = -1;    double grassDist = vision + 1;
@@ -55,6 +57,17 @@ public final class Perception {
                     preyDir = dominantDir(ax, ay, a.x, a.y, w, h);
                     preyX = a.x; preyY = a.y;
                 }
+            }
+        }
+
+        // Carcasses comestibles : canal parallele aux proies mobiles.
+        for (objects.Carcass c : world.carcasses) {
+            if (c.isGone()) continue;
+            double d = torusDist(ax, ay, c.getX(), c.getY(), w, h);
+            if (d <= vision && d < carcassDist) {
+                carcassDist = d;
+                carcassDir = dominantDir(ax, ay, c.getX(), c.getY(), w, h);
+                carcassX = c.getX(); carcassY = c.getY();
             }
         }
 
@@ -99,6 +112,7 @@ public final class Perception {
         boolean onLava  = world.getLavaCAValue(ax, ay) > 0;
 
         return new Percept(predatorDir, predatorDist, preyDir, preyDist, preyX, preyY,
+                carcassDir, carcassDist, carcassX, carcassY,
                 waterDir, waterDist, landDir, landDist, grassDir, grassDist,
                 lavaDir, lavaDist, fireAdj, lavaAdj, inWater, onLava, cardinalFree);
     }

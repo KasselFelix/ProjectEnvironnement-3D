@@ -12,6 +12,9 @@ public final class Percept {
     public final int preyDir;     public final double preyDist;
     /** Cellule de la proie la plus proche en vue (pour le pathfinding) ; -1 si aucune. */
     public final int preyX, preyY;
+    /** Carcasse comestible la plus proche en vue ; carcassDir == -1 si aucune. */
+    public final int carcassDir;  public final double carcassDist;
+    public final int carcassX, carcassY;
     public final int waterDir;    public final double waterDist;
     public final int landDir;     public final double landDist;
     public final int grassDir;    public final double grassDist;
@@ -27,6 +30,7 @@ public final class Percept {
 
     public Percept(int predatorDir, double predatorDist,
                    int preyDir, double preyDist, int preyX, int preyY,
+                   int carcassDir, double carcassDist, int carcassX, int carcassY,
                    int waterDir, double waterDist,
                    int landDir, double landDist,
                    int grassDir, double grassDist,
@@ -37,6 +41,8 @@ public final class Percept {
         this.predatorDir = predatorDir; this.predatorDist = predatorDist;
         this.preyDir = preyDir;         this.preyDist = preyDist;
         this.preyX = preyX;             this.preyY = preyY;
+        this.carcassDir = carcassDir;   this.carcassDist = carcassDist;
+        this.carcassX = carcassX;       this.carcassY = carcassY;
         this.waterDir = waterDir;       this.waterDist = waterDist;
         this.landDir = landDir;         this.landDist = landDist;
         this.grassDir = grassDir;       this.grassDist = grassDist;
@@ -46,9 +52,10 @@ public final class Percept {
         this.cardinalFree = Arrays.copyOf(cardinalFree, cardinalFree.length);
     }
 
-    public boolean predatorVisible() { return predatorDir >= 0; }
-    public boolean preyVisible()     { return preyDir >= 0; }
-    public boolean grassVisible()    { return grassDir >= 0; }
+    public boolean predatorVisible()  { return predatorDir >= 0; }
+    public boolean preyVisible()      { return preyDir >= 0; }
+    public boolean carcassVisible()   { return carcassDir >= 0; }
+    public boolean grassVisible()     { return grassDir >= 0; }
     /** L2 — true si une coulée de lave est en vue (l'agent doit fuir à l'opposé). */
-    public boolean lavaVisible()     { return lavaDir >= 0; }
+    public boolean lavaVisible()      { return lavaDir >= 0; }
 }
