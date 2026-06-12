@@ -37,3 +37,5 @@ JOGL-*-backup/
 # Captures d'écran générées en jeu (F12)
 screenshots/
 
+# Réglages utilisateur (bindings, hotbar, prefs UI) — local, non partagé
+settings.properties
