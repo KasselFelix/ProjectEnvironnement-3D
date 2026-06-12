@@ -462,6 +462,13 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         }
         public Agent getSelectedAgent() { return selectedAgent; }
 
+        /** Espece dont la hotbar est editee dans le menu : agent pilote > selectionne > LOUP. */
+        public objects.Species hotbarEditSpecies() {
+        	if (controllingAgent() && controlledAgent != null) return speciesOf(controlledAgent);
+        	if (selectedAgent != null) return speciesOf(selectedAgent);
+        	return objects.Species.LOUP;
+        }
+
         /** Vrai si un agent est sélectionné ET sous pilotage manuel du joueur :
          *  dans ce cas, les flèches/ZQSD dirigent l'agent au lieu de la caméra. */
         private boolean controllingAgent() {

@@ -26,7 +26,7 @@ import graphics.Landscape;
  */
 public class InGameMenu {
 
-    public enum Tab { AGENTS, AIDE, PARAMS }
+    public enum Tab { AGENTS, AIDE, HOTBAR, PARAMS }
 
     // --- Onglet RACCOURCIS (AIDE) : modèle de lignes interactif (rebind clavier) ---
     private enum SLKind { HEADER, ACTION, RESET, INFO }
@@ -170,7 +170,7 @@ public class InGameMenu {
     }
 
     /** Constantes géométriques utilisées par draw() ET par les helpers de hit-test. */
-    private static final int TAB_W       = 78;
+    private static final int TAB_W       = 58;  // 4 onglets : 4*58 + 3*4 + 8 = 244 <= 260
     private static final int TAB_SPACING = 4;
     private static final int TAB_TOP_OFFSET = 8;  // py + 8 dans draw()
     private static final int TAB_HEIGHT  = 20;
@@ -201,8 +201,8 @@ public class InGameMenu {
         int py = HEADER_HEIGHT;
         int tabsY = py + TAB_TOP_OFFSET;
         if (y < tabsY || y >= tabsY + TAB_HEIGHT) return null;
-        // Trois onglets : AGENTS, AIDE (RACCOURCIS), PARAMS dans cet ordre.
-        Tab[] order = { Tab.AGENTS, Tab.AIDE, Tab.PARAMS };
+        // Quatre onglets : AGENTS, AIDE (TOUCHES), HOTBAR, PARAMS dans cet ordre.
+        Tab[] order = { Tab.AGENTS, Tab.AIDE, Tab.HOTBAR, Tab.PARAMS };
         for (int i = 0; i < order.length; i++) {
             int tx = px + 8 + i * (TAB_W + TAB_SPACING);
             if (x >= tx && x < tx + TAB_W) return order[i];
@@ -311,11 +311,12 @@ public class InGameMenu {
                 open = false;
                 return true;
             case KeyEvent.VK_TAB:
-                // Cycle AGENTS -> RACCOURCIS (AIDE) -> PARAMS -> AGENTS.
+                // Cycle AGENTS -> TOUCHES (AIDE) -> HOTBAR -> PARAMS -> AGENTS.
                 // AGENTS en premier car le plus consulté ; PARAMS en dernier
                 // pour éviter les manipulations involontaires des sliders.
                 if (activeTab == Tab.AGENTS)       activeTab = Tab.AIDE;
-                else if (activeTab == Tab.AIDE)    activeTab = Tab.PARAMS;
+                else if (activeTab == Tab.AIDE)    activeTab = Tab.HOTBAR;
+                else if (activeTab == Tab.HOTBAR)  activeTab = Tab.PARAMS;
                 else                                activeTab = Tab.AGENTS;
                 selectedIndex = 0;
                 agentScroll = 0;
@@ -328,6 +329,7 @@ public class InGameMenu {
             case KeyEvent.VK_S:     moveSelection(+1); return true;
             case KeyEvent.VK_LEFT:
             case KeyEvent.VK_Q:
+                if (activeTab == Tab.HOTBAR) { cycleSlot(false); return true; }
                 if (activeTab == Tab.PARAMS && !isParamHeader(selectedIndex)) {
                     paramRows.get(selectedIndex).dec.run();
                     world.applyLiveConfig();
@@ -335,6 +337,7 @@ public class InGameMenu {
                 return true;
             case KeyEvent.VK_RIGHT:
             case KeyEvent.VK_D:
+                if (activeTab == Tab.HOTBAR) { cycleSlot(true); return true; }
                 if (activeTab == Tab.PARAMS && !isParamHeader(selectedIndex)) {
                     paramRows.get(selectedIndex).inc.run();
                     world.applyLiveConfig();
@@ -360,6 +363,18 @@ public class InGameMenu {
         }
     }
 
+    /** Onglet HOTBAR : cycle l'action assignee au slot selectionne (selectedIndex
+     *  = 0..8) a travers TOUTES les HotbarAction (VIDE incluse), pour l'espece
+     *  editee, et persiste immediatement. */
+    private void cycleSlot(boolean forward) {
+        objects.Species sp = landscape.hotbarEditSpecies();
+        input.HotbarAction[] all = input.HotbarAction.values();
+        input.HotbarAction cur = settings.hotbar().slot(sp, selectedIndex);
+        int i = (cur.ordinal() + (forward ? 1 : all.length - 1)) % all.length;
+        settings.hotbar().assign(sp, selectedIndex, all[i]);
+        settings.save();
+    }
+
     /**
      * Avance/recule la sélection de `notch` pas (positif = vers le bas,
      * comme la molette). Utilisé pour le scroll molette sur le panneau focalisé.
@@ -374,6 +389,7 @@ public class InGameMenu {
         if (activeTab == Tab.PARAMS)        n = paramRows.size();
         else if (activeTab == Tab.AGENTS)   n = new AgentRoster(world).visibleRows(expanded).size();
         else if (activeTab == Tab.AIDE)     n = shortLines.size();
+        else if (activeTab == Tab.HOTBAR)   n = input.HotbarLayout.SLOTS;
         else                                 n = 0;
         if (n == 0) return;
         selectedIndex = (selectedIndex + delta + n) % n;
@@ -422,12 +438,14 @@ public class InGameMenu {
         ui.drawQuad(gl, px, py, pw, ph, 0.08f, 0.10f, 0.14f, bgAlpha);
         ui.drawBorder(gl, px, py, pw, ph, 0.4f, 0.5f, 0.65f, 1f);
 
-        // Onglets (largeur ajustée pour faire tenir 3 onglets dans le panneau).
-        int tabW = 78;
-        int tabSpacing = 4;
-        drawTab(gl, ui, px + 8,                              py + 8, tabW, 20, "AGENTS",    activeTab == Tab.AGENTS, viewportHeight);
-        drawTab(gl, ui, px + 8 + tabW + tabSpacing,          py + 8, tabW, 20, "RACCOURCIS",activeTab == Tab.AIDE,   viewportHeight);
-        drawTab(gl, ui, px + 8 + 2*(tabW + tabSpacing),      py + 8, tabW, 20, "PARAMS",    activeTab == Tab.PARAMS, viewportHeight);
+        // Onglets : largeur (TAB_W) et espacement (TAB_SPACING) partagés avec
+        // tabAt() pour que les positions à l'écran correspondent exactement aux
+        // zones cliquables. AIDE est affiché « TOUCHES » (place serrée à 4 onglets).
+        Tab[] tabOrder = { Tab.AGENTS, Tab.AIDE, Tab.HOTBAR, Tab.PARAMS };
+        String[] tabLabels = { "AGENTS", "TOUCHES", "HOTBAR", "PARAMS" };
+        for (int i = 0; i < tabOrder.length; i++)
+            drawTab(gl, ui, px + 8 + i * (TAB_W + TAB_SPACING), py + 8, TAB_W, TAB_HEIGHT,
+                    tabLabels[i], activeTab == tabOrder[i], viewportHeight);
 
         // Hint clavier — déplacé juste sous les onglets pour être visible.
         ui.drawText(gl, px + 10, py + 46, viewportHeight,
@@ -440,6 +458,7 @@ public class InGameMenu {
             case PARAMS: drawParams(gl, ui, px, contentY, pw, contentH, viewportHeight); break;
             case AGENTS: drawAgents(gl, ui, px, contentY, pw, contentH, viewportHeight); break;
             case AIDE:   drawShortcuts(gl, ui, px, contentY, pw, contentH, viewportHeight); break;
+            case HOTBAR: drawHotbar(gl, ui, px, contentY, pw, contentH, viewportHeight); break;
         }
     }
 
@@ -489,6 +508,28 @@ public class InGameMenu {
             ui.drawQuad(gl, px + 4, wy - 12, pw - 8, 16, 0.10f, 0.13f, 0.18f, 0.95f);
             ui.drawText(gl, px + 8, wy, viewportHeight, bindWarning, 0.95f, 0.55f, 0.2f);
         }
+    }
+
+    private void drawHotbar(GL2 gl, UiRenderer ui, int px, int y, int pw, int ph, int viewportHeight) {
+        objects.Species sp = landscape.hotbarEditSpecies();
+        int rowY = y + ROW_HEIGHT;
+        ui.drawText(gl, px + 8, rowY, viewportHeight, "Espece : " + sp.name(), 0.5f, 0.85f, 1f);
+        rowY += ROW_HEIGHT;
+        for (int i = 0; i < input.HotbarLayout.SLOTS; i++) {
+            boolean sel = (i == selectedIndex);
+            if (sel) ui.drawQuad(gl, px + 4, rowY - 12, pw - 8, ROW_HEIGHT - 2, 0.20f, 0.30f, 0.45f, 1f);
+            input.HotbarAction act = settings.hotbar().slot(sp, i);
+            ui.drawText(gl, px + 10, rowY, viewportHeight, "Slot " + (i + 1), 0.95f, 0.95f, 0.95f);
+            String name = (act == input.HotbarAction.VIDE) ? "(vide)"
+                    : act.label + (act.isImplemented() ? "" : " (a venir)");
+            String val = (sel ? "< " : "  ") + name + (sel ? " >" : "  ");
+            int tw = ui.textWidth(val);
+            ui.drawText(gl, px + pw - 12 - tw, rowY, viewportHeight, val, 1f, 1f, 0.7f);
+            rowY += ROW_HEIGHT;
+        }
+        // aide bas de panneau
+        ui.drawText(gl, px + 8, y + ph - 8, viewportHeight,
+                "Fleches: changer l'action du slot", 0.7f, 0.85f, 1f);
     }
 
     private void drawTab(GL2 gl, UiRenderer ui, int x, int y, int w, int h, String label,
