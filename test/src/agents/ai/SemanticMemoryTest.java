@@ -103,4 +103,46 @@ class SemanticMemoryTest {
         assertTrue(eleve.contains(MemoryKind.SAFE_PLACE, 7, 7), "lieu sûr appris");
         assertTrue(eleve.contains(MemoryKind.DANGER, 3, 3), "danger appris");
     }
+
+    /** Une zone de chasse répétitivement stérile finit par être oubliée (décote). */
+    @Test
+    void zoneDeChasseSterileEstOubliee() {
+        SemanticMemory mem = new SemanticMemory();
+        SemanticMemory.Distance d = (x1, y1, x2, y2) -> Math.hypot(x1 - x2, y1 - y2);
+        mem.remember(MemoryKind.HUNTING, 10, 10);
+
+        // 2 visites stériles (seuil 3) : pas encore oublié.
+        assertFalse(mem.recordSterileVisit(MemoryKind.HUNTING, 10, 10, 3, d, 3));
+        assertFalse(mem.recordSterileVisit(MemoryKind.HUNTING, 10, 10, 3, d, 3));
+        assertTrue(mem.contains(MemoryKind.HUNTING, 10, 10));
+        // 3e visite : seuil atteint → oublié.
+        assertTrue(mem.recordSterileVisit(MemoryKind.HUNTING, 10, 10, 3, d, 3));
+        assertFalse(mem.contains(MemoryKind.HUNTING, 10, 10));
+    }
+
+    /** Sans souvenir de chasse proche, une visite stérile est sans effet. */
+    @Test
+    void visiteSterileSansSouvenirEstSansEffet() {
+        SemanticMemory mem = new SemanticMemory();
+        SemanticMemory.Distance d = (x1, y1, x2, y2) -> Math.hypot(x1 - x2, y1 - y2);
+        assertFalse(mem.recordSterileVisit(MemoryKind.HUNTING, 10, 10, 3, d, 3));
+    }
+
+    /** Revoir une proie (remember) réhabilite la zone : son compteur d'échecs repart de zéro. */
+    @Test
+    void observationRehabiliteLaZoneDeChasse() {
+        SemanticMemory mem = new SemanticMemory();
+        SemanticMemory.Distance d = (x1, y1, x2, y2) -> Math.hypot(x1 - x2, y1 - y2);
+        mem.remember(MemoryKind.HUNTING, 10, 10);
+        mem.recordSterileVisit(MemoryKind.HUNTING, 10, 10, 3, d, 3);
+        mem.recordSterileVisit(MemoryKind.HUNTING, 10, 10, 3, d, 3);   // 2/3 échecs
+        mem.remember(MemoryKind.HUNTING, 10, 10);                       // proie revue → reset
+
+        // Il faut de nouveau 3 visites stériles complètes pour l'oublier.
+        assertFalse(mem.recordSterileVisit(MemoryKind.HUNTING, 10, 10, 3, d, 3));
+        assertFalse(mem.recordSterileVisit(MemoryKind.HUNTING, 10, 10, 3, d, 3));
+        assertTrue(mem.contains(MemoryKind.HUNTING, 10, 10), "réhabilitée → toujours mémorisée");
+        assertTrue(mem.recordSterileVisit(MemoryKind.HUNTING, 10, 10, 3, d, 3));   // 3e → oubli
+        assertFalse(mem.contains(MemoryKind.HUNTING, 10, 10));
+    }
 }

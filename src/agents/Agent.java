@@ -631,6 +631,11 @@ public class Agent extends UniqueDynamicObject{
 	/** Rayon de fusion des souvenirs (cellules). */
 	protected static int MEMORY_MERGE_RADIUS = 3;
 
+	/** Tours de recherche infructueuse (en SEARCH, depuis une zone de chasse mémorisée, sans
+	 *  proie en vue) au-delà desquels le souvenir est oublié — décote des terrains de chasse
+	 *  durablement stériles. Une mise à mort (remember HUNTING) remet ce compteur à zéro. */
+	protected static int STERILE_HUNT_FORGET_VISITS = 50;
+
 	/** Dernière cellule de carcasse renforcée par OBSERVATION (edge-trigger). */
 	private int lastFoodSeenX = -1, lastFoodSeenY = -1;
 
@@ -876,7 +881,17 @@ public class Agent extends UniqueDynamicObject{
 		int[] zone = memory.nearest(agents.ai.MemoryKind.HUNTING, x, y,
 				(a, b, c, d) -> world.distance(a, b, c, d));
 		if (zone == null) return -1;
-		if (zone[0] == x && zone[1] == y) return -1;   // déjà sur la zone → balayer
+		// Décote des terrains stériles : chaque tour passé à fouiller depuis cette zone
+		// mémorisée SANS proie en vue compte comme une « recherche infructueuse » (en SEARCH
+		// la proie n'est jamais visible — une observation ferait basculer en HUNT). Le
+		// prédateur rallie la zone UNE fois (garde-fou de progrès de homingStepToward) puis
+		// balaye les environs en spirale : on décote donc sur le TEMPS de recherche stérile,
+		// pas sur des arrivées répétées. Au-delà de STERILE_HUNT_FORGET_VISITS tours, la zone
+		// est oubliée ; une mise à mort (remember HUNTING) remet le compteur à zéro.
+		if (p != null && !p.preyVisible())
+			memory.recordSterileVisit(agents.ai.MemoryKind.HUNTING, zone[0], zone[1],
+					MEMORY_MERGE_RADIUS, memDistance, STERILE_HUNT_FORGET_VISITS);
+		if (zone[0] == x && zone[1] == y) return -1;   // pile sur la zone → balayer (spirale)
 		return homingStepToward(zone[0], zone[1], vision, p);
 	}
 

@@ -98,4 +98,21 @@ class ControlledActionsTest {
         assertTrue(vuActif,    "le slot Hurler a ete vu actif pendant le hurlement");
         assertTrue(vuCooldown, "le cooldown de Hurler est devenu affichable apres le hurlement");
     }
+
+    @Test
+    void predateurOublieUneZoneDeChasseSterile() {
+        WorldOfCells w = flat();                          // aucun mouton -> terrain de chasse sterile
+        Loup l = new Loup(37, 21, w); l.isFounder = true; w.loups.add(l);
+        l.energie = 340;
+        l.memory.remember(MemoryKind.HUNTING, 37, 21);    // zone de chasse memorisee sur sa position
+        assertTrue(l.memory.contains(MemoryKind.HUNTING, 37, 21));
+
+        boolean forgotten = false;
+        for (int t = 1; t <= 600 && !forgotten; t++) {
+            w.setIteration(t); l.step();
+            forgotten = !l.memory.contains(MemoryKind.HUNTING, 37, 21);
+        }
+        assertTrue(forgotten, "le terrain de chasse durablement vide a fini par etre oublie");
+        assertTrue(l.energie > 0, "le loup ne devait pas mourir de faim avant d'oublier");
+    }
 }

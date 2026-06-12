@@ -19,6 +19,7 @@ public final class SemanticMemory {
         int usage;
         int lastSeen;             // iteration monde du dernier renforcement (recence)
         double value;             // charge utile (FOOD = masse de la carcasse ; 0 sinon)
+        int sterileVisits;        // visites infructueuses cumulées (décote des zones de chasse mortes)
         Entry(MemoryKind kind, int x, int y, int lastSeen, double value) {
             this.kind = kind; this.x = x; this.y = y; this.usage = 1;
             this.lastSeen = lastSeen; this.value = value;
@@ -84,6 +85,7 @@ public final class SemanticMemory {
             existing.usage++;
             existing.value = Math.max(existing.value, value);
             existing.lastSeen = Math.max(existing.lastSeen, lastSeen);
+            existing.sterileVisits = 0;          // une (re)mémorisation réhabilite la zone
             return;
         }
         if (entries.size() >= capacity) forgetLowestPriority();
@@ -111,10 +113,38 @@ public final class SemanticMemory {
             near.x = x; near.y = y;
             near.lastSeen = now;
             near.value = Math.max(near.value, value);
+            near.sterileVisits = 0;              // observation effective → réhabilite la zone
             return;
         }
         if (entries.size() >= capacity) forgetLowestPriority();
         entries.add(new Entry(kind, x, y, now, value));
+    }
+
+    /**
+     * Décote une zone de {@code kind} trouvée STÉRILE à l'arrivée : le souvenir le plus
+     * proche (≤ {@code mergeRadius}) prend +1 visite infructueuse ; s'il atteint
+     * {@code forgetThreshold}, on l'oublie (un terrain de chasse durablement vide finit
+     * par sortir de la mémoire). Une observation ultérieure ({@link #remember}/
+     * {@link #reinforce}) remet ce compteur à zéro. Sans effet si aucun souvenir proche.
+     *
+     * @return true si le souvenir a été oublié à cette visite.
+     */
+    public boolean recordSterileVisit(MemoryKind kind, int x, int y,
+                                      int mergeRadius, Distance dist, int forgetThreshold) {
+        Entry near = null;
+        double bestD = Double.MAX_VALUE;
+        for (Entry e : entries) {
+            if (e.kind != kind) continue;
+            double d = dist.between(e.x, e.y, x, y);
+            if (d <= mergeRadius && d < bestD) { bestD = d; near = e; }
+        }
+        if (near == null) return false;
+        near.sterileVisits++;
+        if (forgetThreshold > 0 && near.sterileVisits >= forgetThreshold) {
+            entries.remove(near);
+            return true;
+        }
+        return false;
     }
 
     /** Seuil d'usage a partir duquel un souvenir est ACTIONNABLE (consolide / LTM).
