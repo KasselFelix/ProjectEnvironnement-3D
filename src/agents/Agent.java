@@ -1154,6 +1154,18 @@ public class Agent extends UniqueDynamicObject{
 		return p.carcassVisible() && world.distance(x, y, p.carcassX, p.carcassY) <= 1.5;
 	}
 
+	/** Consomme les demandes d'action du joueur (hotbar) pour ce tour pilote.
+	 *  @return true si une action a remplace le deplacement. Les sous-classes etendent
+	 *  (hurlement du loup) en appelant super. */
+	protected boolean consumePlayerActions(agents.ai.Percept p) {
+		boolean acted = false;
+		if (playerWantsEat) {
+			playerWantsEat = false;                      // toujours consomme (pas de latch)
+			if (carcassAdjacente(p)) { eatStep(p); acted = true; }
+		}
+		return acted;
+	}
+
 	/**
 	 * Vecteur unitaire (udx, udy) de la dernière direction de déplacement.
 	 * Renvoie (0, 1) = Nord si l'agent n'a pas encore bougé (lastDx/Dy
@@ -1221,7 +1233,8 @@ public class Agent extends UniqueDynamicObject{
 				currentState = agents.ai.AgentState.CONTROLLED;
 				applyControlSpeed();                 // cadence réactive (vcourse)
 				if (controlDir >= 0) _orient = controlDir;        // tourne le corps (visuel)
-				if ((controlDx != 0 || controlDy != 0) && canMove())  // déplacement (diagonales OK)
+				boolean acted = consumePlayerActions(p);     // hotbar : manger/hurler remplacent le pas
+				if (!acted && (controlDx != 0 || controlDy != 0) && canMove())  // déplacement (diagonales OK)
 					agents.ai.Locomotion.moveBy(this, world, controlDx, controlDy,
 							agents.ai.MoveConstraints.playerControlled());
 				// La flèche d'orientation suit le cap, même à l'arrêt.

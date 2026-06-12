@@ -139,6 +139,35 @@ public class Loup extends Agent {
 	public boolean canHowlNow() { return howlReady() && world.getCellHeight(x, y) >= 0; }
 	/** Intention joueur : hurler a la prochaine etape (pose par la hotbar, consomme par step). */
 	public boolean playerWantsHowl = false;
+	private int controlledHowlTicks = 0;
+
+	@Override
+	protected boolean consumePlayerActions(agents.ai.Percept p) {
+		boolean acted = super.consumePlayerActions(p);
+		if (playerWantsHowl) {
+			playerWantsHowl = false;
+			if (canHowlNow() && controlledHowlTicks == 0) {
+				controlledHowlTicks = HOWL_DURATION;
+				// sujet auto, comme l'IA : proie en vue > carcasse fraiche > chasse par defaut
+				howlSubject = p.preyVisible() ? MemoryKind.HUNTING
+						: (p.carcassVisible() && perceivedCarcassFresh(p)) ? MemoryKind.FOOD
+						: MemoryKind.HUNTING;
+				if (howlSubject == MemoryKind.FOOD) { howlTargetX = p.carcassX; howlTargetY = p.carcassY; }
+			}
+		}
+		if (controlledHowlTicks > 0) {
+			controlledHowlTicks--;
+			broadcastHowl();
+			if (controlledHowlTicks == 0) {
+				howlCooldown = HOWL_COOLDOWN;                 // mirroir EXACT de la fin du case HOWL de l'IA
+				if (howlSubject == MemoryKind.FOOD) clearHowlTarget();
+				howlSubject = MemoryKind.HUNTING;
+			}
+			acted = true;                                    // hurle => ne bouge pas ce tour
+		}
+		return acted;
+	}
+
 	/** true si la carcasse perçue est assez fraîche pour déclencher un hurlement-nourriture. */
 	private boolean perceivedCarcassFresh(Percept p) {
 		objects.Carcass c = world.carcassAt(p.carcassX, p.carcassY);
