@@ -939,7 +939,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
     		this.launchMenu = new LaunchMenu(config);
     		if (__myWorld instanceof WorldOfCells) {
     			((WorldOfCells) __myWorld).config = config;
-    			this.inGameMenu = new InGameMenu(config, (WorldOfCells) __myWorld, this);
+    			this.inGameMenu = new InGameMenu(config, (WorldOfCells) __myWorld, this, settings);
     		}
 
     		if (config.landscapeSource == SimulationConfig.LandscapeSource.PNG) {
@@ -3105,7 +3105,18 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 			// Échap bascule plein écran ⇄ fenêtré (ne quitte plus).
 			// Quitter : croix de la fenêtre, visible en mode fenêtré.
 			if (key.getKeyCode() == KeyEvent.VK_ESCAPE) {
-				toggleFullscreen();
+				// Pendant une capture de touche (rebind), ESC annule la capture
+				// au lieu de basculer le plein écran.
+				if (inGameMenu != null && inGameMenu.isCapturing() && menuFocused) inGameMenu.handleKey(KeyEvent.VK_ESCAPE);
+				else toggleFullscreen();
+				return;
+			}
+
+			// 2bis) Capture de touche en cours : le menu mange TOUTE frappe (y
+			// compris `m` et les touches de jeu) pour la rebinder. Doit passer
+			// AVANT le hoist TOGGLE_MENU, sinon `m` ne serait jamais bindable.
+			if (inGameMenu != null && inGameMenu.isCapturing() && menuFocused) {
+				inGameMenu.handleKey(key.getKeyCode());
 				return;
 			}
 

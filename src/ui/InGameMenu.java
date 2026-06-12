@@ -28,36 +28,45 @@ public class InGameMenu {
 
     public enum Tab { AGENTS, AIDE, PARAMS }
 
-    /** Raccourcis affichés dans l'onglet AIDE (label → action). */
-    private static final String[][] SHORTCUTS = {
-        {"m",       "Ouvrir/fermer ce menu"},
-        {"clic in", "Re-focaliser le menu"},
-        {"clic out","Defocaliser (clavier au jeu)"},
-        {"Tab",     "Changer d'onglet"},
-        {"Enter",   "(AGENTS) Suivre l'agent"},
-        {"f",       "Toggle camera-follow"},
-        {"c",       "Piloter agent (3D: ZS av, QD strafe, AE tourne)"},
-        {"g",       "Afficher/masquer graphe pop"},
-        {"v",       "Vue de dessus / 3D"},
-        {"o",       "Objets on/off"},
-        {"l",       "Eclairage"},
-        {"p",       "Eclairage haute qualite"},
-        {"n",       "Basculer Jour <-> Nuit"},
-        {"Home",    "Pause / lecture de la simulation"},
-        {"+ / PgUp","Avance rapide (x1->x2->x4->x8)"},
-        {"r",       "Eruption volcanique"},
-        {"1 / 2",   "+/- amplitude altitude"},
-        {"ZQSD",    "Naviguer (ou fleches)"},
-        {"Space",   "Camera vers le bas (long)"},
-        {"Shift",   "Camera vers le haut (long)"},
-        {"LMB clic","Picking / Focus menu / Onglet"},
-        {"LMB 2x",  "(menu AGENTS) Suivre l'agent"},
-        {"LMB drag","Rotation 3D / Pan / Orbit"},
-        {"RMB drag","Pan 3D (sort du suivi)"},
-        {"Molette", "Zoom (menu : scroll lignes)"},
-        {"F12",     "Capture ecran -> screenshots/"},
-        {"Esc",     "Quitter"},
-    };
+    // --- Onglet RACCOURCIS (AIDE) : modèle de lignes interactif (rebind clavier) ---
+    private enum SLKind { HEADER, ACTION, RESET, INFO }
+    private static final class ShortLine {
+        final SLKind kind; final input.GameAction action; final String text;
+        ShortLine(SLKind k, input.GameAction a, String t) { kind = k; action = a; text = t; }
+        boolean selectable() { return kind == SLKind.ACTION || kind == SLKind.RESET; }
+    }
+    private final java.util.List<ShortLine> shortLines = new java.util.ArrayList<>();
+
+    private void buildShortLines() {
+        shortLines.clear();
+        input.KeyContext[] order = { input.KeyContext.GLOBAL, input.KeyContext.SIMULATION, input.KeyContext.PILOTAGE };
+        String[] titles = { "GLOBAL", "SIMULATION (hors pilotage)", "PILOTAGE (agent controle)" };
+        for (int c = 0; c < order.length; c++) {
+            shortLines.add(new ShortLine(SLKind.HEADER, null, titles[c]));
+            for (input.GameAction a : input.GameAction.values())
+                if (a.context == order[c]) shortLines.add(new ShortLine(SLKind.ACTION, a, null));
+        }
+        shortLines.add(new ShortLine(SLKind.RESET, null, "Retablir les defauts"));
+        shortLines.add(new ShortLine(SLKind.INFO, null, "--- Souris (non modifiable) ---"));
+        shortLines.add(new ShortLine(SLKind.INFO, null, "Clic gauche: selection / drag camera"));
+        shortLines.add(new ShortLine(SLKind.INFO, null, "Clic droit: pan ; Molette: zoom/scroll"));
+        shortLines.add(new ShortLine(SLKind.INFO, null, "Echap: plein ecran (reserve)"));
+    }
+
+    /** Place selectedIndex sur la 1ère ligne AIDE sélectionnable (1ère ACTION). */
+    private void firstAideSelectable() {
+        for (int i = 0; i < shortLines.size(); i++) {
+            if (shortLines.get(i).selectable()) { selectedIndex = i; return; }
+        }
+        selectedIndex = 0;
+    }
+
+    // --- État de capture de touche (rebind) + avertissements ---
+    private input.GameAction captureAction = null;
+    private String bindWarning = null;
+    private long bindWarningUntilMs = 0;
+    private void warn(String m) { bindWarning = m; bindWarningUntilMs = System.currentTimeMillis() + 3000; }
+    public boolean isCapturing() { return captureAction != null; }
 
     private static class Row {
         final String label;
@@ -92,6 +101,7 @@ public class InGameMenu {
     private final SimulationConfig config;
     private final WorldOfCells world;
     private final Landscape landscape;       // pour pousser la sélection d'agent (Phase 8)
+    private final input.Settings settings;   // bindings clavier (onglet RACCOURCIS)
     private final List<Row> paramRows = new ArrayList<>();
     private boolean open = false;
     private Tab activeTab = Tab.AGENTS;
@@ -101,11 +111,13 @@ public class InGameMenu {
     /** Depliage par espece, indexe par AgentRoster.Species.ordinal() (L,M,H,O). */
     private final boolean[] expanded = new boolean[AgentRoster.Species.values().length];
 
-    public InGameMenu(SimulationConfig config, WorldOfCells world, Landscape landscape) {
+    public InGameMenu(SimulationConfig config, WorldOfCells world, Landscape landscape, input.Settings settings) {
         this.config = config;
         this.world  = world;
         this.landscape = landscape;
+        this.settings = settings;
         buildParamRows();
+        buildShortLines();
     }
 
     private void buildParamRows() {
@@ -139,7 +151,11 @@ public class InGameMenu {
     public boolean isOpen() { return open; }
 
     /** Ouvre le menu sur un onglet donné (utilisé au démarrage de la simulation). */
-    public void openOnTab(Tab tab) { open = true; activeTab = tab; }
+    public void openOnTab(Tab tab) {
+        open = true; activeTab = tab;
+        if (tab == Tab.PARAMS) firstParamSelectable();
+        else if (tab == Tab.AIDE) firstAideSelectable();
+    }
 
     /**
      * True si le point écran (x, y) tombe dans le rectangle du panneau menu.
@@ -206,6 +222,7 @@ public class InGameMenu {
         selectedIndex = 0;
         agentScroll = 0;
         if (activeTab == Tab.PARAMS) firstParamSelectable();
+        else if (activeTab == Tab.AIDE) firstAideSelectable();
         return true;
     }
 
@@ -275,6 +292,20 @@ public class InGameMenu {
     /** Retourne true si la touche a été consommée par le menu. */
     public boolean handleKey(int keyCode) {
         if (!open) return false;
+        // Capture de touche en cours (rebind) : la prochaine frappe devient le
+        // nouveau binding (ESC annule). Consomme TOUT avant le switch normal.
+        if (captureAction != null) {
+            if (keyCode == com.jogamp.newt.event.KeyEvent.VK_ESCAPE) { captureAction = null; return true; }
+            try {
+                input.GameAction evicted = settings.bindings().rebindPrimary(captureAction, keyCode);
+                if (evicted != null) warn("Touche retiree de : " + evicted.label);
+                settings.save();
+            } catch (IllegalArgumentException reserved) {
+                warn("Touche reservee");
+            }
+            captureAction = null;
+            return true;
+        }
         switch (keyCode) {
             case KeyEvent.VK_M:
                 open = false;
@@ -289,6 +320,7 @@ public class InGameMenu {
                 selectedIndex = 0;
                 agentScroll = 0;
                 if (activeTab == Tab.PARAMS) firstParamSelectable();
+                else if (activeTab == Tab.AIDE) firstAideSelectable();
                 return true;
             case KeyEvent.VK_UP:
             case KeyEvent.VK_Z:     moveSelection(-1); return true;
@@ -315,6 +347,13 @@ public class InGameMenu {
                     } else {
                         followAgentRow(selectedIndex);
                     }
+                } else if (activeTab == Tab.AIDE && selectedIndex >= 0 && selectedIndex < shortLines.size()) {
+                    ShortLine sl = shortLines.get(selectedIndex);
+                    if (sl.kind == SLKind.RESET) {
+                        settings.bindings().resetDefaults(); settings.save(); warn("Defauts retablis");
+                    } else if (sl.kind == SLKind.ACTION) {
+                        captureAction = sl.action;
+                    }
                 }
                 return true;
             default: return false;
@@ -334,6 +373,7 @@ public class InGameMenu {
         int n;
         if (activeTab == Tab.PARAMS)        n = paramRows.size();
         else if (activeTab == Tab.AGENTS)   n = new AgentRoster(world).visibleRows(expanded).size();
+        else if (activeTab == Tab.AIDE)     n = shortLines.size();
         else                                 n = 0;
         if (n == 0) return;
         selectedIndex = (selectedIndex + delta + n) % n;
@@ -342,6 +382,13 @@ public class InGameMenu {
         if (activeTab == Tab.PARAMS) {
             int dir = (delta == 0) ? 1 : Integer.signum(delta);
             for (int step = 0; step < n && paramRows.get(selectedIndex) instanceof Section; step++) {
+                selectedIndex = (selectedIndex + dir + n) % n;
+            }
+        }
+        // AIDE : on saute les lignes non sélectionnables (HEADER / INFO).
+        if (activeTab == Tab.AIDE) {
+            int dir = (delta == 0) ? 1 : Integer.signum(delta);
+            for (int step = 0; step < n && !shortLines.get(selectedIndex).selectable(); step++) {
                 selectedIndex = (selectedIndex + dir + n) % n;
             }
         }
@@ -398,10 +445,49 @@ public class InGameMenu {
 
     private void drawShortcuts(GL2 gl, UiRenderer ui, int px, int y, int pw, int ph, int viewportHeight) {
         int rowY = y + ROW_HEIGHT;
-        for (String[] s : SHORTCUTS) {
-            ui.drawText(gl, px + 10, rowY, viewportHeight, "[" + s[0] + "]", 1f, 0.9f, 0.5f);
-            ui.drawText(gl, px + 80, rowY, viewportHeight, s[1], 0.9f, 0.9f, 0.9f);
+        for (int i = 0; i < shortLines.size(); i++) {
+            ShortLine sl = shortLines.get(i);
+            switch (sl.kind) {
+                case HEADER:
+                    ui.drawText(gl, px + 8, rowY, viewportHeight, sl.text, 0.5f, 0.85f, 1f);
+                    break;
+                case INFO:
+                    ui.drawText(gl, px + 10, rowY, viewportHeight, sl.text, 0.55f, 0.55f, 0.55f);
+                    break;
+                case RESET: {
+                    boolean sel = (i == selectedIndex);
+                    if (sel) ui.drawQuad(gl, px + 4, rowY - 12, pw - 8, ROW_HEIGHT - 2, 0.20f, 0.30f, 0.45f, 1f);
+                    ui.drawText(gl, px + 10, rowY, viewportHeight, sl.text, 0.95f, 0.85f, 0.6f);
+                    break;
+                }
+                case ACTION: {
+                    boolean sel = (i == selectedIndex);
+                    if (sel) ui.drawQuad(gl, px + 4, rowY - 12, pw - 8, ROW_HEIGHT - 2, 0.20f, 0.30f, 0.45f, 1f);
+                    ui.drawText(gl, px + 10, rowY, viewportHeight, sl.action.label, 0.95f, 0.95f, 0.95f);
+                    String right; float rr, rg, rb;
+                    if (sl.action == captureAction) {
+                        right = "Appuyez sur une touche..."; rr = 1f; rg = 0.9f; rb = 0.3f;
+                    } else {
+                        java.util.List<Integer> ks = settings.bindings().keysOf(sl.action);
+                        if (ks == null || ks.isEmpty()) { right = "[---]"; rr = 0.5f; rg = 0.5f; rb = 0.5f; }
+                        else {
+                            StringBuilder sb = new StringBuilder("[").append(input.KeyNames.name(ks.get(0))).append("]");
+                            for (int a = 1; a < ks.size(); a++) sb.append(" (+ ").append(input.KeyNames.name(ks.get(a))).append(")");
+                            right = sb.toString(); rr = 1f; rg = 1f; rb = 0.7f;
+                        }
+                    }
+                    int textW = ui.textWidth(right);
+                    ui.drawText(gl, px + pw - 12 - textW, rowY, viewportHeight, right, rr, rg, rb);
+                    break;
+                }
+            }
             rowY += ROW_HEIGHT;
+        }
+        // Avertissement (conflit / reservee / reset) en bas du panneau, en orange.
+        if (bindWarning != null && System.currentTimeMillis() < bindWarningUntilMs) {
+            int wy = y + ph - 8;
+            ui.drawQuad(gl, px + 4, wy - 12, pw - 8, 16, 0.10f, 0.13f, 0.18f, 0.95f);
+            ui.drawText(gl, px + 8, wy, viewportHeight, bindWarning, 0.95f, 0.55f, 0.2f);
         }
     }
 
