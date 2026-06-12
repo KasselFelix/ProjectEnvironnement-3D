@@ -70,7 +70,7 @@ public final class ParamRegistry {
                 () -> config.humainChasseur == 1 ? "CHASSEUR" : "Berger",
                 () -> config.humainChasseur = 0,
                 () -> config.humainChasseur = 1,
-                Visibility.LAUNCH_ONLY,
+                Visibility.BOTH,   // editable au lancement ET en jeu (restaure le "Humain mode" live d'avant la refonte)
                 "Berger garde le troupeau / Chasseur traque les loups"));
 
         // ───── PAYSAGE (LaunchMenu only) ───────────────────────────────────
