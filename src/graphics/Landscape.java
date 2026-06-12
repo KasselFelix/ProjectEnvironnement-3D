@@ -366,6 +366,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         private objects.Carcass selectedCarcass = null;
         private final AgentInfoPanel agentInfoPanel = new AgentInfoPanel();
         private final CarcassInfoPanel carcassInfoPanel = new CarcassInfoPanel();
+        private final ui.HotbarPanel hotbarPanel = new ui.HotbarPanel();
         private final PopulationGraph populationGraph = new PopulationGraph();
         private boolean showPopulationGraph = false;  // masqué au démarrage ; toggle par la touche `g`
         private final ui.Minimap minimap = new ui.Minimap();   // V7
@@ -2417,6 +2418,12 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            		float rr = 10f;
 	            		ui.drawLine(gl, ccx - rr, ccy, ccx + rr, ccy, 1f, 1f, 1f, 0.9f);
 	            		ui.drawLine(gl, ccx, ccy - rr, ccx, ccy + rr, 1f, 1f, 1f, 0.9f);
+	            	}
+	            	// Hotbar MMO (pilotage) : 9 slots bas-centre, grisage just-in-time.
+	            	if (controllingAgent() && controlledAgent != null) {
+	            		hotbarPanel.draw(gl, ui, viewportWidth, viewportHeight,
+	            		                 settings.hotbar(), speciesOf(controlledAgent), controlledAgent,
+	            		                 hotbarFlashSlot, hotbarFlashUntilMs);
 	            	}
 	            }
 	            ui.end2D(gl);
