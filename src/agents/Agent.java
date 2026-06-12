@@ -314,6 +314,8 @@ public class Agent extends UniqueDynamicObject{
 	 * (énergie, feu, manger, mort dans la lave) reste géré par postMove/postTick.
 	 */
 	public boolean playerControlled = false;
+	/** Intention joueur : manger a la prochaine etape (pose par la hotbar, consomme par step). */
+	public boolean playerWantsEat = false;
 	/** Cap du corps à appliquer ce tour (0=N/1=E/2=S/3=O, -1 = ne pas tourner).
 	 *  Découplé du regard caméra : Landscape ne le change que quand l'agent avance
 	 *  ou quand l'angle regard/torse devient trop grand. */
@@ -1129,6 +1131,22 @@ public class Agent extends UniqueDynamicObject{
 		if (!p.carcassVisible()) return null;
 		return pursuitStep(p, new int[]{p.carcassX, p.carcassY}, visionRange);
 	}
+
+	/** Carcasse a portee de bouchee SANS Percept (pour l'UI hotbar, appelee chaque frame) :
+	 *  balaye les 9 cellules (courante + 8 voisines, tore). */
+	public objects.Carcass adjacentCarcass() {
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++) {
+				int cx = (x + dx + world.getWidth())  % world.getWidth();
+				int cy = (y + dy + world.getHeight()) % world.getHeight();
+				objects.Carcass c = world.carcassAt(cx, cy);
+				if (c != null) return c;
+			}
+		return null;
+	}
+
+	/** Peut prendre une bouchee MAINTENANT (carcasse adjacente + cooldown ecoule). */
+	public boolean canEatCarcassNow() { return adjacentCarcass() != null && eatBiteCooldown == 0; }
 
 	/** Carcasse à portée de bouchée : sur l'une des 9 cases (cellule + 8 voisines →
 	 *  distance euclidienne torique ≤ 1.5, diagonale = √2 ≈ 1.41). Partagé Loup/Ours. */

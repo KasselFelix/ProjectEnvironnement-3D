@@ -135,6 +135,10 @@ public class Loup extends Agent {
 	private boolean howlReady()      { return howlCooldown == 0; }
 	private boolean hasHowlTarget()  { return howlTargetX >= 0; }
 	private void    clearHowlTarget(){ howlTargetX = -1; howlTargetY = -1; }
+	/** Peut hurler MAINTENANT (cooldown ecoule, pas dans l'eau) — pour l'UI hotbar. */
+	public boolean canHowlNow() { return howlReady() && world.getCellHeight(x, y) >= 0; }
+	/** Intention joueur : hurler a la prochaine etape (pose par la hotbar, consomme par step). */
+	public boolean playerWantsHowl = false;
 	/** true si la carcasse perçue est assez fraîche pour déclencher un hurlement-nourriture. */
 	private boolean perceivedCarcassFresh(Percept p) {
 		objects.Carcass c = world.carcassAt(p.carcassX, p.carcassY);
