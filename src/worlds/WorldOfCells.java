@@ -400,6 +400,7 @@ public class WorldOfCells extends World {
     	setBaseWindForce(config.baseWindForce);
     	setWindVariability(config.windVariability);
     	Loup.HOWL_RADIUS = Math.max(1, config.howlRadius);   // meute : portee du hurlement (etat global partage, comme le vent)
+    	Agent.STERILE_HUNT_FORGET_VISITS = Math.max(1, config.sterileHuntForgetVisits);  // decote des terrains de chasse steriles (loup+ours)
     	if (forestCA != null) {
     		forestCA.darbre = config.forestDensite;
     		forestCA.pA     = config.forestProbApparition;

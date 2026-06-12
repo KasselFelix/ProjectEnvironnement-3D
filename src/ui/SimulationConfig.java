@@ -57,6 +57,11 @@ public class SimulationConfig {
      *  repu voyant une proie hurle ; les loups affamés dans ce rayon convergent.
      *  Défaut 30 (~3× vision). Propagé sur Loup.HOWL_RADIUS via applyConfigToCAs. */
     public int    howlRadius      = 30;
+    /** Tours de recherche infructueuse (état SEARCH, depuis une zone de chasse mémorisée,
+     *  sans proie en vue) au-delà desquels un prédateur OUBLIE ce terrain de chasse. Une
+     *  mise à mort sur place remet le compteur à zéro. Partagé loup + ours. Propagé sur
+     *  Agent.STERILE_HUNT_FORGET_VISITS via applyConfigToCAs. */
+    public int    sterileHuntForgetVisits = 50;
 
     // ───── Biologie Mouton (cf. Mouton.java) ───────────────────────────────
     public int    moutonVision      = 10;

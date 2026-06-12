@@ -633,8 +633,10 @@ public class Agent extends UniqueDynamicObject{
 
 	/** Tours de recherche infructueuse (en SEARCH, depuis une zone de chasse mémorisée, sans
 	 *  proie en vue) au-delà desquels le souvenir est oublié — décote des terrains de chasse
-	 *  durablement stériles. Une mise à mort (remember HUNTING) remet ce compteur à zéro. */
-	protected static int STERILE_HUNT_FORGET_VISITS = 50;
+	 *  durablement stériles. Une mise à mort (remember HUNTING) remet ce compteur à zéro.
+	 *  État global partagé (loup + ours), piloté par SimulationConfig.sterileHuntForgetVisits
+	 *  via WorldOfCells.applyConfigToCAs — comme Loup.HOWL_RADIUS. */
+	public static int STERILE_HUNT_FORGET_VISITS = 50;
 
 	/** Dernière cellule de carcasse renforcée par OBSERVATION (edge-trigger). */
 	private int lastFoodSeenX = -1, lastFoodSeenY = -1;

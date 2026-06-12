@@ -99,6 +99,9 @@ public final class ParamRegistry {
         defs.add(intDef("BIOLOGIE - Loup", "Portee cri", Visibility.BOTH,
                 () -> config.howlRadius, v -> config.howlRadius = v, 5, 80, 5)
                 .withHelp("Distance (cases) a laquelle un hurlement de meute est entendu"));
+        defs.add(intDef("BIOLOGIE - Loup", "Oubli chasse", Visibility.BOTH,
+                () -> config.sterileHuntForgetVisits, v -> config.sterileHuntForgetVisits = v, 10, 300, 10)
+                .withHelp("Tours de recherche sans proie avant d'oublier un terrain de chasse (loup+ours)"));
 
         // ───── BIOLOGIE - Mouton ───────────────────────────────────────────
         defs.add(intDef("BIOLOGIE - Mouton", "Vision", Visibility.BOTH,
