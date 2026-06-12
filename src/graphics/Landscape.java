@@ -237,6 +237,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		// Slot de hotbar en echec (action indisponible) a faire clignoter (D5).
 		private int hotbarFlashSlot = -1;
 		private long hotbarFlashUntilMs = 0;
+		// Slot declenche avec succes (flash vert de confirmation) + petit message "<action> !".
+		private int hotbarSuccessSlot = -1;
+		private long hotbarSuccessUntilMs = 0;
+		private String hotbarToast = null;
+		private long hotbarToastUntilMs = 0;
 
 		// ----- Système d'input (module 1) : bindings persistés + held-set + dispatch -----
 		private final input.Settings settings = new input.Settings(input.Settings.DEFAULT_PATH);
@@ -2426,11 +2431,19 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            		ui.drawLine(gl, ccx - rr, ccy, ccx + rr, ccy, 1f, 1f, 1f, 0.9f);
 	            		ui.drawLine(gl, ccx, ccy - rr, ccx, ccy + rr, 1f, 1f, 1f, 0.9f);
 	            	}
-	            	// Hotbar MMO (pilotage) : 9 slots bas-centre, grisage just-in-time.
+	            	// Hotbar MMO (pilotage) : 9 slots bas-centre, grisage just-in-time,
+	            	// balayage radial de cooldown, flash de refus/confirmation, halo "actif".
 	            	if (controllingAgent() && controlledAgent != null) {
 	            		hotbarPanel.draw(gl, ui, viewportWidth, viewportHeight,
 	            		                 settings.hotbar(), speciesOf(controlledAgent), controlledAgent,
-	            		                 hotbarFlashSlot, hotbarFlashUntilMs);
+	            		                 hotbarFlashSlot, hotbarFlashUntilMs,
+	            		                 hotbarSuccessSlot, hotbarSuccessUntilMs);
+	            		// Message bref "<action> !" centre juste au-dessus de la barre.
+	            		if (hotbarToast != null && System.currentTimeMillis() < hotbarToastUntilMs) {
+	            			int tw = ui.textWidth(hotbarToast);
+	            			int ty = viewportHeight - 40 - 14 - 20;   // au-dessus des slots (SLOT_H + MARGIN_BOTTOM)
+	            			ui.drawText(gl, (viewportWidth - tw) / 2, ty, viewportHeight, hotbarToast, 0.55f, 1f, 0.6f);
+	            		}
 	            	}
 	            }
 	            ui.end2D(gl);
@@ -3315,8 +3328,12 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				if (controlledAgent == null) break;
 				int slot = a.ordinal() - input.GameAction.HOTBAR_1.ordinal();
 				input.HotbarAction act = settings.hotbar().slot(speciesOf(controlledAgent), slot);
-				if (act.available(controlledAgent)) act.execute(controlledAgent);
-				else { hotbarFlashSlot = slot; hotbarFlashUntilMs = System.currentTimeMillis() + 300; }
+				long nowHb = System.currentTimeMillis();
+				if (act.available(controlledAgent)) {
+					act.execute(controlledAgent);
+					hotbarSuccessSlot = slot; hotbarSuccessUntilMs = nowHb + 350;   // flash vert de confirmation
+					hotbarToast = act.label + " !"; hotbarToastUntilMs = nowHb + 900;
+				} else { hotbarFlashSlot = slot; hotbarFlashUntilMs = nowHb + 300; }  // flash rouge de refus
 				break;
 			}
 			default:

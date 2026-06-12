@@ -66,4 +66,36 @@ class ControlledActionsTest {
         assertTrue(vSprint > vTrot, "sprint plus rapide que trot");
         assertTrue(vTrot > vWalk,   "trot plus rapide que marche");
     }
+
+    @Test
+    void cooldownAccessorsReposEtDispatch() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 10, w); l.isFounder = true; w.loups.add(l);
+        // Au repos : aucun cooldown, aucune action active.
+        assertEquals(0.0, input.HotbarAction.HURLER.cooldownFraction(l), 1e-9);
+        assertEquals(0.0, input.HotbarAction.MANGER.cooldownFraction(l), 1e-9);
+        assertFalse(input.HotbarAction.HURLER.isActive(l));
+        // HURLER sur un non-loup : 0 et inactif, sans ClassCastException.
+        Mouton m = new Mouton(5, 5, w);
+        assertEquals(0.0, input.HotbarAction.HURLER.cooldownFraction(m), 1e-9);
+        assertFalse(input.HotbarAction.HURLER.isActive(m));
+    }
+
+    @Test
+    void hurlementPiloteEngageLeCooldownAffichable() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 10, w); l.isFounder = true; l.energie = l.energieD; w.loups.add(l);
+        l.playerControlled = true;
+        l.playerWantsHowl = true;
+        // Pendant le hurlement, l'action est "active" a un moment ; apres, le cooldown s'engage
+        // puis se resorbe (postTick decremente meme en pilotage).
+        boolean vuActif = false, vuCooldown = false;
+        for (int t = 1; t < 60; t++) {
+            w.setIteration(t); l.step();
+            if (input.HotbarAction.HURLER.isActive(l)) vuActif = true;
+            if (input.HotbarAction.HURLER.cooldownFraction(l) > 0.0) vuCooldown = true;
+        }
+        assertTrue(vuActif,    "le slot Hurler a ete vu actif pendant le hurlement");
+        assertTrue(vuCooldown, "le cooldown de Hurler est devenu affichable apres le hurlement");
+    }
 }

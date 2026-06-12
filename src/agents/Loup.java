@@ -137,6 +137,12 @@ public class Loup extends Agent {
 	private void    clearHowlTarget(){ howlTargetX = -1; howlTargetY = -1; }
 	/** Peut hurler MAINTENANT (cooldown ecoule, pas dans l'eau) — pour l'UI hotbar. */
 	public boolean canHowlNow() { return howlReady() && world.getCellHeight(x, y) >= 0; }
+	/** Fraction [0,1] du cooldown de hurlement restant (1 = vient de hurler, 0 = pret) — balayage radial hotbar. */
+	public double howlCooldownFraction() { return Math.max(0.0, Math.min(1.0, howlCooldown / (double) HOWL_COOLDOWN)); }
+	/** Secondes reelles restantes avant de pouvoir re-hurler — compte a rebours hotbar. */
+	public double howlCooldownSeconds() { return howlCooldown / simulationHz(); }
+	/** Loup en train de hurler (pilotage) — pour le halo "actif" de la hotbar. */
+	public boolean isHowlingControlled() { return controlledHowlTicks > 0; }
 	/** Intention joueur : hurler a la prochaine etape (pose par la hotbar, consomme par step). */
 	public boolean playerWantsHowl = false;
 	private int controlledHowlTicks = 0;

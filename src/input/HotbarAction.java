@@ -47,4 +47,27 @@ public enum HotbarAction {
             default: break;
         }
     }
+
+    /** Fraction [0,1] du cooldown restant pour cet agent (0 = pret / sans objet) — balayage radial UI. */
+    public double cooldownFraction(Agent a) {
+        switch (this) {
+            case MANGER: return a.eatBiteCooldownFraction();
+            case HURLER: return (a instanceof Loup) ? ((Loup) a).howlCooldownFraction() : 0.0;
+            default:     return 0.0;
+        }
+    }
+
+    /** Secondes reelles restantes du cooldown (compte a rebours UI). */
+    public double cooldownSeconds(Agent a) {
+        switch (this) {
+            case MANGER: return a.eatBiteCooldownSeconds();
+            case HURLER: return (a instanceof Loup) ? ((Loup) a).howlCooldownSeconds() : 0.0;
+            default:     return 0.0;
+        }
+    }
+
+    /** Action en cours d'execution prolongee (ex: loup en train de hurler) — halo "actif" UI. */
+    public boolean isActive(Agent a) {
+        return this == HURLER && (a instanceof Loup) && ((Loup) a).isHowlingControlled();
+    }
 }

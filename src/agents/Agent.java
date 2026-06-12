@@ -1096,6 +1096,14 @@ public class Agent extends UniqueDynamicObject{
 	/** Ticks restants avant la prochaine bouchée (0 = prêt). */
 	protected int eatBiteCooldown = 0;
 
+	/** Fraction [0,1] du cooldown de bouchée restant (1 = vient de mordre, 0 = prêt) — pour le balayage radial de la hotbar. */
+	public double eatBiteCooldownFraction() {
+		int max = Math.max(1, (int) Math.round(EAT_BITE_SEC * simulationHz()));
+		return Math.max(0.0, Math.min(1.0, eatBiteCooldown / (double) max));
+	}
+	/** Secondes réelles restantes avant la prochaine bouchée — pour le compte à rebours de la hotbar. */
+	public double eatBiteCooldownSeconds() { return eatBiteCooldown / simulationHz(); }
+
 	/** Hook d'écriture d'énergie depuis eatStep. Surchargé par les espèces carnivores
 	 *  (Loup, Ours) pour faire {@code energie += delta}. No-op par défaut (Mouton, etc.). */
 	protected void gainEnergie(int delta) {}
