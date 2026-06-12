@@ -33,10 +33,21 @@ public final class ParamRegistry {
         public final Supplier<String> value;
         public final Runnable dec, inc;
         public final Visibility visibility;
+        /** Bulle d'aide (V7, InGameMenu PARAMS). "" = pas de bulle. */
+        public final String help;
         ParamDef(String section, String label, Supplier<String> value,
                  Runnable dec, Runnable inc, Visibility visibility) {
+            this(section, label, value, dec, inc, visibility, "");
+        }
+        ParamDef(String section, String label, Supplier<String> value,
+                 Runnable dec, Runnable inc, Visibility visibility, String help) {
             this.section = section; this.label = label; this.value = value;
             this.dec = dec; this.inc = inc; this.visibility = visibility;
+            this.help = help;
+        }
+        /** Retourne une copie identique enrichie de la bulle d'aide (champs finals). */
+        ParamDef withHelp(String h) {
+            return new ParamDef(section, label, value, dec, inc, visibility, h);
         }
     }
 
@@ -59,7 +70,8 @@ public final class ParamRegistry {
                 () -> config.humainChasseur == 1 ? "CHASSEUR" : "Berger",
                 () -> config.humainChasseur = 0,
                 () -> config.humainChasseur = 1,
-                Visibility.LAUNCH_ONLY));
+                Visibility.LAUNCH_ONLY,
+                "Berger garde le troupeau / Chasseur traque les loups"));
 
         // ───── PAYSAGE (LaunchMenu only) ───────────────────────────────────
         defs.add(intDef("PAYSAGE", "Largeur (dx)", Visibility.LAUNCH_ONLY,
@@ -76,7 +88,8 @@ public final class ParamRegistry {
         // dans InGameMenu (labels differents la-bas) ⇒ BOTH. On garde le libelle
         // ET les bornes du LaunchMenu (identiques de toute facon ici).
         defs.add(intDef("BIOLOGIE - Loup", "Vision", Visibility.BOTH,
-                () -> config.loupVision, v -> config.loupVision = v, 1, 50, 1));
+                () -> config.loupVision, v -> config.loupVision = v, 1, 50, 1)
+                .withHelp("Portee de detection du loup (cases)"));
         defs.add(intDef("BIOLOGIE - Loup", "Energie max", Visibility.BOTH,
                 () -> config.loupEnergieMax, v -> config.loupEnergieMax = v, 50, 5000, 50));
         defs.add(doubleDef("BIOLOGIE - Loup", "Reproduction", Visibility.BOTH,
@@ -84,7 +97,8 @@ public final class ParamRegistry {
         defs.add(doubleDef("BIOLOGIE - Loup", "Esperance vie (j)", Visibility.BOTH,
                 () -> config.loupMaxAgeDays, v -> config.loupMaxAgeDays = v, 0.0, 200.0, 1.0, "%.1f"));
         defs.add(intDef("BIOLOGIE - Loup", "Portee cri", Visibility.BOTH,
-                () -> config.howlRadius, v -> config.howlRadius = v, 5, 80, 5));
+                () -> config.howlRadius, v -> config.howlRadius = v, 5, 80, 5)
+                .withHelp("Distance (cases) a laquelle un hurlement de meute est entendu"));
 
         // ───── BIOLOGIE - Mouton ───────────────────────────────────────────
         defs.add(intDef("BIOLOGIE - Mouton", "Vision", Visibility.BOTH,
@@ -108,14 +122,16 @@ public final class ParamRegistry {
         defs.add(doubleDef("TEMPS", "Transition jour (sec)", Visibility.LAUNCH_ONLY,
                 () -> (double) config.transitionJourSec, v -> config.transitionJourSec = (float) v, 0.5, 30.0, 0.5, "%.1f"));
         defs.add(intDef("TEMPS", "Saison (jours-jeu)", Visibility.BOTH,
-                () -> config.seasonLengthDays, v -> config.seasonLengthDays = v, 0, 30, 1));
+                () -> config.seasonLengthDays, v -> config.seasonLengthDays = v, 0, 30, 1)
+                .withHelp("Duree d'une saison en jours-jeu ; 0 = ete perpetuel"));
         // INGAME_ONLY : reglages de confort affiches dans l'onglet PARAMS in-game.
         // "HUD degats" — toggle ON/OFF (dec=false, inc=true, verbatim InGameMenu).
         defs.add(new ParamDef("TEMPS", "HUD degats",
                 () -> config.showDamageHud ? "ON" : "OFF",
                 () -> config.showDamageHud = false,
                 () -> config.showDamageHud = true,
-                Visibility.INGAME_ONLY));
+                Visibility.INGAME_ONLY,
+                "2e ligne HUD : arbres brules, agents morts, lave emise"));
         defs.add(doubleDef("TEMPS", "Sensibilite souris", Visibility.INGAME_ONLY,
                 () -> (double) config.mouseLookSensitivity, v -> config.mouseLookSensitivity = (float) v, 0.02, 0.40, 0.02, "%.2f"));
 
@@ -125,11 +141,14 @@ public final class ParamRegistry {
                 () -> config.windEnabled ? "Oui" : "Non",
                 () -> config.windEnabled = false,
                 () -> config.windEnabled = true,
-                Visibility.BOTH));
+                Visibility.BOTH,
+                "Active ou desactive le vent (propagation feu, graines)"));
         defs.add(doubleDef("VENT", "Force vent", Visibility.BOTH,
-                () -> config.baseWindForce, v -> config.baseWindForce = v, 0.0, 25.0, 1.0, "%.1f"));
+                () -> config.baseWindForce, v -> config.baseWindForce = v, 0.0, 25.0, 1.0, "%.1f")
+                .withHelp("Force de base du vent en m/s"));
         defs.add(doubleDef("VENT", "Variabilite vent", Visibility.BOTH,
-                () -> config.windVariability, v -> config.windVariability = v, 0.0, 3.0, 0.25, "%.2f"));
+                () -> config.windVariability, v -> config.windVariability = v, 0.0, 3.0, 0.25, "%.2f")
+                .withHelp("Amplitude des rafales (0 = vent constant)"));
 
         // ───── FORET ───────────────────────────────────────────────────────
         defs.add(doubleDef("FORET", "Densite initiale", Visibility.LAUNCH_ONLY,

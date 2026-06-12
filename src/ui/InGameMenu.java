@@ -74,6 +74,17 @@ public class InGameMenu {
         Row withHelp(String h) { this.help = h; return this; }
     }
 
+    /** En-tête de section dans l'onglet PARAMS (non sélectionnable, dec/inc no-op). */
+    private static class Section extends Row {
+        Section(String title) { super(title, () -> "", () -> {}, () -> {}); }
+    }
+
+    /** Vrai si l'index PARAMS i est hors-borne OU un en-tête de section (= non
+     *  actionnable par dec/inc). */
+    private boolean isParamHeader(int i) {
+        return i < 0 || i >= paramRows.size() || paramRows.get(i) instanceof Section;
+    }
+
     private static final int ROW_HEIGHT = 16;
     private static final int PANEL_WIDTH = 260;
     private static final int HEADER_HEIGHT = 26;   // bandeau noir HUD en haut
@@ -98,97 +109,31 @@ public class InGameMenu {
     }
 
     private void buildParamRows() {
-        paramRows.add(intRow("Vision loup",       () -> config.loupVision,     v -> config.loupVision     = v, 1, 50, 1)
-                .withHelp("Portee de detection du loup (cases)"));
-        paramRows.add(intRow("EnergieMax loup",   () -> config.loupEnergieMax, v -> config.loupEnergieMax = v, 50, 5000, 50));
-        paramRows.add(doubleRow("Prepro loup",     () -> config.loupPrepro,
-                v -> config.loupPrepro = v, 0.0, 0.05, 0.0005, "%.4f"));
-        paramRows.add(doubleRow("Age max loup",    () -> config.loupMaxAgeDays,
-                v -> config.loupMaxAgeDays = v, 0.0, 200.0, 1.0, "%.1f"));
-        paramRows.add(intRow("Portee cri loup",   () -> config.howlRadius, v -> config.howlRadius = v, 5, 80, 5)
-                .withHelp("Distance (cases) a laquelle un hurlement de meute est entendu"));
-        paramRows.add(intRow("Vision mouton",     () -> config.moutonVision, v -> config.moutonVision = v, 1, 50, 1));
-        paramRows.add(doubleRow("EnergieMax mouton", () -> config.moutonEnergieMax,
-                v -> config.moutonEnergieMax = v, 50.0, 5000.0, 50.0, "%.0f"));
-        paramRows.add(doubleRow("Prepro mouton",    () -> config.moutonPrepro,
-                v -> config.moutonPrepro = v, 0.0, 0.2, 0.005, "%.3f"));
-        paramRows.add(doubleRow("Age max mouton",  () -> config.moutonMaxAgeDays,
-                v -> config.moutonMaxAgeDays = v, 0.0, 200.0, 1.0, "%.1f"));
-        // L3 — bascule berger / chasseur (toggle 0/1, libellé explicite).
-        paramRows.add(new Row("Humain mode",
-                () -> config.humainChasseur == 1 ? "CHASSEUR" : "Berger",
-                () -> config.humainChasseur = 0,
-                () -> config.humainChasseur = 1)
-                .withHelp("Berger garde le troupeau / Chasseur traque les loups"));
-        paramRows.add(intRow("Saison (jours)",    () -> config.seasonLengthDays, v -> config.seasonLengthDays = v, 0, 30, 1)
-                .withHelp("Duree d'une saison en jours-jeu ; 0 = ete perpetuel"));
-        // VENT
-        paramRows.add(new Row("Vent actif",
-                () -> config.windEnabled ? "Oui" : "Non",
-                () -> config.windEnabled = false,
-                () -> config.windEnabled = true)
-                .withHelp("Active ou desactive le vent (propagation feu, graines)"));
-        paramRows.add(doubleRow("Force vent",       () -> config.baseWindForce,
-                v -> config.baseWindForce = v, 0.0, 25.0, 1.0, "%.1f")
-                .withHelp("Force de base du vent en m/s"));
-        paramRows.add(doubleRow("Variabilite vent", () -> config.windVariability,
-                v -> config.windVariability = v, 0.0, 3.0, 0.25, "%.2f")
-                .withHelp("Amplitude des rafales (0 = vent constant)"));
-        paramRows.add(intRow("Simulation Hz",     () -> config.simulationHz,   v -> config.simulationHz   = v, 10, 60, 5));
-        paramRows.add(intRow("Distance de vue",   () -> config.viewDistanceCells, v -> config.viewDistanceCells = v, 10, 200, 5));
-        paramRows.add(new Row("HUD degats",
-                () -> config.showDamageHud ? "ON" : "OFF",
-                () -> config.showDamageHud = false,
-                () -> config.showDamageHud = true)
-                .withHelp("2e ligne HUD : arbres brules, agents morts, lave emise"));
-        paramRows.add(doubleRow("Sensibilite souris", () -> (double) config.mouseLookSensitivity,
-                v -> config.mouseLookSensitivity = (float) v, 0.02, 0.40, 0.02, "%.2f"));
-        paramRows.add(doubleRow("Cycle complet (sec)", () -> (double) config.cycleTotalSec,
-                v -> config.cycleTotalSec = (float) v, 60.0, 1200.0, 30.0, "%.0f"));
-        paramRows.add(doubleRow("Ratio jour/cycle", () -> (double) config.dayFractionRatio,
-                v -> config.dayFractionRatio = (float) v, 0.30, 0.80, 0.05, "%.2f"));
-        paramRows.add(doubleRow("Croissance foret", () -> config.forestProbApparition,
-                v -> config.forestProbApparition = v, 0.0, 0.001, 0.000002, "%.6f"));
-        paramRows.add(doubleRow("Croissance arbre", () -> config.treeGrowthDays,
-                v -> config.treeGrowthDays = v, 1.0, 100.0, 1.0, "%.0f"));
-        paramRows.add(doubleRow("Croissance herbe", () -> config.herbeProbApparition,
-                v -> config.herbeProbApparition = v, 0.0, 0.001, 0.000002, "%.6f"));
-        paramRows.add(doubleRow("Proba eruption",  () -> config.laveProbErruption,
-                v -> config.laveProbErruption = v, 0.0, 0.05, 0.0005, "%.4f"));
-        paramRows.add(doubleRow("Profondeur cratere", () -> (double) config.craterHoleDepth,
-                v -> config.craterHoleDepth = (float) v, 0.5, 8.0, 0.5, "%.1f"));
-        paramRows.add(doubleRow("Duree eruption (sec)", () -> (double) config.eruptionDurationSec,
-                v -> config.eruptionDurationSec = (float) v, 1.0, 30.0, 0.5, "%.1f"));
-        paramRows.add(doubleRow("Solidification (sec)", () -> (double) config.solidifyEndSec,
-                v -> config.solidifyEndSec = (float) v, 0.5, 30.0, 0.5, "%.1f"));
-        paramRows.add(doubleRow("Drainage (sec)",   () -> (double) config.subsidenceIntervalSec,
-                v -> config.subsidenceIntervalSec = (float) v, 0.05, 2.0, 0.05, "%.2f"));
-        paramRows.add(doubleRow("Viscosite lave",   () -> (double) config.lavaViscosity,
-                v -> config.lavaViscosity = (float) v, 1.0, 2.0, 0.1, "%.1f"));
-        paramRows.add(doubleRow("Puissance min eruption", () -> (double) config.erruptionPowerMin,
-                v -> config.erruptionPowerMin = (float) v, 0.1, 5.0, 0.1, "%.2f"));
-        paramRows.add(doubleRow("Puissance max eruption", () -> (double) config.erruptionPowerMax,
-                v -> config.erruptionPowerMax = (float) v, 0.5, 10.0, 0.1, "%.2f"));
+        // Source UNIQUE : le registre déclaratif (ParamRegistry), filtré aux
+        // paramètres modifiables à chaud (BOTH) ou propres à l'in-game
+        // (INGAME_ONLY). On insère un en-tête de Section au changement de
+        // section pour lever l'ambiguïté des libellés courts ("Vision" sous
+        // "BIOLOGIE - Loup" vs "BIOLOGIE - Mouton").
+        String currentSection = null;
+        for (ParamRegistry.ParamDef d : ParamRegistry.build(config)) {
+            if (d.visibility == ParamRegistry.Visibility.LAUNCH_ONLY) continue;
+            if (!d.section.equals(currentSection)) {
+                paramRows.add(new Section(d.section));
+                currentSection = d.section;
+            }
+            paramRows.add(new Row(d.label, d.value, d.dec, d.inc).withHelp(d.help));
+        }
+        // Le curseur démarre sur la 1ère ligne réelle (pas un en-tête).
+        firstParamSelectable();
     }
 
-    private interface IntGet { int get(); }
-    private interface IntSet { void set(int v); }
-    private interface DblGet { double get(); }
-    private interface DblSet { void set(double v); }
-
-    private Row intRow(String label, IntGet get, IntSet set, int min, int max, int step) {
-        return new Row(label,
-                () -> Integer.toString(get.get()),
-                () -> set.set(Math.max(min, get.get() - step)),
-                () -> set.set(Math.min(max, get.get() + step)));
+    /** Place selectedIndex sur la 1ère ligne PARAMS non-en-tête. */
+    private void firstParamSelectable() {
+        for (int i = 0; i < paramRows.size(); i++) {
+            if (!(paramRows.get(i) instanceof Section)) { selectedIndex = i; return; }
+        }
+        selectedIndex = 0;
     }
-    private Row doubleRow(String label, DblGet get, DblSet set, double min, double max, double step, String fmt) {
-        return new Row(label,
-                () -> String.format(fmt, get.get()),
-                () -> set.set(Math.max(min, round(get.get() - step))),
-                () -> set.set(Math.min(max, round(get.get() + step))));
-    }
-    private static double round(double v) { return Math.round(v * 1_000_000.0) / 1_000_000.0; }
 
     public void toggle() { open = !open; }
     public boolean isOpen() { return open; }
@@ -260,6 +205,7 @@ public class InGameMenu {
         activeTab = tab;
         selectedIndex = 0;
         agentScroll = 0;
+        if (activeTab == Tab.PARAMS) firstParamSelectable();
         return true;
     }
 
@@ -342,6 +288,7 @@ public class InGameMenu {
                 else                                activeTab = Tab.AGENTS;
                 selectedIndex = 0;
                 agentScroll = 0;
+                if (activeTab == Tab.PARAMS) firstParamSelectable();
                 return true;
             case KeyEvent.VK_UP:
             case KeyEvent.VK_Z:     moveSelection(-1); return true;
@@ -349,14 +296,14 @@ public class InGameMenu {
             case KeyEvent.VK_S:     moveSelection(+1); return true;
             case KeyEvent.VK_LEFT:
             case KeyEvent.VK_Q:
-                if (activeTab == Tab.PARAMS && !paramRows.isEmpty()) {
+                if (activeTab == Tab.PARAMS && !isParamHeader(selectedIndex)) {
                     paramRows.get(selectedIndex).dec.run();
                     world.applyLiveConfig();
                 }
                 return true;
             case KeyEvent.VK_RIGHT:
             case KeyEvent.VK_D:
-                if (activeTab == Tab.PARAMS && !paramRows.isEmpty()) {
+                if (activeTab == Tab.PARAMS && !isParamHeader(selectedIndex)) {
                     paramRows.get(selectedIndex).inc.run();
                     world.applyLiveConfig();
                 }
@@ -390,6 +337,14 @@ public class InGameMenu {
         else                                 n = 0;
         if (n == 0) return;
         selectedIndex = (selectedIndex + delta + n) % n;
+        // PARAMS : on saute les en-têtes de section dans le sens du déplacement.
+        // Borne de sécurité n pour éviter une boucle infinie si tout est en-tête.
+        if (activeTab == Tab.PARAMS) {
+            int dir = (delta == 0) ? 1 : Integer.signum(delta);
+            for (int step = 0; step < n && paramRows.get(selectedIndex) instanceof Section; step++) {
+                selectedIndex = (selectedIndex + dir + n) % n;
+            }
+        }
         // Petit auto-scroll dans la vue Agents.
         if (activeTab == Tab.AGENTS) {
             if (selectedIndex < agentScroll) agentScroll = selectedIndex;
@@ -467,6 +422,12 @@ public class InGameMenu {
         int rowY = y + ROW_HEIGHT;
         for (int i = 0; i < paramRows.size(); i++) {
             Row r = paramRows.get(i);
+            if (r instanceof Section) {
+                // En-tête de section : libellé coloré, pas de valeur ni highlight.
+                ui.drawText(gl, px + 8, rowY, viewportHeight, r.label, 0.5f, 0.85f, 1f);
+                rowY += ROW_HEIGHT;
+                continue;
+            }
             boolean sel = (i == selectedIndex);
             if (sel) {
                 ui.drawQuad(gl, px + 4, rowY - 12, pw - 8, ROW_HEIGHT - 2,
