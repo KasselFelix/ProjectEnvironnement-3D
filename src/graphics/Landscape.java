@@ -762,24 +762,34 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             } else { hotbarFlashSlot = slot; hotbarFlashUntilMs = now + 300; }   // refus
         }
 
-        /** Map le CARACTÈRE tapé vers un slot de hotbar (0-8), ou -1. Robuste aux dispositions :
-         *  la rangée de chiffres AZERTY non-shiftée (&é"'(-è_ç) ET les chiffres 1-9 (QWERTY,
-         *  AZERTY+Maj, ou pavé numérique NumLock actif) déclenchent les slots sans Maj.
-         *  Les accents sont comparés par point de code (0xE9 é, 0xE8 è, 0xE7 ç) pour ne pas
-         *  dépendre de l'encodage du source. */
+        /** Map le CARACTÈRE tapé vers un slot de hotbar (0-8), ou -1. Couvre la rangée de
+         *  chiffres AZERTY non-shiftée dont NEWT remonte bien le caractère (& " ' ( - _),
+         *  ET les chiffres 1-9 (QWERTY, AZERTY+Maj, ou pavé numérique NumLock actif).
+         *  Les touches accentuées (é è ç) remontent keyChar=0 → gérées par keyCode (cf.
+         *  {@link #hotbarSlotForKeyCode}). */
         private static int hotbarSlotForChar(char c) {
             if (c >= '1' && c <= '9') return c - '1';
             switch (c) {
-                case '&':  return 0;
-                case 0xE9: return 1;   // é
-                case '"':  return 2;
-                case '\'': return 3;
-                case '(':  return 4;
-                case '-':  return 5;
-                case 0xE8: return 6;   // è
-                case '_':  return 7;
-                case 0xE7: return 8;   // ç
+                case '&':  return 0;   // touche 1
+                case '"':  return 2;   // touche 3
+                case '\'': return 3;   // touche 4
+                case '(':  return 4;   // touche 5
+                case '-':  return 5;   // touche 6
+                case '_':  return 7;   // touche 8
                 default:   return -1;
+            }
+        }
+
+        /** Map le keyCode NEWT vers un slot, pour les touches accentuées AZERTY qui ne
+         *  remontent pas de caractère exploitable (keyChar=0). Les keyCode mesurés sur
+         *  WSLg sont les points de code Latin-1 : é=233, è=232, ç=231 (à=224 → pas de slot,
+         *  la barre s'arrête à 9). */
+        private static int hotbarSlotForKeyCode(int code) {
+            switch (code) {
+                case 233: return 1;   // é (touche 2 = Manger par défaut)
+                case 232: return 6;   // è (touche 7)
+                case 231: return 8;   // ç (touche 9)
+                default:  return -1;
             }
         }
 
@@ -3218,6 +3228,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 			// Robuste aux dispositions clavier (NEWT remonte le caractère, pas la touche physique).
 			if (controllingAgent()) {
 				int slot = hotbarSlotForChar(key.getKeyChar());
+				if (slot < 0) slot = hotbarSlotForKeyCode(key.getKeyCode());   // touches accentuees (keyChar=0)
 				if (slot >= 0) { triggerHotbarSlot(slot); return; }
 			}
 
