@@ -18,6 +18,10 @@ public class Carcass extends UniqueObject {
 	/** Fraîcheur minimale (∈[0,1]) pour qu'un loup repu hurle (défaut = fenêtre pleine). */
 	public static double FRESH_HOWL_THRESHOLD = 1.0;
 
+	/** Fraction minimale du modèle laissée visible (la tête) tant que la carcasse existe :
+	 *  évite qu'il ne reste un copeau ridicule en fin de consommation. */
+	private static final float MIN_VISIBLE_FRAC = 0.40f;
+
 	/** Teinte chair fraîche (rougeâtre) -> teinte pourrie (verdâtre/grisâtre terne). */
 	private static final float[] FRESH_RGB = { 0.55f, 0.32f, 0.28f };
 	private static final float[] ROT_RGB   = { 0.32f, 0.34f, 0.22f };
@@ -123,6 +127,11 @@ public class Carcass extends UniqueObject {
 		// La consommation n'est plus rendue en rétrécissant tout le corps mais en
 		// DÉCOUPANT l'arrière-train mangé via un plan de coupe (cf. plus bas) — plus réaliste.
 		float ratio = (float) Math.max(0.0, Math.min(1.0, mass / initialMass));
+		// On ne découpe jamais en-dessous d'un minimum visible : sinon, en fin de
+		// consommation, il ne reste quasiment rien à l'écran (vilain) alors que la
+		// carcasse n'est retirée qu'à masse nulle. On garde donc au moins MIN_VISIBLE_FRAC
+		// du modèle (la tête) jusqu'à la disparition complète.
+		float visRatio = MIN_VISIBLE_FRAC + (1f - MIN_VISIBLE_FRAC) * ratio;
 		float scale = Math.abs(lenX) * baseScale;
 
 		// Demi-largeur du mesh (axe X = flanc) : sert à reposer le corps sur le sol
@@ -156,9 +165,9 @@ public class Carcass extends UniqueObject {
 		// Disparition progressive : on découpe l'arrière-train (Y croissant = queue) au
 		// fur et à mesure de la consommation ; la tête (−Y) reste visible en dernier.
 		// Plan EN COORDS MODÈLE (émis après translate/rotate/scale) : garde y ≤ yCut.
-		boolean clipped = ratio < 0.999f;
+		boolean clipped = visRatio < 0.999f;
 		if (clipped) {
-			double yCut = model.bottompoint + (model.toppoint - model.bottompoint) * ratio;
+			double yCut = model.bottompoint + (model.toppoint - model.bottompoint) * visRatio;
 			gl.glClipPlane(GL2.GL_CLIP_PLANE0, new double[]{ 0.0, -1.0, 0.0, yCut }, 0);
 			gl.glEnable(GL2.GL_CLIP_PLANE0);
 		}

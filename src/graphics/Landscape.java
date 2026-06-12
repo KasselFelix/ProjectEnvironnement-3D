@@ -749,6 +749,40 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             return objects.Species.HUMAIN;
         }
 
+        /** Déclenche l'action assignée au slot {@code slot} (0-8) pour l'agent piloté :
+         *  exécute si réalisable (flash vert + toast de confirmation), sinon flash rouge de refus. */
+        private void triggerHotbarSlot(int slot) {
+            if (controlledAgent == null || slot < 0 || slot >= input.HotbarLayout.SLOTS) return;
+            input.HotbarAction act = settings.hotbar().slot(speciesOf(controlledAgent), slot);
+            long now = System.currentTimeMillis();
+            if (act.available(controlledAgent)) {
+                act.execute(controlledAgent);
+                hotbarSuccessSlot = slot; hotbarSuccessUntilMs = now + 350;     // confirmation
+                hotbarToast = act.label + " !"; hotbarToastUntilMs = now + 900;
+            } else { hotbarFlashSlot = slot; hotbarFlashUntilMs = now + 300; }   // refus
+        }
+
+        /** Map le CARACTÈRE tapé vers un slot de hotbar (0-8), ou -1. Robuste aux dispositions :
+         *  la rangée de chiffres AZERTY non-shiftée (&é"'(-è_ç) ET les chiffres 1-9 (QWERTY,
+         *  AZERTY+Maj, ou pavé numérique NumLock actif) déclenchent les slots sans Maj.
+         *  Les accents sont comparés par point de code (0xE9 é, 0xE8 è, 0xE7 ç) pour ne pas
+         *  dépendre de l'encodage du source. */
+        private static int hotbarSlotForChar(char c) {
+            if (c >= '1' && c <= '9') return c - '1';
+            switch (c) {
+                case '&':  return 0;
+                case 0xE9: return 1;   // é
+                case '"':  return 2;
+                case '\'': return 3;
+                case '(':  return 4;
+                case '-':  return 5;
+                case 0xE8: return 6;   // è
+                case '_':  return 7;
+                case 0xE7: return 8;   // ç
+                default:   return -1;
+            }
+        }
+
         /** Étiquette d'espèce ASCII pour le tooltip carcasse. */
         private static String speciesLabel(objects.Species s) {
             switch (s) {
@@ -3179,6 +3213,14 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				if (inGameMenu.handleKey(key.getKeyCode())) return;
 			}
 
+			// 4b) Hotbar par CARACTÈRE en pilotage : la rangée de chiffres (AZERTY non-shiftée
+			// &é"'(-è_ç, ou chiffres 1-9 QWERTY/Maj/pavé num) déclenche les slots sans Maj.
+			// Robuste aux dispositions clavier (NEWT remonte le caractère, pas la touche physique).
+			if (controllingAgent()) {
+				int slot = hotbarSlotForChar(key.getKeyChar());
+				if (slot >= 0) { triggerHotbarSlot(slot); return; }
+			}
+
 			// 5) Dispatch normal (TAP immédiat, HELD ajouté au held-set).
 			inputHandler.onKeyPressed(key.getKeyCode());
 		}
@@ -3324,18 +3366,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				break;
 			case JUMP: break;   // reserve : mecanique de saut a venir
 			case HOTBAR_1: case HOTBAR_2: case HOTBAR_3: case HOTBAR_4: case HOTBAR_5:
-			case HOTBAR_6: case HOTBAR_7: case HOTBAR_8: case HOTBAR_9: {
-				if (controlledAgent == null) break;
-				int slot = a.ordinal() - input.GameAction.HOTBAR_1.ordinal();
-				input.HotbarAction act = settings.hotbar().slot(speciesOf(controlledAgent), slot);
-				long nowHb = System.currentTimeMillis();
-				if (act.available(controlledAgent)) {
-					act.execute(controlledAgent);
-					hotbarSuccessSlot = slot; hotbarSuccessUntilMs = nowHb + 350;   // flash vert de confirmation
-					hotbarToast = act.label + " !"; hotbarToastUntilMs = nowHb + 900;
-				} else { hotbarFlashSlot = slot; hotbarFlashUntilMs = nowHb + 300; }  // flash rouge de refus
+			case HOTBAR_6: case HOTBAR_7: case HOTBAR_8: case HOTBAR_9:
+				triggerHotbarSlot(a.ordinal() - input.GameAction.HOTBAR_1.ordinal());
 				break;
-			}
 			default:
 				break;
 			}
