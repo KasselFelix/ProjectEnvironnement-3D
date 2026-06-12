@@ -217,27 +217,27 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		 *  secousse précurseur, et état du flash de foudre. */
 		private boolean wasErupting = false;
 
-		// État appui long des touches caméra-Z. AWT ne déclenche pas d'auto-
-		// repeat sur les modificateurs (SHIFT), donc on convertit SPACE et
-		// SHIFT en flags persistants appliqués par frame dans display() pour
-		// une descente / montée symétriques.
-		private boolean keySpaceHeld = false;
-		private boolean keyShiftHeld = false;
+		// L'appui long des touches caméra-Z et le pilotage d'agent sont désormais
+		// gérés par le held-set de inputHandler (module input/). AWT ne déclenche
+		// pas d'auto-repeat sur les modificateurs (SHIFT), donc SPACE et SHIFT sont
+		// résolus en actions HELD (CAM_DOWN/CAM_UP) appliquées par frame dans
+		// display() pour une descente / montée symétriques.
 		private static final float CAMERA_Z_SPEED = 0.4f;
 
 		// ===== Pilotage manuel d'agent (touche 'c') =====
-		// Flags de direction maintenus : tant qu'une touche est tenue, l'agent
-		// avance. Le cap cardinal effectif (Agent.controlDir) est recalculé chaque
-		// frame par updateManualControlHeading() selon la VUE : cardinal direct en
-		// vue de dessus, relatif à la caméra (orbitYaw) en 3D façon Minecraft.
-		private boolean ctrlFwd, ctrlBack, ctrlLeft, ctrlRight;
-		// Rotation caméra au clavier en pilotage 3D (A = gauche, E = droite) — le
-		// mouse-look est inutilisable sur WSLg (curseur non masquable/verrouillable).
-		private boolean ctrlTurnLeft, ctrlTurnRight;
+		// Les directions maintenues (AGENT_FWD/BACK/LEFT/RIGHT) et la rotation
+		// caméra clavier (TURN_CAM_LEFT/RIGHT) sont des actions HELD dans le
+		// held-set de inputHandler. Le cap cardinal effectif (Agent.controlDir)
+		// est recalculé chaque frame par updateManualControlHeading() selon la VUE.
 		private static final float KEY_TURN_DEG_PER_FRAME = 14.0f;
 		// Agent actuellement piloté (au plus UN à la fois). Sert à relâcher le
 		// précédent quand on en sélectionne / contrôle un autre.
 		private agents.Agent controlledAgent = null;
+
+		// ----- Système d'input (module 1) : bindings persistés + held-set + dispatch -----
+		private final input.Settings settings = new input.Settings(input.Settings.DEFAULT_PATH);
+		private final input.InputHandler inputHandler = new input.InputHandler(
+				settings.bindings(), this::controllingAgent, this::dispatchTap);
 		// Capture souris (mouse-look 1ère personne) : via NEWT on masque le curseur
 		// (setPointerVisible(false)) + on le confine (confinePointer(true)) et on le
 		// recentre (warpPointer) à chaque mouvement → verrou propre au centre, sans
@@ -2287,8 +2287,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             // pour une montée/descente symétriques (AWT n'auto-repeat pas
             // SHIFT, donc le simple key-press ne donnait pas un mouvement
             // continu équivalent à SPACE).
-            if (keySpaceHeld) translateZ -= CAMERA_Z_SPEED;
-            if (keyShiftHeld) translateZ += CAMERA_Z_SPEED;
+            if (inputHandler.isHeld(input.GameAction.CAM_DOWN)) translateZ -= CAMERA_Z_SPEED;
+            if (inputHandler.isHeld(input.GameAction.CAM_UP))   translateZ += CAMERA_Z_SPEED;
 
 	            // === Overlays 2D : menu de lancement (Phase 6) puis HUD (Phase 5) ====
 	            // Dessinés en fin de frame, par-dessus la scène 3D, en mode ortho
@@ -2740,15 +2740,18 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		 *  yaw (rotateX) tant qu'une touche est tenue. */
 		private void applyKeyboardTurn() {
 			if (!firstPersonControl()) return;
-			int dir = (ctrlTurnRight ? 1 : 0) - (ctrlTurnLeft ? 1 : 0);
+			int dir = (inputHandler.isHeld(input.GameAction.TURN_CAM_RIGHT) ? 1 : 0)
+					- (inputHandler.isHeld(input.GameAction.TURN_CAM_LEFT) ? 1 : 0);
 			if (dir != 0) rotateX += dir * KEY_TURN_DEG_PER_FRAME;
 		}
 
 		private void updateManualControlHeading() {
 			if (!controllingAgent()) return;
 			agents.Agent a = selectedAgent;
-			int fwd    = (ctrlFwd ? 1 : 0)   - (ctrlBack ? 1 : 0);
-			int strafe = (ctrlRight ? 1 : 0) - (ctrlLeft ? 1 : 0);
+			int fwd    = (inputHandler.isHeld(input.GameAction.AGENT_FWD) ? 1 : 0)
+					- (inputHandler.isHeld(input.GameAction.AGENT_BACK) ? 1 : 0);
+			int strafe = (inputHandler.isHeld(input.GameAction.AGENT_RIGHT) ? 1 : 0)
+					- (inputHandler.isHeld(input.GameAction.AGENT_LEFT) ? 1 : 0);
 
 			// Vecteur monde désiré. Au rendu : +X = Est (droite écran), +Y = Nord (HAUT
 			// écran — vue de dessus sans rotation). Vue de dessus : avancer = +Y (monte
@@ -3080,16 +3083,16 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 		@Override
 		public void keyPressed(KeyEvent key) {
-			// Menu de lancement actif : on lui passe la touche et on s'arrête là.
-			// VK_ESCAPE n'est pas consommé par le menu → bascule le plein écran (switch).
+			// 1) Menu de lancement actif : on lui passe la touche et on s'arrête là.
+			// VK_ESCAPE n'est pas consommé par le menu → bascule le plein écran.
 			if (config != null && config.awaitingStart && launchMenu != null
 					&& key.getKeyCode() != KeyEvent.VK_ESCAPE) {
 				boolean menuClosed = launchMenu.handleKey(key.getKeyCode());
 				if (menuClosed && _myWorld instanceof WorldOfCells) {
 					// Re-spawn des agents avec les nouvelles valeurs du config.
 					((WorldOfCells) _myWorld).respawnAgents();
-					// Ouvre le menu in-game sur l'onglet RACCOURCIS pour présenter
-					// les commandes au joueur dès le début de la simulation.
+					// Ouvre le menu in-game pour présenter les commandes au joueur
+					// dès le début de la simulation.
 					if (inGameMenu != null) {
 						inGameMenu.openOnTab(InGameMenu.Tab.AIDE);
 						menuFocused = true;
@@ -3098,38 +3101,51 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				return;
 			}
 
-			// Menu in-game ouvert ET focalisé : intercepte ses touches de
+			// 2) ESC : plein écran, réservée, hors bindings.
+			// Échap bascule plein écran ⇄ fenêtré (ne quitte plus).
+			// Quitter : croix de la fenêtre, visible en mode fenêtré.
+			if (key.getKeyCode() == KeyEvent.VK_ESCAPE) {
+				toggleFullscreen();
+				return;
+			}
+
+			// 3) TOGGLE_MENU passe AVANT l'interception menu (logique 3 états de `m`),
+			// pour que `m` fonctionne quelle que soit la focalisation du panneau et
+			// ne soit pas consommée par inGameMenu.handleKey.
+			input.GameAction direct = settings.bindings().actionFor(key.getKeyCode(), controllingAgent());
+			if (direct == input.GameAction.TOGGLE_MENU) { dispatchTap(direct); return; }
+
+			// 4) Menu in-game ouvert ET focalisé : intercepte ses touches de
 			// navigation/édition. Si défocalisé (clic en dehors), le clavier
 			// est rendu au jeu — le menu reste visible mais inerte.
-			// `m` reste toujours géré pour fermer/ouvrir.
-			if (inGameMenu != null && inGameMenu.isOpen() && menuFocused
-					&& key.getKeyCode() != KeyEvent.VK_ESCAPE) {
+			if (inGameMenu != null && inGameMenu.isOpen() && menuFocused) {
 				if (inGameMenu.handleKey(key.getKeyCode())) return;
 			}
 
-			switch (key.getKeyCode()) {
-			case KeyEvent.VK_ESCAPE:
-				// Échap bascule plein écran ⇄ fenêtré (ne quitte plus).
-				// Quitter : croix de la fenêtre, visible en mode fenêtré.
-				toggleFullscreen();
-				break;
-			case KeyEvent.VK_V:
+			// 5) Dispatch normal (TAP immédiat, HELD ajouté au held-set).
+			inputHandler.onKeyPressed(key.getKeyCode());
+		}
+
+		/** Impulsions clavier (TAP). Corps repris 1:1 du switch historique sur les VK_. */
+		private void dispatchTap(input.GameAction a) {
+			switch (a) {
+			case VIEW_ABOVE:
 				VIEW_FROM_ABOVE = !VIEW_FROM_ABOVE ;
 				break;
-			case KeyEvent.VK_R:
+			case ERUPTION:
 				LavaCA.setbErupt(1);
 				triggerShake(1.6f);   // V8 — secousse à l'éruption
 				break;
-			case KeyEvent.VK_L:
+			case LIGHTING:
 				MY_LIGHT_RENDERING = !MY_LIGHT_RENDERING;
 				break;
-			case KeyEvent.VK_P:
+			case HQ_LIGHTING:
 				MY_LIGHT_RENDERING_HIGHT = !MY_LIGHT_RENDERING_HIGHT;
 				break;
-			case KeyEvent.VK_O:
+			case TOGGLE_OBJECTS:
 				DISPLAY_OBJECTS = !DISPLAY_OBJECTS;
 				break;
-			case KeyEvent.VK_M:
+			case TOGGLE_MENU:
 				// Logique « m » à 3 états :
 				//  - menu fermé                → ouvre + focus
 				//  - menu ouvert + pas focus   → re-focalise (ne ferme pas)
@@ -3145,33 +3161,30 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 					}
 				}
 				break;
-			case KeyEvent.VK_N:
+			case DAY_NIGHT:
 				// Bascule jour/nuit instantanée — shift l'itération d'un demi-cycle.
 				// Anciennement déclenchée par le clic souris (réservé au picking P8).
 				it += _myWorld.getDureeJour();
 				break;
-			case KeyEvent.VK_HOME:   // touche Début/Home (claviers sans touche Pause)
-			case KeyEvent.VK_PAUSE:
+			case PAUSE_SIM:
 				// Pause/lecture de la simulation. En pause, le monde est figé mais
 				// la caméra reste libre.
 				playback.togglePause();
 				break;
-			case KeyEvent.VK_ADD:        // pavé num +
-			case KeyEvent.VK_EQUALS:     // '=' / '+' du clavier principal
-			case KeyEvent.VK_PAGE_UP:
+			case SPEED_UP:
 				// Avance rapide : x1 -> x2 -> x4 -> x8 -> x1 (relance si en pause).
 				playback.faster();
 				break;
-			case KeyEvent.VK_F:
+			case CAMERA_FOLLOW:
 				// Bascule la caméra-follow sur l'agent sélectionné (Phase 8).
 				cameraFollow = !cameraFollow;
 				break;
-			case KeyEvent.VK_C:
+			case TOGGLE_CONTROL:
 				// Bascule le PILOTAGE MANUEL de l'agent sélectionné. En contrôle,
 				// les flèches/ZQSD dirigent l'agent (cap maintenu) ; la caméra-follow
 				// est forcée et le clavier est rendu à la scène (menu défocalisé).
 				if (selectedAgent != null && isAgentStillAlive(selectedAgent)) {
-					ctrlFwd = ctrlBack = ctrlLeft = ctrlRight = false;
+					inputHandler.clearHeld();
 					if (selectedAgent.playerControlled) {
 						releaseControl(selectedAgent);          // contrôle OFF
 					} else {
@@ -3187,71 +3200,51 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 					updateCursorCapture();             // (dé)masque le curseur en 3D
 				}
 				break;
-			case KeyEvent.VK_G:
+			case TOGGLE_GRAPH:
 				// Affiche / masque le graphe de populations.
 				showPopulationGraph = !showPopulationGraph;
 				break;
-			case KeyEvent.VK_SHIFT:
-				keyShiftHeld = true;
-				break;
-			case KeyEvent.VK_SPACE:
-				keySpaceHeld = true;
-				break;
-			case KeyEvent.VK_2:
+			case HEIGHT_UP:
 				heightBooster++;
 				break;
-			case KeyEvent.VK_1:
+			case HEIGHT_DOWN:
 				if ( heightBooster > 0 )
 					heightBooster--;
 				break;
-			case KeyEvent.VK_UP:
-			case KeyEvent.VK_Z:
-				if (controllingAgent()) ctrlFwd = true;     // avancer (selon la vue)
-				else cameraRelativeMove(+1, 0);
+			case CAM_FWD:
+				cameraRelativeMove(+1, 0);
 				break;
-			case KeyEvent.VK_DOWN:
-			case KeyEvent.VK_S:
-				if (controllingAgent()) ctrlBack = true;    // reculer
-				else cameraRelativeMove(-1, 0);
+			case CAM_BACK:
+				cameraRelativeMove(-1, 0);
 				break;
-			case KeyEvent.VK_RIGHT:
-			case KeyEvent.VK_D:
-				if (controllingAgent()) ctrlRight = true;   // droite
-				else cameraRelativeMove(0, +1);
+			case CAM_RIGHT:
+				cameraRelativeMove(0, +1);
 				break;
-			case KeyEvent.VK_LEFT:
-			case KeyEvent.VK_Q:
-				if (controllingAgent()) ctrlLeft = true;    // strafe gauche
-				else cameraRelativeMove(0, -1);
+			case CAM_LEFT:
+				cameraRelativeMove(0, -1);
 				break;
-			case KeyEvent.VK_A:
-				if (controllingAgent()) ctrlTurnLeft = true;   // pilotage 3D : tourner la caméra à gauche
-				break;
-			case KeyEvent.VK_E:
-				if (controllingAgent()) ctrlTurnRight = true;  // pilotage 3D : tourner la caméra à droite
-				break;
-			case KeyEvent.VK_F12:
+			case SCREENSHOT:
 				screenshotRequested = true;
 				break;
-			case KeyEvent.VK_F11:
+			case DUMP_STACKS:
 				dumpStacksAroundCrater();
 				break;
-			case KeyEvent.VK_F9:
+			case EXPORT_GRAPH_CSV:
 				exportPopulationsCsv();   // V7 — export CSV du graphe
 				break;
-			case KeyEvent.VK_F7:
+			case EXPORT_GRAPH_PNG:
 				exportPopulationsPng();   // V7 — export PNG du graphe
 				break;
-			case KeyEvent.VK_F6:
+			case TOGGLE_MINIMAP:
 				showMinimap = !showMinimap;   // V7 — minimap
 				break;
-			case KeyEvent.VK_F10:
+			case SAVE_PRESET:
 				saveConfigPreset();       // V7 — sauvegarde du preset config
 				break;
-			case KeyEvent.VK_F8:
+			case LOAD_PRESET:
 				loadConfigPreset();       // V7 — rechargement du preset
 				break;
-			case KeyEvent.VK_H:
+			case HELP_CONSOLE:
 				System.out.println(
 						"Help:\n" +
 						"           [v] change view\n" +
@@ -3280,19 +3273,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 		@Override
 		public void keyReleased(KeyEvent key) {
-			// SHIFT et SPACE en appui long : reset des flags au relâchement.
-			switch (key.getKeyCode()) {
-				case KeyEvent.VK_SHIFT: keyShiftHeld = false; break;
-				case KeyEvent.VK_SPACE: keySpaceHeld = false; break;
-				// Pilotage manuel : relâcher une direction lève son flag maintenu.
-				case KeyEvent.VK_UP:    case KeyEvent.VK_Z:    ctrlFwd = false;   break;
-				case KeyEvent.VK_DOWN:  case KeyEvent.VK_S:    ctrlBack = false;  break;
-				case KeyEvent.VK_RIGHT: case KeyEvent.VK_D:    ctrlRight = false; break;
-				case KeyEvent.VK_LEFT:  case KeyEvent.VK_Q:    ctrlLeft = false;  break;
-				case KeyEvent.VK_A:     ctrlTurnLeft = false;  break;
-				case KeyEvent.VK_E:     ctrlTurnRight = false; break;
-				default: break;
-			}
+			// Le held-set de inputHandler retire les actions HELD liées à la touche.
+			inputHandler.onKeyReleased(key.getKeyCode());
 		}
 
 
