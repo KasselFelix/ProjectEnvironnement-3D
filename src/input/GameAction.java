@@ -47,7 +47,20 @@ public enum GameAction {
     AGENT_LEFT       ("Strafe gauche",         KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_Q, KeyEvent.VK_LEFT),
     AGENT_RIGHT      ("Strafe droite",         KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_D, KeyEvent.VK_RIGHT),
     TURN_CAM_LEFT    ("Tourner camera gauche", KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_A),
-    TURN_CAM_RIGHT   ("Tourner camera droite", KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_E);
+    TURN_CAM_RIGHT   ("Tourner camera droite", KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_E),
+    SPRINT     ("Sprinter (maintenu)", KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_SHIFT),
+    WALK       ("Marcher (maintenu)",  KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_W),
+    JUMP       ("Sauter (reserve)",    KeyContext.PILOTAGE, ActionType.TAP,  KeyEvent.VK_SPACE),
+    // HOTBAR_1..HOTBAR_9 : DOIVENT rester consecutives (Landscape mappe via ordinal()).
+    HOTBAR_1   ("Hotbar 1", KeyContext.PILOTAGE, ActionType.TAP, KeyEvent.VK_1),
+    HOTBAR_2   ("Hotbar 2", KeyContext.PILOTAGE, ActionType.TAP, KeyEvent.VK_2),
+    HOTBAR_3   ("Hotbar 3", KeyContext.PILOTAGE, ActionType.TAP, KeyEvent.VK_3),
+    HOTBAR_4   ("Hotbar 4", KeyContext.PILOTAGE, ActionType.TAP, KeyEvent.VK_4),
+    HOTBAR_5   ("Hotbar 5", KeyContext.PILOTAGE, ActionType.TAP, KeyEvent.VK_5),
+    HOTBAR_6   ("Hotbar 6", KeyContext.PILOTAGE, ActionType.TAP, KeyEvent.VK_6),
+    HOTBAR_7   ("Hotbar 7", KeyContext.PILOTAGE, ActionType.TAP, KeyEvent.VK_7),
+    HOTBAR_8   ("Hotbar 8", KeyContext.PILOTAGE, ActionType.TAP, KeyEvent.VK_8),
+    HOTBAR_9   ("Hotbar 9", KeyContext.PILOTAGE, ActionType.TAP, KeyEvent.VK_9);
 
     public final String label;
     public final KeyContext context;

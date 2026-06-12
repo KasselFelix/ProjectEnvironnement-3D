@@ -348,7 +348,13 @@ public class Mouton extends Agent {
 	protected boolean canMove() { return energie > 2; }
 
 	@Override
-	protected void applyControlSpeed() { vitesse = vcourse; }
+	protected void applyControlSpeed() {
+		// 2 allures seulement : SPRINT=vcourse ; WALK et TROT partagent vmarche.
+		switch (controlGait) {
+			case SPRINT: vitesse = vcourse;  break;
+			default:     vitesse = vmarche;  break;
+		}
+	}
 
 	@Override
 	protected void postMove(Percept p) {

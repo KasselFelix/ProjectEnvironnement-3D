@@ -323,6 +323,9 @@ public class Agent extends UniqueDynamicObject{
 	/** Pas de déplacement demandé ce tour (dx, dy ∈ {-1,0,1}), permettant les
 	 *  diagonales (0,0 = immobile). Calculé par Landscape selon la vue/regard. */
 	public int controlDx = 0, controlDy = 0;
+	/** Allure imposee par le joueur en pilotage (Maj=SPRINT, W=WALK, defaut TROT). */
+	public enum ControlGait { WALK, TROT, SPRINT }
+	public ControlGait controlGait = ControlGait.TROT;
 
 	/**
 	 * Masque le rendu de cet agent (modèle + flèche) — utilisé par Landscape en

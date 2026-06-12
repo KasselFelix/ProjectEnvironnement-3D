@@ -292,7 +292,13 @@ public class Loup extends Agent {
 	protected boolean canMove() { return energie > 2; }
 
 	@Override
-	protected void applyControlSpeed() { vitesse = vcourse; }
+	protected void applyControlSpeed() {
+		switch (controlGait) {
+			case SPRINT: vitesse = vcourse; break;
+			case WALK:   vitesse = vpas;    break;
+			default:     vitesse = vtrot;   break;
+		}
+	}
 
 	@Override
 	protected void postMove(Percept p) {

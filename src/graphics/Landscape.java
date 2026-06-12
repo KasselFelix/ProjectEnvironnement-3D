@@ -234,6 +234,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		// précédent quand on en sélectionne / contrôle un autre.
 		private agents.Agent controlledAgent = null;
 
+		// Slot de hotbar en echec (action indisponible) a faire clignoter (D5).
+		private int hotbarFlashSlot = -1;
+		private long hotbarFlashUntilMs = 0;
+
 		// ----- Système d'input (module 1) : bindings persistés + held-set + dispatch -----
 		private final input.Settings settings = new input.Settings(input.Settings.DEFAULT_PATH);
 		private final input.InputHandler inputHandler = new input.InputHandler(
@@ -722,6 +726,14 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 selectedAgent = null;
                 selectedAgentIndex = -1;
             }
+        }
+
+        /** Espece d'un agent (pour resoudre la hotbar par espece). */
+        private static objects.Species speciesOf(agents.Agent a) {
+            if (a instanceof agents.Loup)   return objects.Species.LOUP;
+            if (a instanceof agents.Ours)   return objects.Species.OURS;
+            if (a instanceof agents.Mouton) return objects.Species.MOUTON;
+            return objects.Species.HUMAIN;
         }
 
         /** Étiquette d'espèce ASCII pour le tooltip carcasse. */
@@ -2748,6 +2760,13 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private void updateManualControlHeading() {
 			if (!controllingAgent()) return;
 			agents.Agent a = selectedAgent;
+			// Allure : Maj=SPRINT, W=WALK, sinon TROT (par defaut). Poussee chaque frame.
+			if (controlledAgent != null) {
+				controlledAgent.controlGait =
+					inputHandler.isHeld(input.GameAction.SPRINT) ? agents.Agent.ControlGait.SPRINT
+					: inputHandler.isHeld(input.GameAction.WALK) ? agents.Agent.ControlGait.WALK
+					: agents.Agent.ControlGait.TROT;
+			}
 			int fwd    = (inputHandler.isHeld(input.GameAction.AGENT_FWD) ? 1 : 0)
 					- (inputHandler.isHeld(input.GameAction.AGENT_BACK) ? 1 : 0);
 			int strafe = (inputHandler.isHeld(input.GameAction.AGENT_RIGHT) ? 1 : 0)
@@ -3276,6 +3295,16 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 						"         [F12] save screenshot to screenshots/\n"
 						);
 				break;
+			case JUMP: break;   // reserve : mecanique de saut a venir
+			case HOTBAR_1: case HOTBAR_2: case HOTBAR_3: case HOTBAR_4: case HOTBAR_5:
+			case HOTBAR_6: case HOTBAR_7: case HOTBAR_8: case HOTBAR_9: {
+				if (controlledAgent == null) break;
+				int slot = a.ordinal() - input.GameAction.HOTBAR_1.ordinal();
+				input.HotbarAction act = settings.hotbar().slot(speciesOf(controlledAgent), slot);
+				if (act.available(controlledAgent)) act.execute(controlledAgent);
+				else { hotbarFlashSlot = slot; hotbarFlashUntilMs = System.currentTimeMillis() + 300; }
+				break;
+			}
 			default:
 				break;
 			}

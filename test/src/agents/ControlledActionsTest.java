@@ -52,4 +52,18 @@ class ControlledActionsTest {
                 || ecouteur.howlTargetX >= 0,
                 "le hurlement pilote a touche l'ecouteur (memoire et/ou balise)");
     }
+
+    @Test
+    void alluresDePilotage() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 10, w); l.isFounder = true; w.loups.add(l);
+        l.playerControlled = true; l.energie = 500;
+
+        l.controlGait = Agent.ControlGait.TROT;   l.applyControlSpeed(); double vTrot   = l.vitesse;
+        l.controlGait = Agent.ControlGait.SPRINT; l.applyControlSpeed(); double vSprint = l.vitesse;
+        l.controlGait = Agent.ControlGait.WALK;   l.applyControlSpeed(); double vWalk   = l.vitesse;
+
+        assertTrue(vSprint > vTrot, "sprint plus rapide que trot");
+        assertTrue(vTrot > vWalk,   "trot plus rapide que marche");
+    }
 }

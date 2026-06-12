@@ -61,7 +61,13 @@ public class Humain extends Agent {
 	}
 
 	@Override
-	protected void applyControlSpeed() { vitesse = vcourse; }
+	protected void applyControlSpeed() {
+		// 2 allures seulement : SPRINT=vcourse ; WALK et TROT partagent vpas.
+		switch (controlGait) {
+			case SPRINT: vitesse = vcourse;  break;
+			default:     vitesse = vpas;     break;
+		}
+	}
 
 	/** Le berger « perçoit » le troupeau : les moutons alimentent preyDir/preyVisible
 	 *  du Percept (cf. Agent.step → Perception.sense). */
