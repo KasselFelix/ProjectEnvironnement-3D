@@ -20,6 +20,7 @@ public final class Settings {
     private final Path path;
     private final Properties props = new Properties();
     private final KeyBindings bindings = new KeyBindings();
+    private final HotbarLayout hotbar = new HotbarLayout();
 
     public Settings(Path path) {
         this.path = path;
@@ -28,9 +29,11 @@ public final class Settings {
             catch (IOException e) { System.out.println("[settings] lecture impossible: " + e.getMessage()); }
         }
         bindings.readFrom(props);
+        hotbar.readFrom(props);
     }
 
     public KeyBindings bindings() { return bindings; }
+    public HotbarLayout hotbar() { return hotbar; }
 
     public String uiPref(String name, String def) { return props.getProperty("ui." + name, def); }
     public void setUiPref(String name, String value) { props.setProperty("ui." + name, value); }
@@ -39,6 +42,7 @@ public final class Settings {
 
     public void save() {
         bindings.writeTo(props);
+        hotbar.writeTo(props);
         try {
             if (path.getParent() != null) Files.createDirectories(path.getParent());
             try (OutputStream out = Files.newOutputStream(path)) {

@@ -37,4 +37,27 @@ class HotbarTest {
         assertFalse(HotbarAction.FRAPPER.isImplemented());
         assertFalse(HotbarAction.FRAPPER.available(l), "non implementee => jamais disponible");
     }
+
+    @org.junit.jupiter.api.Test
+    void layoutsParDefautParEspece() {
+        HotbarLayout h = new HotbarLayout();
+        assertEquals(HotbarAction.FRAPPER, h.slot(objects.Species.LOUP, 0));
+        assertEquals(HotbarAction.MANGER,  h.slot(objects.Species.LOUP, 1));
+        assertEquals(HotbarAction.HURLER,  h.slot(objects.Species.LOUP, 2));
+        assertEquals(HotbarAction.VIDE,    h.slot(objects.Species.LOUP, 8));
+        assertEquals(HotbarAction.MANGER,  h.slot(objects.Species.OURS, 1));
+        assertEquals(HotbarAction.BROUTER, h.slot(objects.Species.MOUTON, 0));
+    }
+
+    @org.junit.jupiter.api.Test
+    void assignationEtRoundTripProperties() {
+        HotbarLayout h = new HotbarLayout();
+        h.assign(objects.Species.LOUP, 4, HotbarAction.SE_REPOSER);
+        java.util.Properties p = new java.util.Properties();
+        h.writeTo(p);
+        HotbarLayout h2 = new HotbarLayout();
+        h2.readFrom(p);
+        assertEquals(HotbarAction.SE_REPOSER, h2.slot(objects.Species.LOUP, 4));
+        assertEquals(HotbarAction.FRAPPER,    h2.slot(objects.Species.LOUP, 0), "slots non touches = defauts");
+    }
 }
