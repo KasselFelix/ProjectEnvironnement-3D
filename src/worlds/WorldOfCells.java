@@ -546,7 +546,8 @@ public class WorldOfCells extends World {
     			if (dy >  h/2) dy -= h;
     			if (dy < -h/2) dy += h;
     			((Agent) obj).setLastMove(dx, dy);
-    			((Agent) obj).emitScent(getScentField(), getIteration());
+				if (((Agent) obj)._alive)
+					((Agent) obj).emitScent(getScentField(), getIteration());
     		}
     	}
 

@@ -1381,23 +1381,23 @@ public class Agent extends UniqueDynamicObject{
 	/** Famille (meute/troupeau/portee) — branche en B/E ; neutre en A. */
 	protected int familyId() { return -1; }
 
-	/**
-	 * Depose l'odeur de l'agent dans le champ (appele chaque tick par
-	 * stepAgents). Dans l'eau : aucune emission + fenetre mouillee armee.
-	 * Sinon, un depot tous les {@code scentEmitPeriod} ticks, attenue tant que
-	 * l'agent est mouille.
-	 */
-	public void emitScent(scent.ScentField field, int now) {
-		if (wetTicks > 0) wetTicks--;
-		if (world.getCellHeight(x, y) < 0) {                 // dans l'eau
-			wetTicks = scent.ScentField.WET_SUPPRESSION_TICKS;
-			return;
-		}
-		int period = ui.SimulationConfig.getInstance().scentEmitPeriod;
-		if (period < 1) period = 1;
-		if (lastScentEmit != Integer.MIN_VALUE && now - lastScentEmit < period) return;
-		lastScentEmit = now;
-		float scale = (wetTicks > 0) ? scent.ScentField.WET_EMIT_FACTOR : 1f;
-		field.emit(agentId, scentKind(), familyId(), x, y, now, baseScentIntensity() * scale);
-	}
+    /**
+     * Depose l'odeur de l'agent dans le champ (appele chaque tick par stepAgents,
+     * uniquement si l'agent est vivant). Dans l'eau : aucune emission + fenetre
+     * mouillee armee. Sinon, un depot tous les {@code scentEmitPeriod} ticks,
+     * attenue tant que l'agent est mouille (recuperation comptee en pas sur terre).
+     */
+    public void emitScent(scent.ScentField field, int now) {
+        if (world.getCellHeight(x, y) < 0) {                 // dans l'eau
+            wetTicks = scent.ScentField.WET_SUPPRESSION_TICKS;
+            return;
+        }
+        if (wetTicks > 0) wetTicks--;                        // recuperation comptee SUR TERRE
+        int period = ui.SimulationConfig.getInstance().scentEmitPeriod;
+        if (period < 1) period = 1;
+        if (lastScentEmit != Integer.MIN_VALUE && now - lastScentEmit < period) return;
+        lastScentEmit = now;
+        float scale = (wetTicks > 0) ? scent.ScentField.WET_EMIT_FACTOR : 1f;
+        field.emit(agentId, scentKind(), familyId(), x, y, now, baseScentIntensity() * scale);
+    }
 }

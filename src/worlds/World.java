@@ -59,7 +59,10 @@ public abstract class World {
 
 	public scent.ScentField getScentField() { return scentField; }
 
-	/** Depose l'odeur des carcasses (stationnaire, forte), gere par la cadence. */
+	/** Depose l'odeur des carcasses (stationnaire, forte), gere par la cadence.
+	 *  NOTE: toutes les carcasses partagent la phase de tick globale (iteration % period) ;
+	 *  a tres grand nombre de carcasses cela cree des bouffees groupees plutot qu'un
+	 *  egouttement etale. Un lastScentEmit par carcasse est reporte a un sous-projet ulterieur. */
 	protected void emitCarcassScents() {
 		int period = ui.SimulationConfig.getInstance().scentEmitPeriod;
 		if (period < 1) period = 1;
