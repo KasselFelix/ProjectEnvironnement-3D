@@ -52,6 +52,25 @@ public abstract class World {
 		}
 	}
 	
+	// ── Odeur (sous-projet A) ────────────────────────────────────────────
+	private final scent.ScentField scentField = new scent.ScentField(this);
+	private static final int   CARCASS_EMITTER_ID      = -2;
+	private static final float CARCASS_SCENT_INTENSITY = 1.5f;
+
+	public scent.ScentField getScentField() { return scentField; }
+
+	/** Depose l'odeur des carcasses (stationnaire, forte), gere par la cadence. */
+	protected void emitCarcassScents() {
+		int period = ui.SimulationConfig.getInstance().scentEmitPeriod;
+		if (period < 1) period = 1;
+		if (iteration % period != 0) return;
+		for (Carcass c : carcasses) {
+			if (c.isGone()) continue;
+			scentField.emit(CARCASS_EMITTER_ID, scent.ScentKind.CARCASS, -1,
+					c.getX(), c.getY(), iteration, CARCASS_SCENT_INTENSITY);
+		}
+	}
+
 	public ArrayList<Agent> agents = new ArrayList<Agent>();
 	public ArrayList<Humain> humains = new ArrayList<Humain>();
 	public ArrayList<Loup> loups = new ArrayList<Loup>();
@@ -200,15 +219,16 @@ public abstract class World {
     
     public void step()
     {
-    	updateWeather();        // L6 — météo du jour (pluie selon la saison)
-    	updateWind();           // vent du tick (dérive + rafales, modulé saison/météo)
-    	stepCellularAutomata();
-    	stepAgents();
-    	before=jour;
-    	iteration++;
-    	// Pourriture des carcasses : dt = 1 tick réel.
     	double hz = ui.SimulationConfig.getInstance().simulationHz;
     	if (hz <= 0) hz = 20.0;
+    	updateWeather();        // L6 — météo du jour (pluie selon la saison)
+    	updateWind();           // vent du tick (dérive + rafales, modulé saison/météo)
+    	scentField.step(1.0 / hz);   // advection/purge des odeurs (apres le vent)
+    	stepCellularAutomata();
+    	stepAgents();
+    	emitCarcassScents();    // depot des odeurs de carcasses
+    	before=jour;
+    	iteration++;
     	rotCarcasses(1.0 / hz);
     }
     
