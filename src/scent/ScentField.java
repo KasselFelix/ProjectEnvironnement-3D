@@ -77,6 +77,34 @@ public final class ScentField {
         return new ScentReading(perKind, domEmitter, domFamily, domKind, domI);
     }
 
+    /** Constante de temps effective (sec) : dilution par le vent + pluie. */
+    static double tauEff(double lifeSec, double windMag, boolean raining) {
+        return lifeSec / (1.0 + DIL_K * windMag + (raining ? RAIN_K : 0.0));
+    }
+
+    /** Intensite courante au CENTRE d'un puff (sans le terme gaussien spatial). */
+    static double peakIntensity(ScentPuff p, int now, int hz, double tauEff) {
+        double age = (now - p.birthTick) / (double) hz + p.extraAgeSec;
+        return p.baseIntensity * Math.exp(-age / tauEff);
+    }
+
+    /**
+     * Snapshot debug (overlay) : {cx, cy, peak} par puff vivant. O(n), pour un
+     * rendu direct des particules (evite un scan O(cellules x puffs)).
+     */
+    public float[][] debugPuffSnapshot(int now) {
+        final int hz = hz();
+        final double te = tauEff(SimulationConfig.getInstance().scentLifetimeSec,
+                                 Math.hypot(world.getWindX(), world.getWindY()), world.isRaining());
+        float[][] out = new float[puffs.size()][3];
+        for (int i = 0; i < puffs.size(); i++) {
+            ScentPuff p = puffs.get(i);
+            out[i][0] = p.cx; out[i][1] = p.cy;
+            out[i][2] = (float) peakIntensity(p, now, hz, te);
+        }
+        return out;
+    }
+
     /**
      * Intensite d'UN puff perçue en (px,py) au temps {@code now}. Package-visible
      * pour les tests. age = (now-naissance)/hz + sur-vieillissement.
@@ -86,7 +114,7 @@ public final class ScentField {
                              double windMag, boolean raining, int w, int h) {
         double age = (now - p.birthTick) / (double) hz + p.extraAgeSec;
         if (age < 0) return 0f;
-        double tauEff = lifeSec / (1.0 + DIL_K * windMag + (raining ? RAIN_K : 0.0));
+        double tauEff = tauEff(lifeSec, windMag, raining);
         double peak = p.baseIntensity * Math.exp(-age / tauEff);
         if (peak < EPSILON) return 0f;
 
@@ -148,10 +176,8 @@ public final class ScentField {
             if (world.getCellHeight(Math.round(p.cx), Math.round(p.cy)) < 0)
                 p.extraAgeSec += (float) (dtSec * WATER_FADE);
             // purge si pic eteint
-            double age = (now - p.birthTick) / (double) hz + p.extraAgeSec;
-            double tauEff = lifeSec / (1.0 + DIL_K * windMag + (raining ? RAIN_K : 0.0));
-            double peak = p.baseIntensity * Math.exp(-age / tauEff);
-            if (peak < EPSILON) it.remove();
+            double te = tauEff(lifeSec, windMag, raining);
+            if (peakIntensity(p, now, hz, te) < EPSILON) it.remove();
         }
         enforceBudget(now, hz, lifeSec, windMag, raining);
     }
@@ -160,12 +186,10 @@ public final class ScentField {
     private void enforceBudget(int now, int hz, double lifeSec, double windMag, boolean raining) {
         int excess = puffs.size() - MAX_PUFFS;
         if (excess <= 0) return;
-        double tauEff = lifeSec / (1.0 + DIL_K * windMag + (raining ? RAIN_K : 0.0));
+        double te = tauEff(lifeSec, windMag, raining);
         final double[] peak = new double[puffs.size()];
         for (int i = 0; i < peak.length; i++) {
-            ScentPuff p = puffs.get(i);
-            double age = (now - p.birthTick) / (double) hz + p.extraAgeSec;
-            peak[i] = p.baseIntensity * Math.exp(-age / tauEff);
+            peak[i] = peakIntensity(puffs.get(i), now, hz, te);
         }
         Integer[] idx = new Integer[peak.length];
         for (int i = 0; i < idx.length; i++) idx[i] = i;

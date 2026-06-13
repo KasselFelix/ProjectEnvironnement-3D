@@ -741,6 +741,56 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             }
         }
 
+        /**
+         * Overlay debug du champ d'odeur (sous-projet A) : un quad translucide par
+         * puff a son centre derive, colore par l'intensite (bleu faible -> rouge fort).
+         * Rendu direct des particules : O(puffs), coût nul tant que l'overlay est off.
+         */
+        private void displayScentOverlay(GL2 gl) {
+            if (!SimulationConfig.getInstance().scentDebugOverlay) return;
+            scent.ScentField field = _myWorld.getScentField();
+            if (field.size() == 0) return;
+            int now = _myWorld.getIteration();
+            int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+            float[][] puffs = field.debugPuffSnapshot(now);
+
+            boolean lightingWas = gl.glIsEnabled(GL2.GL_LIGHTING);
+            boolean fogWas = gl.glIsEnabled(GL2.GL_FOG);
+            gl.glDisable(GL2.GL_LIGHTING);
+            gl.glDisable(GL2.GL_FOG);
+            gl.glDisable(GL.GL_TEXTURE_2D);
+            gl.glEnable(GL.GL_BLEND);
+            gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA);
+            gl.glDepthMask(false);
+
+            float hs = (float) stepX * 0.5f;
+            for (float[] p : puffs) {
+                float inten = p[2];
+                if (inten < 0.02f) continue;
+                int cx = ((Math.round(p[0]) % w) + w) % w;
+                int cy = ((Math.round(p[1]) % h) + h) % h;
+                int x2 = ((cx - (movingX % w)) % w + w) % w;
+                int y2 = ((cy - (movingY % h)) % h + h) % h;
+                float wx = (float) (offset + x2 * stepX - lenX);
+                float wy = (float) (offset + y2 * stepY - lenY);
+                float wz = (float) _myWorld.getCellTopAltitude(cx, cy) + 0.4f;
+                float a = Math.min(0.75f, inten * 0.6f);
+                float r = Math.min(1f, inten);
+                float b = Math.max(0f, 1f - inten);
+                gl.glColor4f(r, 0.1f, b, a);
+                gl.glBegin(GL2.GL_QUADS);
+                gl.glVertex3f(wx - hs, wy - hs, wz);
+                gl.glVertex3f(wx + hs, wy - hs, wz);
+                gl.glVertex3f(wx + hs, wy + hs, wz);
+                gl.glVertex3f(wx - hs, wy + hs, wz);
+                gl.glEnd();
+            }
+            gl.glDepthMask(true);
+            gl.glDisable(GL.GL_BLEND);
+            if (fogWas) gl.glEnable(GL2.GL_FOG);
+            if (lightingWas) gl.glEnable(GL2.GL_LIGHTING);
+        }
+
         /** Espece d'un agent (pour resoudre la hotbar par espece). */
         private static objects.Species speciesOf(agents.Agent a) {
             if (a instanceof agents.Loup)   return objects.Species.LOUP;
@@ -2398,6 +2448,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	gl.glMatrixMode(GLMatrixFunc.GL_MODELVIEW);
 	            }
 
+	            displayScentOverlay(gl);
 	            ui.begin2D(gl, viewportWidth, viewportHeight);
 	            // V8 — flash blanc de foudre (bref, plein écran, fondu rapide).
 	            if (_myWorld.lightningFlash > 0) {
