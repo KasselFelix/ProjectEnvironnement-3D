@@ -91,6 +91,9 @@ public final class ScentField {
     /**
      * Snapshot debug (overlay) : {cx, cy, peak} par puff vivant. O(n), pour un
      * rendu direct des particules (evite un scan O(cellules x puffs)).
+     * Note : tauEff est recalcule depuis la config courante au moment du rendu ;
+     * le snapshot peut donc differer legerement du dernier step() si un slider a
+     * bouge dans la meme frame (sans incidence — usage debug uniquement).
      */
     public float[][] debugPuffSnapshot(int now) {
         final int hz = hz();
