@@ -105,6 +105,13 @@ public class SimulationConfig {
     // ───── Temps (refonte 2026-05 — cycle complet + ratio jour/nuit) ───────
     /** Fréquence cible de la simulation en Hz. Plage UI [10, 60] pas 5. */
     public int    simulationHz       = 20;
+
+    // ───── ODEUR (substrat olfactif, sous-projet A) ─────
+    public int     scentEmitPeriod   = 3;      // ticks entre deux depots
+    public double  scentLifetimeSec  = 90.0;   // tau (sec-jeu)
+    public double  scentWindDrift    = 0.05;   // cellules de derive par (m/s) par sec
+    public double  scentBaseScale    = 1.0;    // multiplicateur global de force
+    public boolean scentDebugOverlay = false;  // heatmap de debug
     /** Durée totale d'un cycle 24h jeu en secondes réelles (jour + nuit cumulés).
      *  Default 240s ⇒ 1h jeu = 10s réelles. */
     public float  cycleTotalSec      = 240f;
