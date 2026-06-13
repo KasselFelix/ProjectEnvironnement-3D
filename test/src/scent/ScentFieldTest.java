@@ -38,7 +38,7 @@ class ScentFieldTest {
     void decaysToOneOverEAtTauThenVanishes() {
         WorldOfCells w = flatWorld();
         ScentField f = new ScentField(w);
-        int hz = 20;
+        int hz = ui.SimulationConfig.getInstance().simulationHz;
         double tau = ui.SimulationConfig.getInstance().scentLifetimeSec;
         f.emit(1, ScentKind.LOUP, -1, 10, 10, 0, 1.0f);
         int atTau = (int) Math.round(tau * hz);
@@ -147,5 +147,17 @@ class ScentFieldTest {
         f.emit(1, ScentKind.LOUP,   -1, 10, 10, 0, 1.0f);
         f.emit(2, ScentKind.MOUTON, -1, 10, 10, 0, 1.0f);
         assertEquals(2.0f, f.debugIntensityAt(10, 10, 0), 0.1f);
+    }
+
+    @Test
+    void rainAcceleratesDecay() {
+        WorldOfCells w = flatWorld();
+        ScentField f = new ScentField(w);
+        f.emit(1, ScentKind.LOUP, -1, 10, 10, 0, 1.0f);
+        int now = 20 * 30;                                   // ~30 s d'age
+        float dry = f.sampleAt(10, 10, now).of(ScentKind.LOUP);
+        w.setRaining(true);
+        float wet = f.sampleAt(10, 10, now).of(ScentKind.LOUP);
+        assertTrue(wet < dry, "la pluie doit accelerer la disparition de l'odeur");
     }
 }

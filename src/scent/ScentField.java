@@ -112,8 +112,8 @@ public final class ScentField {
     /** Delta torique signe minimal de a vers b sur un axe de taille n. */
     static double signedDelta(double a, double b, int n) {
         double d = b - a;
-        while (d >  n / 2.0) d -= n;
-        while (d < -n / 2.0) d += n;
+        if (d >  n / 2.0) d -= n;
+        if (d < -n / 2.0) d += n;
         return d;
     }
 
@@ -156,20 +156,24 @@ public final class ScentField {
         enforceBudget(now, hz, lifeSec, windMag, raining);
     }
 
-    /** Au-dela du budget, retire les puffs de plus faible pic courant. */
+    /** Au-dela du budget, retire les puffs de plus faible pic courant (un seul passage). */
     private void enforceBudget(int now, int hz, double lifeSec, double windMag, boolean raining) {
-        while (puffs.size() > MAX_PUFFS) {
-            int weakest = 0;
-            double weakestPeak = Double.MAX_VALUE;
-            for (int i = 0; i < puffs.size(); i++) {
-                ScentPuff p = puffs.get(i);
-                double age = (now - p.birthTick) / (double) hz + p.extraAgeSec;
-                double tauEff = lifeSec / (1.0 + DIL_K * windMag + (raining ? RAIN_K : 0.0));
-                double peak = p.baseIntensity * Math.exp(-age / tauEff);
-                if (peak < weakestPeak) { weakestPeak = peak; weakest = i; }
-            }
-            puffs.remove(weakest);
+        int excess = puffs.size() - MAX_PUFFS;
+        if (excess <= 0) return;
+        double tauEff = lifeSec / (1.0 + DIL_K * windMag + (raining ? RAIN_K : 0.0));
+        final double[] peak = new double[puffs.size()];
+        for (int i = 0; i < peak.length; i++) {
+            ScentPuff p = puffs.get(i);
+            double age = (now - p.birthTick) / (double) hz + p.extraAgeSec;
+            peak[i] = p.baseIntensity * Math.exp(-age / tauEff);
         }
+        Integer[] idx = new Integer[peak.length];
+        for (int i = 0; i < idx.length; i++) idx[i] = i;
+        java.util.Arrays.sort(idx, (a, b) -> Double.compare(peak[a], peak[b]));   // pic croissant
+        int[] toRemove = new int[excess];
+        for (int i = 0; i < excess; i++) toRemove[i] = idx[i];                    // les `excess` plus faibles
+        java.util.Arrays.sort(toRemove);                                          // index croissant
+        for (int i = excess - 1; i >= 0; i--) puffs.remove(toRemove[i]);          // retrait par index decroissant
     }
 
     /**
