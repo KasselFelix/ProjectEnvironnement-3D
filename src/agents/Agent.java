@@ -1353,4 +1353,51 @@ public class Agent extends UniqueDynamicObject{
                 lenX, lenY,
                 altitude + 5.f);
     }
+
+	// ── Odeur (sous-projet A) ────────────────────────────────────────────
+	private static int nextAgentId = 1;
+	/** Identite individuelle stable (porte l'odeur ; sert a E : mon petit / ce partenaire). */
+	public final int agentId = nextAgentId++;
+	private int lastScentEmit = Integer.MIN_VALUE;
+	private int wetTicks = 0;
+
+	/** Classe d'odeur de cet agent (resolue par type, comme Landscape.speciesOf). */
+	protected scent.ScentKind scentKind() {
+		if (this instanceof Loup)   return scent.ScentKind.LOUP;
+		if (this instanceof Ours)   return scent.ScentKind.OURS;
+		if (this instanceof Mouton) return scent.ScentKind.MOUTON;
+		return scent.ScentKind.HUMAIN;
+	}
+
+	/** Intensite de base de l'odeur (proportionnelle a la taille du corps). */
+	protected float baseScentIntensity() {
+		float species;
+		if (this instanceof Ours)        species = 1.4f;
+		else if (this instanceof Mouton) species = 0.8f;
+		else                             species = 1.0f;   // Loup, Humain
+		return species * (float) ui.SimulationConfig.getInstance().scentBaseScale;
+	}
+
+	/** Famille (meute/troupeau/portee) — branche en B/E ; neutre en A. */
+	protected int familyId() { return -1; }
+
+	/**
+	 * Depose l'odeur de l'agent dans le champ (appele chaque tick par
+	 * stepAgents). Dans l'eau : aucune emission + fenetre mouillee armee.
+	 * Sinon, un depot tous les {@code scentEmitPeriod} ticks, attenue tant que
+	 * l'agent est mouille.
+	 */
+	public void emitScent(scent.ScentField field, int now) {
+		if (wetTicks > 0) wetTicks--;
+		if (world.getCellHeight(x, y) < 0) {                 // dans l'eau
+			wetTicks = scent.ScentField.WET_SUPPRESSION_TICKS;
+			return;
+		}
+		int period = ui.SimulationConfig.getInstance().scentEmitPeriod;
+		if (period < 1) period = 1;
+		if (lastScentEmit != Integer.MIN_VALUE && now - lastScentEmit < period) return;
+		lastScentEmit = now;
+		float scale = (wetTicks > 0) ? scent.ScentField.WET_EMIT_FACTOR : 1f;
+		field.emit(agentId, scentKind(), familyId(), x, y, now, baseScentIntensity() * scale);
+	}
 }
