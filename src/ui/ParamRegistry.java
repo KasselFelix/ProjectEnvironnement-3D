@@ -153,6 +153,26 @@ public final class ParamRegistry {
                 () -> config.windVariability, v -> config.windVariability = v, 0.0, 3.0, 0.25, "%.2f")
                 .withHelp("Amplitude des rafales (0 = vent constant)"));
 
+        // ───── ODEUR ───────────────────────────────────────────────────────
+        defs.add(intDef("ODEUR", "Periode emission", Visibility.BOTH,
+                () -> config.scentEmitPeriod, v -> config.scentEmitPeriod = v, 1, 20, 1)
+                .withHelp("Ticks entre deux depots d'odeur (plus petit = traînee plus dense)"));
+        defs.add(doubleDef("ODEUR", "Duree de vie (sec)", Visibility.BOTH,
+                () -> config.scentLifetimeSec, v -> config.scentLifetimeSec = v, 10.0, 600.0, 5.0, "%.0f")
+                .withHelp("Temps avant disparition d'une odeur (tau)"));
+        defs.add(doubleDef("ODEUR", "Derive vent", Visibility.BOTH,
+                () -> config.scentWindDrift, v -> config.scentWindDrift = v, 0.0, 0.5, 0.01, "%.2f")
+                .withHelp("Distance de transport de l'odeur par le vent"));
+        defs.add(doubleDef("ODEUR", "Intensite de base", Visibility.BOTH,
+                () -> config.scentBaseScale, v -> config.scentBaseScale = v, 0.2, 3.0, 0.1, "%.1f")
+                .withHelp("Multiplicateur global de force des odeurs"));
+        defs.add(new ParamDef("ODEUR", "Overlay debug",
+                () -> config.scentDebugOverlay ? "Oui" : "Non",
+                () -> config.scentDebugOverlay = false,
+                () -> config.scentDebugOverlay = true,
+                Visibility.BOTH,
+                "Affiche la carte de chaleur des odeurs (debug)"));
+
         // ───── FORET ───────────────────────────────────────────────────────
         defs.add(doubleDef("FORET", "Densite initiale", Visibility.LAUNCH_ONLY,
                 () -> config.forestDensite, v -> config.forestDensite = v, 0.0, 1.0, 0.05, "%.2f"));
