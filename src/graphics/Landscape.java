@@ -279,6 +279,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private static final boolean AUTOSHOT_ODORAT = "odorat".equalsIgnoreCase(AUTOSHOT_MODE); // fiche « Odorat » loup (canaux) vs humain (anosmique) — sous-projet B
 		private long autoshotStartMs = 0L;   // 0 tant que la 1re frame n'a pas tourné
 		private int  autoshotStep = 0;        // index d'étape franchie
+		private long odoratMark = 0L;         // horodatage (mode odorat) du tir loup → cadence le reste
 
 		// Texture de bruit grayscale tileable, modulée par la couleur de cellule
 		// (sable/montagne/eau via getCellColorValue). Null si chargement échoué.
@@ -1895,48 +1896,49 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         private void runAutoshotOdorat(long t) {
             switch (autoshotStep) {
                 case 0:
-                    if (!_myWorld.loups.isEmpty())        setSelectedAgent(_myWorld.loups.get(0), 0);
-                    else if (!_myWorld.moutons.isEmpty())  setSelectedAgent(_myWorld.moutons.get(0), 0);
-                    cameraFollow = true;
                     VIEW_FROM_ABOVE = false;
                     orbitRadius = 16;
                     autoshotStep = 1;
                     break;
                 case 1:
-                    // Sature TARD (le loup est près de sa position finale) une zone
-                    // autour de l'agent suivi d'odeurs proie (MOUTON) + danger (HUMAIN)
-                    // → ses canaux Odorat s'affichent peuplés. Tard = il reste dans le
-                    // patch jusqu'au tir (sinon un loup en « Cherche terre » s'en éloigne).
-                    if (t >= 2200) {
-                        if (selectedAgent != null) emitOdoratDemoField(selectedAgent.x, selectedAgent.y);
-                        autoshotStep = 2;
+                    // Chauffe : laisse la simulation produire des odeurs NATURELLES
+                    // (moutons/humains qui se déplacent et déposent leur trace).
+                    if (t >= 9000) autoshotStep = 2;
+                    break;
+                case 2:
+                    // Poll chaque frame : dès qu'un loup sent réellement quelque chose,
+                    // on le sélectionne et on capture — fiche peuplée SANS rien injecter.
+                    if (selectStrongestSmellingLoup()) {
+                        shoot("odorat-01-loup-naturel"); odoratMark = t; autoshotStep = 3;
+                    } else if (t >= 30000) {   // garde-fou : capture quand même
+                        if (!_myWorld.loups.isEmpty()) setSelectedAgent(_myWorld.loups.get(0), 0);
+                        cameraFollow = true;
+                        shoot("odorat-01-loup-naturel"); odoratMark = t; autoshotStep = 3;
                     }
                     break;
-                case 2: if (t >= 3400) { shoot("odorat-01-loup-canaux"); autoshotStep = 3; } break;
                 case 3:
-                    if (t >= 3700) {
-                        if (!_myWorld.humains.isEmpty()) { setSelectedAgent(_myWorld.humains.get(0), 0); cameraFollow = true; }
-                        autoshotStep = 4;
-                    }
+                    if (t >= odoratMark + 800 && !_myWorld.humains.isEmpty()) {
+                        setSelectedAgent(_myWorld.humains.get(0), 0); cameraFollow = true; autoshotStep = 4;
+                    } else if (t >= odoratMark + 800) { autoshotStep = 4; }
                     break;
-                case 4: if (t >= 5800) { shoot("odorat-02-humain-anosmique"); autoshotStep = 5; } break;
-                case 5: if (t >= 6800) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+                case 4: if (t >= odoratMark + 1100) { shoot("odorat-02-humain-anosmique"); autoshotStep = 5; } break;
+                case 5: if (t >= odoratMark + 2000) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
             }
         }
 
-        /** Sature un carré 21×21 autour de (cx,cy) de puffs proie + danger (demo Odorat). */
-        private void emitOdoratDemoField(int cx, int cy) {
-            scent.ScentField fld = _myWorld.getScentField();
-            int now = _myWorld.getIteration();
-            int W = _myWorld.getWidth(), H = _myWorld.getHeight();
-            int id = 90000;
-            for (int dx = -10; dx <= 10; dx++)
-                for (int dy = -10; dy <= 10; dy++) {
-                    int x = ((cx + dx) % W + W) % W;
-                    int y = ((cy + dy) % H + H) % H;
-                    fld.emit(id++, scent.ScentKind.MOUTON, -1, x, y, now, 0.9f);
-                    fld.emit(id++, scent.ScentKind.HUMAIN, -1, x, y, now, 0.9f);
-                }
+        /** Sélectionne le loup dont l'odeur perçue (proie ou danger) est la plus forte,
+         *  d'après les odeurs naturelles du moment. Renvoie true si ce loup sent
+         *  réellement quelque chose (intensité &gt; 0) — validation visuelle de la fiche. */
+        private boolean selectStrongestSmellingLoup() {
+            agents.Loup best = null; double bestI = 0;
+            for (agents.Loup l : _myWorld.loups) {
+                agents.ai.Percept p = agents.ai.Perception.sense(l, _myWorld, _myWorld.humains, _myWorld.moutons);
+                double i = Math.max(p.scentPreyIntensity, p.scentDangerIntensity);
+                if (i > bestI) { bestI = i; best = l; }
+            }
+            if (best == null) return false;
+            setSelectedAgent(best, _myWorld.loups.indexOf(best)); cameraFollow = true;
+            return true;
         }
 
         /** Programme une capture étiquetée (lue par le bloc screenshot de display()). */
