@@ -12,5 +12,6 @@ public enum Axis {
     STRENGTH,
     WISDOM,
     LONGEVITY,
-    ORIENTATION;
+    ORIENTATION,
+    OLFACTION;
 }

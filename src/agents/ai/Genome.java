@@ -112,6 +112,16 @@ public final class Genome {
         }
     }
 
+    /** Facteur d'acuité olfactive (sous-projet B, axe Olfaction) :
+     *  NEZ FIN ×1.4, NEUTRE ×1.0, ANOSMIE ×0.6. Multiplie la base par espèce. */
+    public double olfactionFactor() {
+        switch (get(Axis.OLFACTION)) {
+            case POSITIVE: return 1.4;
+            case NEGATIVE: return 0.6;
+            default:       return 1.0;
+        }
+    }
+
     /**
      * Libellés ASCII des axes NON-NEUTRES, séparés par ", " (pour la fiche UI,
      * § 11 — GLUT bitmap ASCII uniquement). "-" si tous les axes sont neutres.
@@ -140,6 +150,7 @@ public final class Genome {
             case WISDOM:       return pos ? "SAGE" : "NAIF";
             case LONGEVITY:    return pos ? "LONGEVITE" : "DEGENER";
             case ORIENTATION:  return pos ? "BON SENS" : "DESORIENTE";
+            case OLFACTION:    return pos ? "NEZ FIN" : "ANOSMIE";
             default:           return null;
         }
     }
