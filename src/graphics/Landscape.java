@@ -742,10 +742,36 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             }
         }
 
+        // ── Overlay d'odeur : couleur par espece (= fleche d'orientation) ───────
+        // Index = scent.ScentKind.ordinal() {LOUP, MOUTON, HUMAIN, OURS, CARCASS}.
+        // RGB repris des triangles d'orientation (Loup/Mouton/Humain/Ours).
+        private static final float[][] SCENT_KIND_RGB = {
+            { 1f,    0f,    0f   },  // LOUP    — rouge
+            { 0f,    0f,    1f   },  // MOUTON  — bleu
+            { 0f,    1f,    0f   },  // HUMAIN  — vert
+            { 0.45f, 0.27f, 0.10f},  // OURS    — marron
+            { 0.55f, 0.55f, 0.55f},  // CARCASS — gris
+        };
+        private static final int   SCENT_ALPHA_LEVELS = 5;     // paliers de transparence
+        private static final float SCENT_MAX_ALPHA     = 0.6f;  // alpha du palier le plus fort
+        private static final float SCENT_MIN_VISIBLE   = 0.04f; // sous ce seuil l'odeur a disparu
+
+        // Buffers reutilises d'une frame a l'autre (zero alloc en regime debug).
+        private float[] scentX, scentY, scentZ;
+        private int[]   scentKindBuf, scentLvlBuf;
+
         /**
-         * Overlay debug du champ d'odeur (sous-projet A) : un quad translucide par
-         * puff a son centre derive, colore par l'intensite (bleu faible -> rouge fort).
-         * Rendu direct des particules : O(puffs), coût nul tant que l'overlay est off.
+         * Overlay debug du champ d'odeur (sous-projet A). Chaque puff devient un
+         * quad au sol, <b>colore par l'espece emettrice</b> (mêmes teintes que la
+         * fleche d'orientation : loup rouge, mouton bleu, humain vert, ours marron,
+         * carcasse gris) et dont la <b>transparence suit l'intensite</b> : l'odeur
+         * s'efface jusqu'a disparaitre en s'estompant.
+         * <p>Perf : l'alpha est quantifie en {@link #SCENT_ALPHA_LEVELS} paliers et
+         * les quads sont <b>groupes par (espece, palier)</b> → un seul
+         * {@code glColor4f} + un seul {@code glBegin/glEnd} par groupe (≤ kinds×levels
+         * appels couleur/frame au lieu d'un par puff). {@code glColor} coûte cher sur
+         * ce pipeline software (cf. note Landscape:98). Coût nul tant que l'overlay
+         * est off.
          */
         private void displayScentOverlay(GL2 gl) {
             if (!SimulationConfig.getInstance().scentDebugOverlay) return;
@@ -754,6 +780,30 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             int now = _myWorld.getIteration();
             int w = _myWorld.getWidth(), h = _myWorld.getHeight();
             float[][] puffs = field.debugPuffSnapshot(now);
+            int n = puffs.length;
+
+            // (Re)dimensionne les buffers si besoin.
+            if (scentX == null || scentX.length < n) {
+                scentX = new float[n]; scentY = new float[n]; scentZ = new float[n];
+                scentKindBuf = new int[n]; scentLvlBuf = new int[n];
+            }
+
+            // Pre-pass : geometrie + bucket (espece, palier) par puff. Aucun appel GL.
+            for (int i = 0; i < n; i++) {
+                float inten = puffs[i][2];
+                if (inten < SCENT_MIN_VISIBLE) { scentLvlBuf[i] = 0; continue; }  // disparu
+                int cx = ((Math.round(puffs[i][0]) % w) + w) % w;
+                int cy = ((Math.round(puffs[i][1]) % h) + h) % h;
+                int x2 = ((cx - (movingX % w)) % w + w) % w;
+                int y2 = ((cy - (movingY % h)) % h + h) % h;
+                scentX[i] = (float) (offset + x2 * stepX - lenX);
+                scentY[i] = (float) (offset + y2 * stepY - lenY);
+                scentZ[i] = (float) _myWorld.getCellTopAltitude(cx, cy) + 0.4f;
+                int k = (int) puffs[i][3];
+                scentKindBuf[i] = (k >= 0 && k < SCENT_KIND_RGB.length) ? k : 0;
+                int lvl = (int) Math.ceil(Math.min(1f, inten) * SCENT_ALPHA_LEVELS);
+                scentLvlBuf[i] = Math.max(1, Math.min(SCENT_ALPHA_LEVELS, lvl));
+            }
 
             boolean lightingWas = gl.glIsEnabled(GL2.GL_LIGHTING);
             boolean fogWas = gl.glIsEnabled(GL2.GL_FOG);
@@ -770,26 +820,27 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             gl.glDepthMask(false);
 
             float hs = (float) stepX * 0.5f;
-            for (float[] p : puffs) {
-                float inten = p[2];
-                if (inten < 0.02f) continue;
-                int cx = ((Math.round(p[0]) % w) + w) % w;
-                int cy = ((Math.round(p[1]) % h) + h) % h;
-                int x2 = ((cx - (movingX % w)) % w + w) % w;
-                int y2 = ((cy - (movingY % h)) % h + h) % h;
-                float wx = (float) (offset + x2 * stepX - lenX);
-                float wy = (float) (offset + y2 * stepY - lenY);
-                float wz = (float) _myWorld.getCellTopAltitude(cx, cy) + 0.4f;
-                float a = Math.min(0.75f, inten * 0.6f);
-                float r = Math.min(1f, inten);
-                float b = Math.max(0f, 1f - inten);
-                gl.glColor4f(r, 0.1f, b, a);
-                gl.glBegin(GL2.GL_QUADS);
-                gl.glVertex3f(wx - hs, wy - hs, wz);
-                gl.glVertex3f(wx + hs, wy - hs, wz);
-                gl.glVertex3f(wx + hs, wy + hs, wz);
-                gl.glVertex3f(wx - hs, wy + hs, wz);
-                gl.glEnd();
+            // Trace groupe par (espece, palier) : 1 seul glColor4f + glBegin/glEnd par groupe.
+            for (int k = 0; k < SCENT_KIND_RGB.length; k++) {
+                float[] rgb = SCENT_KIND_RGB[k];
+                for (int L = 1; L <= SCENT_ALPHA_LEVELS; L++) {
+                    float a = (float) L / SCENT_ALPHA_LEVELS * SCENT_MAX_ALPHA;
+                    boolean opened = false;
+                    for (int i = 0; i < n; i++) {
+                        if (scentLvlBuf[i] != L || scentKindBuf[i] != k) continue;
+                        if (!opened) {
+                            gl.glColor4f(rgb[0], rgb[1], rgb[2], a);
+                            gl.glBegin(GL2.GL_QUADS);
+                            opened = true;
+                        }
+                        float x = scentX[i], y = scentY[i], z = scentZ[i];
+                        gl.glVertex3f(x - hs, y - hs, z);
+                        gl.glVertex3f(x + hs, y - hs, z);
+                        gl.glVertex3f(x + hs, y + hs, z);
+                        gl.glVertex3f(x - hs, y + hs, z);
+                    }
+                    if (opened) gl.glEnd();
+                }
             }
             gl.glDepthMask(true);
             gl.glDisable(GL.GL_BLEND);
@@ -1780,8 +1831,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 case 0:
                     config.scentDebugOverlay = true;       // overlay ON
                     config.scentEmitPeriod   = 1;          // un dépôt par tick → traînée dense
-                    config.scentLifetimeSec  = 300.0;      // longue persistance → trace bien remplie
-                    config.scentBaseScale    = 2.0;        // intensité forte → couleurs vives
+                    config.scentLifetimeSec  = 120.0;      // persistance moyenne → dégradé d'alpha visible
+                    config.scentBaseScale    = 1.2;        // intensité modérée → paliers de transparence lisibles
                     VIEW_FROM_ABOVE = true;                // vue de dessus = test décisif
                     autoshotStep = 1;
                     break;

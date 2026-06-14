@@ -89,21 +89,23 @@ public final class ScentField {
     }
 
     /**
-     * Snapshot debug (overlay) : {cx, cy, peak} par puff vivant. O(n), pour un
-     * rendu direct des particules (evite un scan O(cellules x puffs)).
-     * Note : tauEff est recalcule depuis la config courante au moment du rendu ;
-     * le snapshot peut donc differer legerement du dernier step() si un slider a
-     * bouge dans la meme frame (sans incidence — usage debug uniquement).
+     * Snapshot debug (overlay) : {cx, cy, peak, kindOrdinal} par puff vivant.
+     * O(n), pour un rendu direct des particules (evite un scan O(cellules x
+     * puffs)). Le 4e champ porte {@link ScentKind#ordinal()} pour colorer chaque
+     * puff par espece. Note : tauEff est recalcule depuis la config courante au
+     * moment du rendu ; le snapshot peut donc differer legerement du dernier
+     * step() si un slider a bouge dans la meme frame (sans incidence — debug).
      */
     public float[][] debugPuffSnapshot(int now) {
         final int hz = hz();
         final double te = tauEff(SimulationConfig.getInstance().scentLifetimeSec,
                                  Math.hypot(world.getWindX(), world.getWindY()), world.isRaining());
-        float[][] out = new float[puffs.size()][3];
+        float[][] out = new float[puffs.size()][4];
         for (int i = 0; i < puffs.size(); i++) {
             ScentPuff p = puffs.get(i);
             out[i][0] = p.cx; out[i][1] = p.cy;
             out[i][2] = (float) peakIntensity(p, now, hz, te);
+            out[i][3] = p.kind.ordinal();
         }
         return out;
     }
