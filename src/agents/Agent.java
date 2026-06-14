@@ -222,21 +222,27 @@ public class Agent extends UniqueDynamicObject{
 		l.add("Caractere: " + socialLabel());
 		l.add(String.format(java.util.Locale.US, "Intel.   : %.2f", mind.score()));
 		l.add("Memoire  : " + memory.size() + " lieux");
-		l.add("Odorat   : " + olfactionSummary());
+		addOlfactionLines(l);
 		return l;
 	}
 
-	/** Résumé ASCII de ce que l'agent sent maintenant (sous-projet B). */
-	private String olfactionSummary() {
+	/** Bloc « Odorat » de la fiche (sous-projet B). Multi-lignes pour ne PAS
+	 *  déborder de la largeur du panneau : un en-tête (acuité) puis une ligne
+	 *  courte par canal. Anosmique (sous le gate) → une seule ligne. */
+	private void addOlfactionLines(java.util.List<String> l) {
 		double acuity = agents.ai.Perception.olfactionAcuity(this);
-		if (acuity < ui.SimulationConfig.getInstance().olfactionGate) return "anosmique";
+		if (acuity < ui.SimulationConfig.getInstance().olfactionGate) { l.add("Odorat   : anosmique"); return; }
 		agents.ai.Percept p = lastPercept;
-		if (p == null) return String.format(java.util.Locale.US, "(%.1f) rien", acuity);
-		return String.format(java.util.Locale.US,
-				"(%.1f) proie %s | danger %s | charogne %s", acuity,
-				scentChannelLabel(p.scentPreyDir, p.scentPreyIntensity),
-				scentChannelLabel(p.scentDangerDir, p.scentDangerIntensity),
-				scentChannelLabel(p.scentCarcassDir, p.scentCarcassIntensity));
+		if (p == null) { l.add(String.format(java.util.Locale.US, "Odorat   : (%.1f) rien", acuity)); return; }
+		l.add(String.format(java.util.Locale.US, "Odorat   : (%.1f)", acuity));
+		l.add(scentLine("proie",    p.scentPreyDir,    p.scentPreyIntensity));
+		l.add(scentLine("danger",   p.scentDangerDir,  p.scentDangerIntensity));
+		l.add(scentLine("charogne", p.scentCarcassDir, p.scentCarcassIntensity));
+	}
+
+	/** Ligne d'un canal d'odeur, indentée et alignée sous l'en-tête « Odorat ». */
+	private static String scentLine(String label, int dir, double inten) {
+		return String.format("  %-8s : %s", label, scentChannelLabel(dir, inten));
 	}
 
 	private static final String[] SCENT_DIR4 = { "N", "E", "S", "O" };

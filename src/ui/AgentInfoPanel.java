@@ -17,9 +17,10 @@ import agents.Humain;
 public class AgentInfoPanel {
 
     private static final int PANEL_WIDTH  = 230;
-    // 256 = 240 + 1 ROW_HEIGHT : la ligne « Odorat » (sous-projet B) a ajouté
-    // une rangée à evolutionSummary ; sans ça elle chevauchait le pied « [f] suivi ».
-    private static final int PANEL_HEIGHT = 256;
+    // 304 = 240 + 4 ROW_HEIGHT : le bloc « Odorat » (sous-projet B) occupe jusqu'à
+    // 4 rangées (en-tête acuité + proie/danger/charogne) ; multi-lignes pour ne pas
+    // déborder en largeur. Sans cette hauteur, les canaux chevauchaient le pied.
+    private static final int PANEL_HEIGHT = 304;
     private static final int MARGIN = 10;
     private static final int ROW_HEIGHT = 16;
 
