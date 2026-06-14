@@ -103,4 +103,28 @@ class PerceptionScentTest {
         double i2 = Perception.sense(m2, w, null, null).scentDangerIntensity;
         assertTrue(i2 > i1, "deux odeurs humaines empilees = intensite plus forte");
     }
+
+    @Test
+    void ficheLoupAfficheOdorat() {
+        WorldOfCells w = flatWorld();
+        Loup loup = new Loup(10, 10, w);
+        w.loups.add(loup); w.agents.add(loup); w.uniqueDynamicObjects.add(loup);
+        w.step();   // remplit lastPercept
+        boolean hasOdorat = false;
+        for (String line : loup.evolutionSummary())
+            if (line.startsWith("Odorat")) hasOdorat = true;
+        assertTrue(hasOdorat, "la fiche du loup doit contenir une ligne Odorat");
+    }
+
+    @Test
+    void ficheHumainAnosmique() {
+        WorldOfCells w = flatWorld();
+        Humain h = new Humain(10, 10, w);
+        w.humains.add(h); w.agents.add(h); w.uniqueDynamicObjects.add(h);
+        w.step();
+        boolean anosmique = false;
+        for (String line : h.evolutionSummary())
+            if (line.startsWith("Odorat") && line.contains("anosmique")) anosmique = true;
+        assertTrue(anosmique, "la fiche de l'humain doit indiquer anosmique");
+    }
 }

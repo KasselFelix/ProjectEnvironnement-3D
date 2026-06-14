@@ -222,7 +222,30 @@ public class Agent extends UniqueDynamicObject{
 		l.add("Caractere: " + socialLabel());
 		l.add(String.format(java.util.Locale.US, "Intel.   : %.2f", mind.score()));
 		l.add("Memoire  : " + memory.size() + " lieux");
+		l.add("Odorat   : " + olfactionSummary());
 		return l;
+	}
+
+	/** Résumé ASCII de ce que l'agent sent maintenant (sous-projet B). */
+	private String olfactionSummary() {
+		double acuity = agents.ai.Perception.olfactionAcuity(this);
+		if (acuity < ui.SimulationConfig.getInstance().olfactionGate) return "anosmique";
+		agents.ai.Percept p = lastPercept;
+		if (p == null) return String.format(java.util.Locale.US, "(%.1f) rien", acuity);
+		return String.format(java.util.Locale.US,
+				"(%.1f) proie %s | danger %s | charogne %s", acuity,
+				scentChannelLabel(p.scentPreyDir, p.scentPreyIntensity),
+				scentChannelLabel(p.scentDangerDir, p.scentDangerIntensity),
+				scentChannelLabel(p.scentCarcassDir, p.scentCarcassIntensity));
+	}
+
+	private static final String[] SCENT_DIR4 = { "N", "E", "S", "O" };
+	/** "-" si rien ; "<dir> <palier>" sinon ("ici" si senti sans direction). */
+	private static String scentChannelLabel(int dir, double inten) {
+		if (inten <= 0) return "-";
+		String d = (dir >= 0 && dir < 4) ? SCENT_DIR4[dir] : "ici";
+		String lvl = inten < 0.3 ? "faible" : inten < 0.7 ? "moyen" : "fort";
+		return d + " " + lvl;
 	}
 
 	/** Libellé ASCII du stade de vie courant (§ 10.1). */
@@ -1253,6 +1276,7 @@ public class Agent extends UniqueDynamicObject{
 			resetTickFlags();           // reset flags + lastX/lastY
 			wantsToMove = true;         // défaut : on bouge (un comportement peut l'annuler)
 			agents.ai.Percept p = agents.ai.Perception.sense(this, world, predators(), prey());
+			lastPercept = p;
 			if (playerControlled) {
 				// Pilotage joueur : on remplace la décision ET le choix de
 				// déplacement par l'input clavier (cap calculé selon la vue par
@@ -1360,6 +1384,8 @@ public class Agent extends UniqueDynamicObject{
 	public final int agentId = nextAgentId++;
 	private int lastScentEmit = Integer.MIN_VALUE;
 	private int wetTicks = 0;
+	/** Dernier Percept calculé (sous-projet B : alimente la ligne Odorat de la fiche). */
+	protected agents.ai.Percept lastPercept;
 
 	/** Classes d'odeur que cet agent considère comme PROIE (sous-projet B).
 	 *  Vide par défaut ; surchargé par les prédateurs/charognards. */
