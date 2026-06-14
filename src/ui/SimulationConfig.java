@@ -112,6 +112,16 @@ public class SimulationConfig {
     public double  scentWindDrift    = 0.05;   // cellules de derive par (m/s) par sec
     public double  scentBaseScale    = 1.0;    // multiplicateur global de force
     public boolean scentDebugOverlay = false;  // heatmap de debug
+
+    // ── Olfaction (sous-projet B) : acuité par espèce + portail + seuil ──────
+    public double olfactionBaseLoup   = 1.0;   // référence, pistage fin
+    public double olfactionBaseOurs   = 1.2;   // meilleur nez
+    public double olfactionBaseMouton = 0.4;   // sent le danger de près
+    public double olfactionBaseHumain = 0.15;  // très pauvre : ne peut pas pister
+    public double olfactionGate       = 0.3;   // sous ce seuil : anosmique (0 calcul)
+    public double olfactionDetectBase = 0.15;  // seuil détection = base / acuité
+    public double olfactionProbeK     = 4.0;   // distance sonde ≈ acuité × K
+
     /** Durée totale d'un cycle 24h jeu en secondes réelles (jour + nuit cumulés).
      *  Default 240s ⇒ 1h jeu = 10s réelles. */
     public float  cycleTotalSec      = 240f;
