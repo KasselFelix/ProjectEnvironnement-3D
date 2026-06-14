@@ -276,6 +276,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private static final boolean AUTOSHOT_MOON = "moon".equalsIgnoreCase(AUTOSHOT_MODE);   // cadrage lune V1 (balayage azimut)
 		private static final boolean AUTOSHOT_RAIN = "rain".equalsIgnoreCase(AUTOSHOT_MODE);   // pluie : tint d'eau + séchage (L7)
 		private static final boolean AUTOSHOT_SCENT = "scent".equalsIgnoreCase(AUTOSHOT_MODE); // overlay champ d'odeur (sous-projet A)
+		private static final boolean AUTOSHOT_ODORAT = "odorat".equalsIgnoreCase(AUTOSHOT_MODE); // fiche « Odorat » loup (canaux) vs humain (anosmique) — sous-projet B
 		private long autoshotStartMs = 0L;   // 0 tant que la 1re frame n'a pas tourné
 		private int  autoshotStep = 0;        // index d'étape franchie
 
@@ -1766,6 +1767,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             if (AUTOSHOT_MOON)   { runAutoshotMoon(t); return; }
             if (AUTOSHOT_RAIN)   { runAutoshotRain(t); return; }
             if (AUTOSHOT_SCENT)  { runAutoshotScent(t); return; }
+            if (AUTOSHOT_ODORAT) { runAutoshotOdorat(t); return; }
             switch (autoshotStep) {
                 case 0: if (t >= 3000) { shoot("01-jour");                 autoshotStep = 1; } break;
                 case 1: if (t >= 4000) { LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 2; } break;
@@ -1882,6 +1884,59 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 case 3: if (t >= 7000) { shoot("select-02-halo-nuit"); autoshotStep = 4; } break;
                 case 4: if (t >= 8500) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
             }
+        }
+
+        /**
+         * Validation visuelle de la ligne « Odorat » (sous-projet B). Sélectionne
+         * un loup (odorat fort) après avoir saturé sa zone d'odeurs proie/danger
+         * pour que ses canaux s'affichent peuplés, capture sa fiche, puis
+         * sélectionne un humain (sous le gate → « anosmique ») et capture la sienne.
+         */
+        private void runAutoshotOdorat(long t) {
+            switch (autoshotStep) {
+                case 0:
+                    if (!_myWorld.loups.isEmpty())        setSelectedAgent(_myWorld.loups.get(0), 0);
+                    else if (!_myWorld.moutons.isEmpty())  setSelectedAgent(_myWorld.moutons.get(0), 0);
+                    cameraFollow = true;
+                    VIEW_FROM_ABOVE = false;
+                    orbitRadius = 16;
+                    autoshotStep = 1;
+                    break;
+                case 1:
+                    // Sature TARD (le loup est près de sa position finale) une zone
+                    // autour de l'agent suivi d'odeurs proie (MOUTON) + danger (HUMAIN)
+                    // → ses canaux Odorat s'affichent peuplés. Tard = il reste dans le
+                    // patch jusqu'au tir (sinon un loup en « Cherche terre » s'en éloigne).
+                    if (t >= 2200) {
+                        if (selectedAgent != null) emitOdoratDemoField(selectedAgent.x, selectedAgent.y);
+                        autoshotStep = 2;
+                    }
+                    break;
+                case 2: if (t >= 3400) { shoot("odorat-01-loup-canaux"); autoshotStep = 3; } break;
+                case 3:
+                    if (t >= 3700) {
+                        if (!_myWorld.humains.isEmpty()) { setSelectedAgent(_myWorld.humains.get(0), 0); cameraFollow = true; }
+                        autoshotStep = 4;
+                    }
+                    break;
+                case 4: if (t >= 5800) { shoot("odorat-02-humain-anosmique"); autoshotStep = 5; } break;
+                case 5: if (t >= 6800) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /** Sature un carré 21×21 autour de (cx,cy) de puffs proie + danger (demo Odorat). */
+        private void emitOdoratDemoField(int cx, int cy) {
+            scent.ScentField fld = _myWorld.getScentField();
+            int now = _myWorld.getIteration();
+            int W = _myWorld.getWidth(), H = _myWorld.getHeight();
+            int id = 90000;
+            for (int dx = -10; dx <= 10; dx++)
+                for (int dy = -10; dy <= 10; dy++) {
+                    int x = ((cx + dx) % W + W) % W;
+                    int y = ((cy + dy) % H + H) % H;
+                    fld.emit(id++, scent.ScentKind.MOUTON, -1, x, y, now, 0.9f);
+                    fld.emit(id++, scent.ScentKind.HUMAIN, -1, x, y, now, 0.9f);
+                }
         }
 
         /** Programme une capture étiquetée (lue par le bloc screenshot de display()). */
