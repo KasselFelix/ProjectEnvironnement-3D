@@ -275,6 +275,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private static final boolean AUTOSHOT_SELECT = "select".equalsIgnoreCase(AUTOSHOT_MODE); // suivi agent + halo V3
 		private static final boolean AUTOSHOT_MOON = "moon".equalsIgnoreCase(AUTOSHOT_MODE);   // cadrage lune V1 (balayage azimut)
 		private static final boolean AUTOSHOT_RAIN = "rain".equalsIgnoreCase(AUTOSHOT_MODE);   // pluie : tint d'eau + séchage (L7)
+		private static final boolean AUTOSHOT_SCENT = "scent".equalsIgnoreCase(AUTOSHOT_MODE); // overlay champ d'odeur (sous-projet A)
 		private long autoshotStartMs = 0L;   // 0 tant que la 1re frame n'a pas tourné
 		private int  autoshotStep = 0;        // index d'étape franchie
 
@@ -756,9 +757,14 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
             boolean lightingWas = gl.glIsEnabled(GL2.GL_LIGHTING);
             boolean fogWas = gl.glIsEnabled(GL2.GL_FOG);
+            boolean cullWas = gl.glIsEnabled(GL.GL_CULL_FACE);
             gl.glDisable(GL2.GL_LIGHTING);
             gl.glDisable(GL2.GL_FOG);
             gl.glDisable(GL.GL_TEXTURE_2D);
+            // La scene cull GL_FRONT (Landscape:1323) : un quad horizontal CCW
+            // verrait sa face visible (vue de dessus) ecartee. On desactive le
+            // cull pour cet overlay, puis on restaure.
+            gl.glDisable(GL.GL_CULL_FACE);
             gl.glEnable(GL.GL_BLEND);
             gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA);
             gl.glDepthMask(false);
@@ -787,6 +793,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             }
             gl.glDepthMask(true);
             gl.glDisable(GL.GL_BLEND);
+            if (cullWas) gl.glEnable(GL.GL_CULL_FACE);
             if (fogWas) gl.glEnable(GL2.GL_FOG);
             if (lightingWas) gl.glEnable(GL2.GL_LIGHTING);
         }
@@ -1707,6 +1714,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             if (AUTOSHOT_SELECT) { runAutoshotSelect(t); return; }
             if (AUTOSHOT_MOON)   { runAutoshotMoon(t); return; }
             if (AUTOSHOT_RAIN)   { runAutoshotRain(t); return; }
+            if (AUTOSHOT_SCENT)  { runAutoshotScent(t); return; }
             switch (autoshotStep) {
                 case 0: if (t >= 3000) { shoot("01-jour");                 autoshotStep = 1; } break;
                 case 1: if (t >= 4000) { LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 2; } break;
@@ -1749,6 +1757,38 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 case 2: if (t >= 9000)  { _myWorld.setRaining(false); autoshotStep = 3; } break; // l'orage cesse
                 case 3: if (t >= 26000) { shoot("rain-02-seche"); autoshotStep = 4; } break;     // ~17 s plus tard → sec
                 case 4: if (t >= 27500) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /**
+         * Vérifie l'overlay du champ d'odeur (sous-projet A). Force l'overlay,
+         * densifie les dépôts (période 1, longue durée de vie) pour des traînées
+         * visibles, centre la caméra sur un agent, puis capture une vue de dessus
+         * (test décisif : y a-t-il des puffs dessinés ?) et une vue 3D plongeante.
+         */
+        private void runAutoshotScent(long t) {
+            // Centre la grille sur le 1er agent vivant (traînées au cadre).
+            agents.Agent focus = null;
+            if (!_myWorld.loups.isEmpty())        focus = _myWorld.loups.get(0);
+            else if (!_myWorld.moutons.isEmpty()) focus = _myWorld.moutons.get(0);
+            if (focus != null) {
+                int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+                movingX = ((focus.x - dxView / 2) % w + w) % w;
+                movingY = ((focus.y - dyView / 2) % h + h) % h;
+            }
+            switch (autoshotStep) {
+                case 0:
+                    config.scentDebugOverlay = true;       // overlay ON
+                    config.scentEmitPeriod   = 1;          // un dépôt par tick → traînée dense
+                    config.scentLifetimeSec  = 300.0;      // longue persistance → trace bien remplie
+                    config.scentBaseScale    = 2.0;        // intensité forte → couleurs vives
+                    VIEW_FROM_ABOVE = true;                // vue de dessus = test décisif
+                    autoshotStep = 1;
+                    break;
+                case 1: if (t >= 12000) { shoot("scent-01-topdown"); autoshotStep = 2; } break;  // ~12 s de marche → traînées
+                case 2: if (t >= 13000) { VIEW_FROM_ABOVE = false; cameraDistance3D = -90; cameraPitch = 55; autoshotStep = 3; } break; // 3D plongeant
+                case 3: if (t >= 16000) { shoot("scent-02-3d"); autoshotStep = 4; } break;
+                case 4: if (t >= 17500) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
             }
         }
 
@@ -2439,6 +2479,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            // Task 4.1 — carcasse sous le curseur (tooltip espece + poids).
 	            updateHoveredCarcass(gl);
 
+	            // Overlay debug du champ d'odeur : dessine en espace MONDE, donc AVANT
+	            // de restaurer la projection (sinon, en vue de dessus, l'overlay
+	            // serait rendu en perspective alors que la scene est en ortho).
+	            displayScentOverlay(gl);
+
 	            // Restaurer la projection perspective si on était passé en ortho
 	            // pour la vue de dessus. Doit être fait AVANT begin2D car
 	            // celui-ci push à son tour la projection en mode ortho 2D.
@@ -2448,7 +2493,6 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	gl.glMatrixMode(GLMatrixFunc.GL_MODELVIEW);
 	            }
 
-	            displayScentOverlay(gl);
 	            ui.begin2D(gl, viewportWidth, viewportHeight);
 	            // V8 — flash blanc de foudre (bref, plein écran, fondu rapide).
 	            if (_myWorld.lightningFlash > 0) {
