@@ -281,6 +281,11 @@ public class Loup extends Agent {
 		return world.moutons;
 	}
 
+	private static final scent.ScentKind[] SCENT_PREY_KINDS   = { scent.ScentKind.MOUTON };
+	private static final scent.ScentKind[] SCENT_DANGER_KINDS = { scent.ScentKind.HUMAIN, scent.ScentKind.OURS };
+	@Override protected scent.ScentKind[] scentPreyKinds()   { return SCENT_PREY_KINDS; }
+	@Override protected scent.ScentKind[] scentDangerKinds() { return SCENT_DANGER_KINDS; }
+
 	/** Le Loup craint l'Humain (berger) ET l'Ours (super-prédateur, L4) : les deux
 	 *  alimentent predatorDir du Percept → le loup fuit. Un troupeau gardé est plus
 	 *  sûr ; un ours dans les parages fait fuir la meute. */

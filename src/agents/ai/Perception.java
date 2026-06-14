@@ -219,6 +219,37 @@ public final class Perception {
         return false;
     }
 
+    /** Plafond de distance d'une sonde olfactive cardinale (cases). */
+    static final int OLFACTION_PROBE_MAX = 8;
+
+    /**
+     * Acuité olfactive EFFECTIVE d'un agent = base d'espèce × facteur génome
+     * (sous-projet B). 0 pour un non-agent ou une espèce sans odorat.
+     */
+    public static double olfactionAcuity(objects.UniqueDynamicObject self) {
+        double base = olfactionBaseOf(self);
+        if (base <= 0) return 0;
+        if (self instanceof agents.Agent) base *= ((agents.Agent) self).genome.olfactionFactor();
+        return base;
+    }
+
+    /** Base d'acuité par espèce (réglages SimulationConfig). */
+    private static double olfactionBaseOf(objects.UniqueDynamicObject self) {
+        ui.SimulationConfig c = ui.SimulationConfig.getInstance();
+        if (self instanceof agents.Loup)   return c.olfactionBaseLoup;
+        if (self instanceof agents.Ours)   return c.olfactionBaseOurs;
+        if (self instanceof agents.Mouton) return c.olfactionBaseMouton;
+        if (self instanceof agents.Humain) return c.olfactionBaseHumain;
+        return 0;
+    }
+
+    /** Somme des intensités des classes d'odeur demandées dans une lecture. */
+    private static double sumKinds(scent.ScentReading r, scent.ScentKind[] kinds) {
+        double s = 0;
+        for (scent.ScentKind k : kinds) s += r.of(k);
+        return s;
+    }
+
     private static int visionOf(objects.UniqueDynamicObject self) {
         if (self instanceof agents.Loup)   return ((agents.Loup) self).vision;
         if (self instanceof agents.Mouton) return ((agents.Mouton) self).vision;

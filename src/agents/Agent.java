@@ -1361,6 +1361,13 @@ public class Agent extends UniqueDynamicObject{
 	private int lastScentEmit = Integer.MIN_VALUE;
 	private int wetTicks = 0;
 
+	/** Classes d'odeur que cet agent considère comme PROIE (sous-projet B).
+	 *  Vide par défaut ; surchargé par les prédateurs/charognards. */
+	private static final scent.ScentKind[] NO_SCENT_KINDS = new scent.ScentKind[0];
+	protected scent.ScentKind[] scentPreyKinds()   { return NO_SCENT_KINDS; }
+	/** Classes d'odeur que cet agent considère comme DANGER (prédateurs + humain). */
+	protected scent.ScentKind[] scentDangerKinds() { return NO_SCENT_KINDS; }
+
 	/** Classe d'odeur de cet agent (resolue par type, comme Landscape.speciesOf). */
 	protected scent.ScentKind scentKind() {
 		if (this instanceof Loup)   return scent.ScentKind.LOUP;

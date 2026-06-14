@@ -111,6 +111,11 @@ public class Ours extends Agent {
         return world.loups;
     }
 
+    private static final scent.ScentKind[] SCENT_PREY_KINDS   = { scent.ScentKind.LOUP };
+    private static final scent.ScentKind[] SCENT_DANGER_KINDS = { scent.ScentKind.HUMAIN };
+    @Override protected scent.ScentKind[] scentPreyKinds()   { return SCENT_PREY_KINDS; }
+    @Override protected scent.ScentKind[] scentDangerKinds() { return SCENT_DANGER_KINDS; }
+
     @Override
     protected boolean canMove() { return energie > 2; }
 
