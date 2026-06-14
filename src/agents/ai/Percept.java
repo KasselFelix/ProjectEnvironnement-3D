@@ -28,6 +28,14 @@ public final class Percept {
      *  (ni forêt, ni lave). La contrainte eau dépend de l'état → MoveConstraints. */
     public final boolean[] cardinalFree;
 
+    // ── Olfaction (sous-projet B). dir = 0=N/1=E/2=S/3=O vers le pic senti ;
+    //    -1 si rien (ou senti sur place sans direction). intensity = pic perçu.
+    public final int    scentPreyDir;     public final double scentPreyIntensity;
+    public final int    scentDangerDir;   public final double scentDangerIntensity;
+    public final int    scentCarcassDir;  public final double scentCarcassIntensity;
+    /** Acuité olfactive effective de l'agent (0 si sous le gate / non-agent). */
+    public final double olfactionAcuity;
+
     public Percept(int predatorDir, double predatorDist,
                    int preyDir, double preyDist, int preyX, int preyY,
                    int carcassDir, double carcassDist, int carcassX, int carcassY,
@@ -37,7 +45,11 @@ public final class Percept {
                    int lavaDir, double lavaDist,
                    boolean fireAdjacent, boolean lavaAdjacent,
                    boolean inWater, boolean onLava,
-                   boolean[] cardinalFree) {
+                   boolean[] cardinalFree,
+                   int scentPreyDir, double scentPreyIntensity,
+                   int scentDangerDir, double scentDangerIntensity,
+                   int scentCarcassDir, double scentCarcassIntensity,
+                   double olfactionAcuity) {
         this.predatorDir = predatorDir; this.predatorDist = predatorDist;
         this.preyDir = preyDir;         this.preyDist = preyDist;
         this.preyX = preyX;             this.preyY = preyY;
@@ -50,6 +62,10 @@ public final class Percept {
         this.fireAdjacent = fireAdjacent; this.lavaAdjacent = lavaAdjacent;
         this.inWater = inWater;         this.onLava = onLava;
         this.cardinalFree = Arrays.copyOf(cardinalFree, cardinalFree.length);
+        this.scentPreyDir = scentPreyDir;       this.scentPreyIntensity = scentPreyIntensity;
+        this.scentDangerDir = scentDangerDir;   this.scentDangerIntensity = scentDangerIntensity;
+        this.scentCarcassDir = scentCarcassDir; this.scentCarcassIntensity = scentCarcassIntensity;
+        this.olfactionAcuity = olfactionAcuity;
     }
 
     public boolean predatorVisible()  { return predatorDir >= 0; }
@@ -58,4 +74,12 @@ public final class Percept {
     public boolean grassVisible()     { return grassDir >= 0; }
     /** L2 — true si une coulée de lave est en vue (l'agent doit fuir à l'opposé). */
     public boolean lavaVisible()      { return lavaDir >= 0; }
+
+    public boolean scentPreyDetected()    { return scentPreyIntensity > 0; }
+    public boolean scentDangerDetected()  { return scentDangerIntensity > 0; }
+    public boolean scentCarcassDetected() { return scentCarcassIntensity > 0; }
+    /** true si l'agent a un odorat fonctionnel (au-dessus du gate). */
+    public boolean canSmell() {
+        return olfactionAcuity >= ui.SimulationConfig.getInstance().olfactionGate;
+    }
 }

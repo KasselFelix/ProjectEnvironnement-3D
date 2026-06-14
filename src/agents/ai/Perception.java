@@ -116,10 +116,56 @@ public final class Perception {
         boolean inWater = world.getCellHeight(ax, ay) < 0;
         boolean onLava  = world.getLavaCAValue(ax, ay) > 0;
 
+        // ── Olfaction (sous-projet B) : gate biologique + sondes cardinales ──
+        int scentPreyDir = -1, scentDangerDir = -1, scentCarcassDir = -1;
+        double scentPreyI = 0, scentDangerI = 0, scentCarcassI = 0;
+        double acuity = olfactionAcuity(self);
+        ui.SimulationConfig cfg = ui.SimulationConfig.getInstance();
+        if (acuity >= cfg.olfactionGate && self instanceof agents.Agent) {
+            agents.Agent ag = (agents.Agent) self;
+            scent.ScentField fld = world.getScentField();
+            int now = world.getIteration();
+            double thr = cfg.olfactionDetectBase / acuity;
+            int probe = (int) Math.round(acuity * cfg.olfactionProbeK);
+            if (probe < 1) probe = 1;
+            if (probe > OLFACTION_PROBE_MAX) probe = OLFACTION_PROBE_MAX;
+            scent.ScentKind[] preyK = ag.scentPreyKinds();
+            scent.ScentKind[] dangerK = ag.scentDangerKinds();
+
+            scent.ScentReading r0 = fld.sampleAt(ax, ay, now);
+            double preyHere = sumKinds(r0, preyK);
+            double dangerHere = sumKinds(r0, dangerK);
+            double carcHere = r0.of(scent.ScentKind.CARCASS);
+
+            double preyBest = 0, dangerBest = 0, carcBest = 0;
+            int preyBestDir = -1, dangerBestDir = -1, carcBestDir = -1;
+            int[] pdx = { 0, probe, 0, -probe };   // 0=N,1=E,2=S,3=O
+            int[] pdy = { -probe, 0, probe, 0 };
+            for (int d = 0; d < 4; d++) {
+                int px = ((ax + pdx[d]) % w + w) % w;
+                int py = ((ay + pdy[d]) % h + h) % h;
+                scent.ScentReading r = fld.sampleAt(px, py, now);
+                double pv = sumKinds(r, preyK);
+                if (pv > preyBest)   { preyBest = pv;   preyBestDir = d; }
+                double dv = sumKinds(r, dangerK);
+                if (dv > dangerBest) { dangerBest = dv; dangerBestDir = d; }
+                double cv = r.of(scent.ScentKind.CARCASS);
+                if (cv > carcBest)   { carcBest = cv;   carcBestDir = d; }
+            }
+            double preyMax = Math.max(preyHere, preyBest);
+            if (preyMax > thr) { scentPreyI = preyMax; scentPreyDir = (preyBest > thr) ? preyBestDir : -1; }
+            double dangerMax = Math.max(dangerHere, dangerBest);
+            if (dangerMax > thr) { scentDangerI = dangerMax; scentDangerDir = (dangerBest > thr) ? dangerBestDir : -1; }
+            double carcMax = Math.max(carcHere, carcBest);
+            if (carcMax > thr) { scentCarcassI = carcMax; scentCarcassDir = (carcBest > thr) ? carcBestDir : -1; }
+        }
+
         return new Percept(predatorDir, predatorDist, preyDir, preyDist, preyX, preyY,
                 carcassDir, carcassDist, carcassX, carcassY,
                 waterDir, waterDist, landDir, landDist, grassDir, grassDist,
-                lavaDir, lavaDist, fireAdj, lavaAdj, inWater, onLava, cardinalFree);
+                lavaDir, lavaDist, fireAdj, lavaAdj, inWater, onLava, cardinalFree,
+                scentPreyDir, scentPreyI, scentDangerDir, scentDangerI,
+                scentCarcassDir, scentCarcassI, acuity);
     }
 
     /**

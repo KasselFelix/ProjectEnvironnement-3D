@@ -345,7 +345,7 @@ public class Mouton extends Agent {
 	}
 
 	private static final scent.ScentKind[] SCENT_DANGER_KINDS = { scent.ScentKind.LOUP, scent.ScentKind.HUMAIN };
-	@Override protected scent.ScentKind[] scentDangerKinds() { return SCENT_DANGER_KINDS; }
+	@Override public scent.ScentKind[] scentDangerKinds() { return SCENT_DANGER_KINDS; }
 
 	@Override
 	protected boolean canMove() { return energie > 2; }
