@@ -33,8 +33,12 @@ public final class Percept {
     public final int    scentPreyDir;     public final double scentPreyIntensity;
     public final int    scentDangerDir;   public final double scentDangerIntensity;
     public final int    scentCarcassDir;  public final double scentCarcassIntensity;
-    /** Acuité olfactive effective de l'agent (0 si sous le gate / non-agent). */
+    /** Acuité olfactive effective de l'agent. Un agent sous le gate garde sa
+     *  vraie acuité (faible, p.ex. 0.15 pour l'humain) ; seul un non-agent vaut 0. */
     public final double olfactionAcuity;
+    /** Gelé à la construction (= au moment du sense) pour rester cohérent avec
+     *  le gate utilisé lors de l'échantillonnage ; cf. {@link #canSmell()}. */
+    private final boolean canSmellFrozen;
 
     public Percept(int predatorDir, double predatorDist,
                    int preyDir, double preyDist, int preyX, int preyY,
@@ -66,6 +70,7 @@ public final class Percept {
         this.scentDangerDir = scentDangerDir;   this.scentDangerIntensity = scentDangerIntensity;
         this.scentCarcassDir = scentCarcassDir; this.scentCarcassIntensity = scentCarcassIntensity;
         this.olfactionAcuity = olfactionAcuity;
+        this.canSmellFrozen = olfactionAcuity >= ui.SimulationConfig.getInstance().olfactionGate;
     }
 
     public boolean predatorVisible()  { return predatorDir >= 0; }
@@ -78,8 +83,9 @@ public final class Percept {
     public boolean scentPreyDetected()    { return scentPreyIntensity > 0; }
     public boolean scentDangerDetected()  { return scentDangerIntensity > 0; }
     public boolean scentCarcassDetected() { return scentCarcassIntensity > 0; }
-    /** true si l'agent a un odorat fonctionnel (au-dessus du gate). */
+    /** true si l'agent a un odorat fonctionnel (au-dessus du gate au moment du
+     *  sense). Valeur gelée à la construction → stable pour la vie du Percept. */
     public boolean canSmell() {
-        return olfactionAcuity >= ui.SimulationConfig.getInstance().olfactionGate;
+        return canSmellFrozen;
     }
 }
