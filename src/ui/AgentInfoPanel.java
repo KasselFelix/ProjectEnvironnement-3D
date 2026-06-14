@@ -17,7 +17,9 @@ import agents.Humain;
 public class AgentInfoPanel {
 
     private static final int PANEL_WIDTH  = 230;
-    private static final int PANEL_HEIGHT = 240;
+    // 256 = 240 + 1 ROW_HEIGHT : la ligne « Odorat » (sous-projet B) a ajouté
+    // une rangée à evolutionSummary ; sans ça elle chevauchait le pied « [f] suivi ».
+    private static final int PANEL_HEIGHT = 256;
     private static final int MARGIN = 10;
     private static final int ROW_HEIGHT = 16;
 
