@@ -662,6 +662,10 @@ public class Agent extends UniqueDynamicObject{
 	protected int scentWpX = -1, scentWpY = -1;   // point de trace engagé (pistage loup)
 	protected int scentFleeDir = -1;              // cap de fuite/méfiance engagé (mouton)
 	protected int scentCommitLeft = 0;            // ticks d'engagement restants
+	// Sous-projet E : waypoint engagé DÉDIÉ au pistage du partenaire (isolé du
+	// pistage de proie SCENT_TRACK pour éviter toute interférence d'état).
+	protected int mateWpX = -1, mateWpY = -1;
+	protected int mateCommitLeft = 0;
 	/** Saut de cible (cases) au-delà duquel on considère un CHANGEMENT DE BUT → reset.
 	 *  NB : suppose LEAD_PURSUIT=false. Si l'interception est réactivée, la cible
 	 *  anticipée peut sauter de LEAD_FACTOR×2=6 cases quand la proie inverse sa
@@ -824,6 +828,7 @@ public class Agent extends UniqueDynamicObject{
 		pursuitTrackTtl = 0; lastPreyX = -1; lastPreyY = -1;
 		huntBestDist = Double.MAX_VALUE; huntStuck = 0; lastAimX = -1; lastAimY = -1;
 		scentWpX = -1; scentWpY = -1; scentFleeDir = -1; scentCommitLeft = 0;   // sous-projet C
+		mateWpX = -1; mateWpY = -1; mateCommitLeft = 0;   // sous-projet E
 	}
 
 	/** Sous-projet C : case projetée à {@code dist} cases dans la direction
@@ -1341,6 +1346,7 @@ public class Agent extends UniqueDynamicObject{
 				_lastDy = orientDy(_orient);
 			} else {
 				if (scentCommitLeft > 0) scentCommitLeft--;   // sous-projet C : décroissance de l'engagement
+				if (mateCommitLeft > 0) mateCommitLeft--;     // sous-projet E : décroissance de l'engagement partenaire
 				currentState = decideState(p);
 				agents.ai.MoveConstraints c = applyState(currentState, p);
 				if (canMove() && wantsToMove) agents.ai.Locomotion.move(this, world, _orient, c);
@@ -1487,6 +1493,31 @@ public class Agent extends UniqueDynamicObject{
 	/** En rut (sous-projet E) : prêt à se reproduire ET en saison des amours.
 	 *  → émet l'odeur de séduction + candidat SEEK_MATE. */
 	public boolean inRut() { return matingReady() && inMatingSeason(); }
+
+	/** Sous-projet E : l'agent veut chercher un partenaire ce tick (en rut +
+	 *  odeur de séduction détectée au-dessus du seuil). */
+	protected boolean wantsToSeekMate(agents.ai.Percept p) {
+		return p != null && inRut() && p.scentMateDetected()
+				&& p.scentMateIntensity >= ui.SimulationConfig.getInstance().scentMateThreshold;
+	}
+
+	/** Sous-projet E : pas de déplacement vers le partenaire. Engage un waypoint
+	 *  STABLE vers l'odeur de séduction (anti-oscillation, comme SCENT_TRACK) et
+	 *  avance via pursuitStep. La vitesse est réglée par l'appelant AVANT l'appel. */
+	protected agents.ai.MoveConstraints seekMateStep(agents.ai.Percept p, int vision) {
+		boolean reached = (mateWpX >= 0 && world.distance(x, y, mateWpX, mateWpY) <= 1);
+		if (mateCommitLeft <= 0 || reached || mateWpX < 0) {
+			if (p.scentMateDir >= 0) {
+				int[] wp = projectScentWaypoint(p.scentMateDir, Math.max(3, vision / 2));
+				mateWpX = wp[0]; mateWpY = wp[1];
+				mateCommitLeft = ui.SimulationConfig.getInstance().scentCommitTicks;
+			} else {
+				mateWpX = -1; mateWpY = -1;
+			}
+		}
+		if (mateWpX >= 0) return pursuitStep(p, new int[]{mateWpX, mateWpY}, vision);
+		return steerAroundObstacles(p, true, vision);   // pas de cap fiable → balaye
+	}
 
     /**
      * Depose l'odeur de l'agent dans le champ (appele chaque tick par stepAgents,

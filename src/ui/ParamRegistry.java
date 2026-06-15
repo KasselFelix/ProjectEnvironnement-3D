@@ -166,6 +166,9 @@ public final class ParamRegistry {
         defs.add(doubleDef("ODEUR", "Intensite de base", Visibility.BOTH,
                 () -> config.scentBaseScale, v -> config.scentBaseScale = v, 0.2, 3.0, 0.1, "%.1f")
                 .withHelp("Multiplicateur global de force des odeurs"));
+        defs.add(doubleDef("ODEUR", "Seuil partenaire", Visibility.BOTH,
+                () -> config.scentMateThreshold, v -> config.scentMateThreshold = v, 0.0, 2.0, 0.05, "%.2f")
+                .withHelp("Intensite d'odeur de seduction au-dessus de laquelle un agent en rut piste un partenaire"));
         defs.add(new ParamDef("ODEUR", "Overlay debug",
                 () -> config.scentDebugOverlay ? "Oui" : "Non",
                 () -> config.scentDebugOverlay = false,

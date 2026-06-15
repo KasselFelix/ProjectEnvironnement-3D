@@ -126,6 +126,7 @@ public class SimulationConfig {
     public double scentFleeIntensity      = 0.5;   // mouton : intensité danger ≥ → fuite ; < → méfiance
     public double scentTrackCastIntensity = 0.15;  // loup : intensité proie ≥ → suit le cap ; < → caste
     public int    scentCommitTicks        = 5;     // ticks d'engagement d'un cap (anti-oscillation)
+    public double scentMateThreshold      = 0.15;  // seuil de detection du partenaire (canal seduction)
 
     // ── Caractère : trait prudence/témérité (sous-projet D) ──────────────────
     public double fleeBoldnessDelta     = 0.5;   // mouton : seuil de fuite olfactif ×(1±delta)
