@@ -234,6 +234,7 @@ public class Loup extends Agent {
 			case LOCALISATION: return "Rallie le cri";
 			case RECALL_FOOD:  return "Va vers nourriture";
 			case SCENT_TRACK:  return "Piste (odeur)";
+			case SEEK_MATE:    return "Cherche partenaire";
 			default:        return attaqueNuit == 1 ? "Rode (nuit)" : "Errance";
 		}
 	}
@@ -589,6 +590,9 @@ public class Loup extends Agent {
 					|| scentCommitLeft > 0))
 			return AgentState.SCENT_TRACK;
 		if (enChasse)                         return AgentState.SEARCH;          // balayage spirale
+		// Sous-projet E : un loup REPU (donc !enChasse) et en rut (hiver) piste
+		// l'odeur de séduction d'un partenaire. Sous la chasse (un affamé est enChasse).
+		if (wantsToSeekMate(p))               return AgentState.SEEK_MATE;
 		if (energie >= energieD)              return AgentState.REST;            // repu plein → repos
 		return AgentState.WANDER;                                                 // flânerie économe
 	}
@@ -734,6 +738,9 @@ public class Loup extends Agent {
 				vitesse = vpas;
 				return steerAroundObstacles(p, true, vision);
 			}
+			case SEEK_MATE:
+				vitesse = vtrot;
+				return seekMateStep(p, vision);
 			case WANDER:
 			default:
 				lazyWander();
