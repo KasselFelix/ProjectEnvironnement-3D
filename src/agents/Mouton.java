@@ -270,6 +270,9 @@ public class Mouton extends Agent {
 	}
 	@Override protected boolean tookRisk(agents.ai.Percept p) {
 		// Pas de dépendance à p : currentState reflète la décision de ce tick.
+		// Approximation connue : si un état de survie prioritaire (ON_FIRE, SEEK_LAND…)
+		// coïncide avec une odeur de loup, ce n'est PAS FLEE_PREDATOR → compté comme un
+		// risque pris. Co-occurrence rare et signal faible vs la durée de session → toléré.
 		return currentState != agents.ai.AgentState.FLEE_PREDATOR;
 	}
 

@@ -51,4 +51,15 @@ class CharacterBoldnessTest {
         session(c, 12, true, 0.2);              // risques pris mais sat ≤ S_LOSE
         assertEquals(BoldnessTrait.NONE, c.boldness());
     }
+
+    /** Hystérésis CÔTÉ PRUDENT (asymétrique du côté BOLD) : un prudent qui se met
+     *  à prendre les risques (boldFrac > 1 − PROFILE_KEEP_FLOOR = 0.7) reperd le trait. */
+    @Test
+    void prudentPerdLeTrait_silSeMetAPrendreLesRisques() {
+        Character c = new Character();
+        session(c, 12, false, 0.8);             // jamais de risque → devient PRUDENT
+        assertEquals(BoldnessTrait.CAUTIOUS, c.boldness());
+        session(c, 12, true, 0.8);              // boldFrac=1.0 > 0.7 → reperd CAUTIOUS
+        assertEquals(BoldnessTrait.NONE, c.boldness());
+    }
 }

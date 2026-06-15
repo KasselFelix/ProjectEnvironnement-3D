@@ -86,6 +86,10 @@ public class Humain extends Agent {
 	}
 
 	// Sous-projet D : risque = aller confronter un loup (au lieu de rester au troupeau).
+	// NOTE : un chasseur (chasseur=true) accumule lui aussi la témérité (il voit/poursuit
+	// des loups), mais elle n'a AUCUN effet sur sa logique — boldnessFactor n'est appliqué
+	// qu'au rayon de confront du berger (bloc !chasseur de decideState). Le trait apparaît
+	// donc sur la fiche d'un chasseur sans le distinguer en jeu. Assumé.
 	@Override protected boolean riskSituation(agents.ai.Percept p) {
 		return p != null && p.predatorVisible();
 	}
