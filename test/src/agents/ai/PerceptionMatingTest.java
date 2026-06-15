@@ -54,4 +54,16 @@ class PerceptionMatingTest {
         Percept p = Perception.sense(self, w, w.loups, w.moutons);
         assertFalse(p.scentMateDetected(), "anosmique → aucun canal de séduction");
     }
+
+    @Test
+    void ficheLoupListeLeCanalPartenaire() {
+        WorldOfCells w = flatWorld();
+        Loup loup = new Loup(10, 10, w);
+        w.loups.add(loup); w.agents.add(loup); w.uniqueDynamicObjects.add(loup);
+        w.step();   // remplit lastPercept → la fiche peut afficher les canaux d'odeur
+        boolean hasPartenaire = false;
+        for (String line : loup.evolutionSummary())
+            if (line.contains("partenaire")) hasPartenaire = true;
+        assertTrue(hasPartenaire, "la fiche Odorat du loup doit lister le canal partenaire");
+    }
 }

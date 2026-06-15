@@ -250,6 +250,7 @@ public class Agent extends UniqueDynamicObject{
 		l.add(scentLine("proie",    p.scentPreyDir,    p.scentPreyIntensity));
 		l.add(scentLine("danger",   p.scentDangerDir,  p.scentDangerIntensity));
 		l.add(scentLine("charogne", p.scentCarcassDir, p.scentCarcassIntensity));
+		l.add(scentLine("partenaire", p.scentMateDir,  p.scentMateIntensity));   // sous-projet E
 	}
 
 	/** Ligne d'un canal d'odeur, indentée et alignée sous l'en-tête « Odorat ». */
