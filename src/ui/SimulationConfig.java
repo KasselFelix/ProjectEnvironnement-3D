@@ -127,6 +127,12 @@ public class SimulationConfig {
     public double scentTrackCastIntensity = 0.15;  // loup : intensité proie ≥ → suit le cap ; < → caste
     public int    scentCommitTicks        = 5;     // ticks d'engagement d'un cap (anti-oscillation)
 
+    // ── Caractère : trait prudence/témérité (sous-projet D) ──────────────────
+    public double fleeBoldnessDelta     = 0.5;   // mouton : seuil de fuite olfactif ×(1±delta)
+    public double hungerBoldnessDelta   = 0.25;  // loup/ours : seuil de faim chasse + kill ×(1±delta)
+    public double confrontBoldnessDelta = 0.6;   // berger : rayon d'engagement ×(1±delta)
+    public int    confrontRadiusBase    = 4;     // berger : rayon de confront de base (cases)
+
     /** Durée totale d'un cycle 24h jeu en secondes réelles (jour + nuit cumulés).
      *  Default 240s ⇒ 1h jeu = 10s réelles. */
     public float  cycleTotalSec      = 240f;

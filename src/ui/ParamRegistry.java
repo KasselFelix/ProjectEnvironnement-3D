@@ -209,6 +209,20 @@ public final class ParamRegistry {
         defs.add(doubleDef("LAVE", "Puissance max eruption", Visibility.BOTH,
                 () -> (double) config.erruptionPowerMax, v -> config.erruptionPowerMax = (float) v, 0.5, 10.0, 0.1, "%.2f"));
 
+        // ───── CARACTERE (trait prudence/temerite, sous-projet D) ──────────
+        defs.add(doubleDef("CARACTERE", "Audace fuite mouton", Visibility.BOTH,
+                () -> config.fleeBoldnessDelta, v -> config.fleeBoldnessDelta = v, 0.0, 0.9, 0.05, "%.2f")
+                .withHelp("Ecart du seuil de fuite olfactif du mouton entre prudent et temeraire"));
+        defs.add(doubleDef("CARACTERE", "Audace chasse predateur", Visibility.BOTH,
+                () -> config.hungerBoldnessDelta, v -> config.hungerBoldnessDelta = v, 0.0, 0.6, 0.05, "%.2f")
+                .withHelp("Ecart du seuil de faim (chasse + mise a mort) loup/ours entre prudent et temeraire"));
+        defs.add(doubleDef("CARACTERE", "Audace berger", Visibility.BOTH,
+                () -> config.confrontBoldnessDelta, v -> config.confrontBoldnessDelta = v, 0.0, 0.9, 0.05, "%.2f")
+                .withHelp("Ecart du rayon de confrontation du berger entre prudent et temeraire"));
+        defs.add(intDef("CARACTERE", "Rayon confront berger", Visibility.BOTH,
+                () -> config.confrontRadiusBase, v -> config.confrontRadiusBase = v, 1, 20, 1)
+                .withHelp("Rayon de base (cases) auquel un berger confronte un loup"));
+
         return defs;
     }
 

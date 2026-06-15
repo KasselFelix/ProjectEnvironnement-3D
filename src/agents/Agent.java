@@ -191,6 +191,16 @@ public class Agent extends UniqueDynamicObject{
 	 *  les espèces grégaires (Mouton, meute de Loups) surchargent. */
 	public boolean isIsolated() { return false; }
 
+	/** Sous-projet D : une décision de risque se présente-t-elle ce tick ? Défaut :
+	 *  jamais (l'agent n'a pas d'axe boldness exploité). Surchargé par espèce. */
+	protected boolean riskSituation(agents.ai.Percept p) { return false; }
+	/** Sous-projet D : l'agent a-t-il choisi l'option audacieuse ce tick ?
+	 *  observeRisk n'exploite ce résultat que si riskSituation est vrai, mais
+	 *  l'argument est TOUJOURS évalué (eager) au site d'appel : les surcharges
+	 *  doivent null-tester {@code p} (lastPercept est null avant le 1er isMyTurn).
+	 *  Surchargé par espèce. */
+	protected boolean tookRisk(agents.ai.Percept p) { return false; }
+
 	/** Satisfaction globale ∈ [0, 1] (§ 7.3). Défaut neutre fondé sur la survie
 	 *  immédiate (feu = 0) ; les espèces affinent (faim, social…). */
 	public double satisfaction() { return isOnFire() ? 0.0 : 1.0; }
@@ -206,6 +216,8 @@ public class Agent extends UniqueDynamicObject{
 		double dtDays = 1.0 / (2.0 * Math.max(1, world.getDureeJour()));
 		mind.train(activityLevel(), getAgeDays() / lifespan, genome.longevityFactor(), dtDays);
 		character.observe(isIsolated(), satisfaction());
+		agents.ai.Percept rp = lastPercept;
+		character.observeRisk(riskSituation(rp), tookRisk(rp));   // sous-projet D
 		int sessionTicks = Math.max(1, (int) (CHARACTER_SESSION_DAYS * 2 * world.getDureeJour()));
 		if (world.getIteration() > 0 && world.getIteration() % sessionTicks == 0) {
 			character.endSession();
@@ -219,7 +231,7 @@ public class Agent extends UniqueDynamicObject{
 		java.util.List<String> l = new java.util.ArrayList<>();
 		l.add(String.format(java.util.Locale.US, "Stade    : %s (x%.2f)", stageLabel(), displaySize()));
 		l.add("Traits   : " + genome.asciiTraits());
-		l.add("Caractere: " + socialLabel());
+		l.add("Caractere: " + socialLabel() + " / " + boldnessLabel());
 		l.add(String.format(java.util.Locale.US, "Intel.   : %.2f", mind.score()));
 		l.add("Memoire  : " + memory.size() + " lieux");
 		addOlfactionLines(l);
@@ -270,6 +282,15 @@ public class Agent extends UniqueDynamicObject{
 			case SOLITARY:   return "SOLITAIRE";
 			case GREGARIOUS: return "GREGAIRE";
 			default:         return "-";
+		}
+	}
+
+	/** Libellé ASCII du trait boldness (§ sous-projet D). */
+	protected String boldnessLabel() {
+		switch (character.boldness()) {
+			case BOLD:     return "TEMERAIRE";
+			case CAUTIOUS: return "PRUDENT";
+			default:       return "-";
 		}
 	}
 
