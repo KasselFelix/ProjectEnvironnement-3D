@@ -257,7 +257,11 @@ public class Agent extends UniqueDynamicObject{
 		return String.format("  %-8s : %s", label, scentChannelLabel(dir, inten));
 	}
 
-	private static final String[] SCENT_DIR4 = { "N", "E", "S", "O" };
+	// Libellés ORIENTÉS ÉCRAN, cohérents avec getOrientLabel() : les dir 0..3 sont
+	// l'énumération interne (0 = grille −Y, 2 = grille +Y). Au rendu vue-de-dessus,
+	// grille +Y = HAUT = Nord et −Y = BAS = Sud → dir 0 s'affiche "S", dir 2 "N".
+	// (Avant : { "N","E","S","O" } en convention grille brute → N/S inversés sur la fiche.)
+	private static final String[] SCENT_DIR4 = { "S", "E", "N", "O" };
 	/** "-" si rien ; "<dir> <palier>" sinon ("ici" si senti sans direction). */
 	private static String scentChannelLabel(int dir, double inten) {
 		if (inten <= 0) return "-";
