@@ -327,7 +327,8 @@ public class Loup extends Agent {
 		// Consommation gâtée par la FAIM (pas par 90% comme avant) : un loup repu
 		// (≥ HUNGER_RATIO) ne tue pas, même s'il rattrape un mouton la nuit — il
 		// n'a fait que l'effrayer. Évite qu'un seul loup décime tout le troupeau.
-		if (energie < energieD * HUNGER_RATIO) {
+		if (energie < energieD * HUNGER_RATIO
+				* character.boldnessFactor(ui.SimulationConfig.getInstance().hungerBoldnessDelta)) {
 			for (Mouton ag : this.world.moutons) {
 				UniqueDynamicObject pag = (UniqueDynamicObject) ag;
 				if (pag.x == x && pag.y == y) {
@@ -517,8 +518,18 @@ public class Loup extends Agent {
 		return best;
 	}
 
+	// Sous-projet D : risque = engager une proie (la chasse, surtout peu affamé).
+	@Override protected boolean riskSituation(agents.ai.Percept p) {
+		return p != null && (p.preyVisible() || p.scentPreyDetected() || hasFreshTrack());
+	}
+	@Override protected boolean tookRisk(agents.ai.Percept p) {
+		return currentState == agents.ai.AgentState.HUNT
+				|| currentState == agents.ai.AgentState.SCENT_TRACK;
+	}
+
 	public AgentState decideState(Percept p) {
-		boolean affame   = energie < energieD * HUNGER_RATIO;
+		boolean affame   = energie < energieD * HUNGER_RATIO
+				* character.boldnessFactor(ui.SimulationConfig.getInstance().hungerBoldnessDelta);
 		boolean enChasse = affame || attaqueNuit == 1;
 		if (!enChasse) resetPursuit();        // plus en chasse → on oublie la piste
 		// Renforce la mémoire FOOD au front montant (edge-triggered) d'une carcasse perçue.
