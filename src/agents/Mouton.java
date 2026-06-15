@@ -282,6 +282,7 @@ public class Mouton extends Agent {
 			case SEEK_FOOD:     return "Cherche herbe";
 			case HERD:          return "Regroupement";
 			case REST:          return "Repos";
+			case WARY:          return "Méfiance";
 			default:            return "Errance";
 		}
 	}
@@ -550,6 +551,14 @@ public class Mouton extends Agent {
 		if (p.lavaVisible())     return AgentState.FLEE_LAVA;   // L2 — la lave tue au contact : priorité absolue
 		if (p.predatorVisible()) return AgentState.FLEE_PREDATOR;
 		if (alertTtl > 0)        return AgentState.FLEE_PREDATOR;   // alerté par le troupeau
+		// Sous-projet C : méfiance olfactive graduée, SOUS la fuite visuelle.
+		// Trace de loup forte/fraîche → fuite ; faible → méfiance. scentDangerKinds
+		// = {LOUP} (Task 1) → l'odeur humaine n'arrive jamais ici (berger).
+		ui.SimulationConfig cfgScent = ui.SimulationConfig.getInstance();
+		if (p.scentDangerDetected() && p.scentDangerIntensity >= cfgScent.scentFleeIntensity)
+			return AgentState.FLEE_PREDATOR;
+		if (p.scentDangerDetected() || scentCommitLeft > 0)
+			return AgentState.WARY;
 		if (p.inWater)           return AgentState.SEEK_LAND;
 		// Suivi du parent (§ 10.3) : un agneau colle à son parent, priorité sur
 		// l'herbe / le troupeau / l'errance (mais après la survie ci-dessus).
@@ -652,6 +661,15 @@ public class Mouton extends Agent {
 				} else if (alertDir >= 0) {
 					// Alerté sans voir le loup : fuit dans le cap du troupeau.
 					_orient = alertDir;
+				} else {
+					// Sous-projet C : fuite déclenchée par l'ODEUR (ni vue, ni alerte).
+					// Engage un cap opposé à la trace qq ticks (anti-oscillation) ;
+					// le timer décroît dans step().
+					if (scentCommitLeft <= 0 && p.scentDangerDir >= 0) {
+						scentFleeDir = AgentState.opposite(p.scentDangerDir);
+						scentCommitLeft = ui.SimulationConfig.getInstance().scentCommitTicks;
+					}
+					if (scentFleeDir >= 0) _orient = scentFleeDir;
 				}
 				fuite = 1;                       // supprime le Broute pendant la fuite
 				vitesse = vcourse;               // correctif : toujours vcourse à la fuite
@@ -680,6 +698,23 @@ public class Mouton extends Agent {
 				if (p.grassDir >= 0) _orient = p.grassDir;
 				vitesse = vmarche;
 				return MoveConstraints.landBound();
+			case WARY: {
+				// Méfiance : s'écarte de la trace au PAS, sans brouter, en gardant un
+				// cap engagé (anti-oscillation ; décru en step()). steerAroundObstacles
+				// est anti-revisite → pas d'aller-retour.
+				if (scentCommitLeft <= 0 && p.scentDangerDir >= 0) {
+					scentFleeDir = AgentState.opposite(p.scentDangerDir);
+					scentCommitLeft = ui.SimulationConfig.getInstance().scentCommitTicks;
+				}
+				if (scentFleeDir >= 0) _orient = scentFleeDir;
+				vitesse = vmarche;
+				// Ne broute pas : isGrazingNow() est gardé par `fuite == 0`, donc on
+				// pose `fuite = 1` (même suppresseur que la fuite) ; postMove ne broutera
+				// pas. m = 0 efface tout drapeau de broutage résiduel.
+				fuite = 1;
+				m = 0;
+				return steerAroundObstacles(p, false, vision);
+			}
 			case WANDER:
 			default:
 				return wanderMove();
