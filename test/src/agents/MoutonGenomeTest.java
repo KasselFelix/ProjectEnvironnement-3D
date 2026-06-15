@@ -33,6 +33,7 @@ class MoutonGenomeTest {
     @Test
     void agneauDeParentInfertileADuMalusLongevite() {
         WorldOfCells world = AgentTestSupport.buildWorld();
+        world.setDureeJour(1); world.setSeasonLengthDays(1); world.setIteration(28); // AUTUMN (28%14==0)
 
         Mouton m = new Mouton(20, 20, world);
         m.genome.set(Axis.FERTILITY, Pole.NEGATIVE);   // parent infertile

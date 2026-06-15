@@ -421,7 +421,7 @@ public class Loup extends Agent {
 		Loup mate = findReproPartner();
 		// Gating par STADE (§ 10.1 : bébé/jeune ne se reproduisent pas, vieux à
 		// taux réduit) + proba modulée par la fertilité du génome (§ 4.1/§ 4.3).
-		if (currentStage().canReproduce() && energie >= energieD * reproEnergyThreshold && mate != null
+		if (inMatingSeason() && currentStage().canReproduce() && energie >= energieD * reproEnergyThreshold && mate != null
 				&& Math.random() < Prepro * genome.reproProbaFactor() * currentStage().fertilityFactor()) {
 			double invest = energieD * reproOffspringRatio;
 			Loup prea = new Loup(this.x, this.y, this._world);

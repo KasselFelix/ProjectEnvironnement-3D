@@ -293,7 +293,7 @@ public class Ours extends Agent {
 
         // Reproduction sexuée (mirror Loup).
         Ours mate = findReproPartner();
-        if (currentStage().canReproduce() && energie >= energieD * reproEnergyThreshold && mate != null
+        if (inMatingSeason() && currentStage().canReproduce() && energie >= energieD * reproEnergyThreshold && mate != null
                 && Math.random() < Prepro * genome.reproProbaFactor() * currentStage().fertilityFactor()) {
             double invest = energieD * reproOffspringRatio;
             Ours cub = new Ours(x, y, _world);

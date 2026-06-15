@@ -961,6 +961,7 @@ class AgentBehaviorTest {
                 world.setForestCAValue(cx + dx, cy + dy, 0);
             }
         world.setJour(1);
+        world.setDureeJour(1); world.setSeasonLengthDays(1); world.setIteration(28); // AUTUMN (28%14==0)
 
         Mouton m = new Mouton(cx, cy, world);
         m.energie = m.energieMAX;          // plein → au-dessus du seuil 60%
@@ -1045,6 +1046,7 @@ class AgentBehaviorTest {
                 w1.setForestCAValue(cx + dx, cy + dy, 0);
             }
         w1.setJour(1);
+        w1.setDureeJour(1); w1.setSeasonLengthDays(1); w1.setIteration(28); // AUTUMN (28%14==0)
         Mouton m = new Mouton(cx, cy, w1);
         m.energie = m.energieMAX * 0.50;     // 50% > seuil mouton (40%)
         m.Prepro  = 1.0;
@@ -1740,6 +1742,7 @@ class AgentBehaviorTest {
                 w1.setForestCAValue(cx + dx, cy + dy, 0);
             }
         w1.setJour(1);
+        w1.setDureeJour(1); w1.setSeasonLengthDays(1); w1.setIteration(28); // AUTUMN (28%14==0)
         Mouton lone = new Mouton(cx, cy, w1);
         lone.energie = lone.energieMAX;
         lone.Prepro = 1.0;
@@ -1759,6 +1762,7 @@ class AgentBehaviorTest {
                 w2.setForestCAValue(cx + dx, cy + dy, 0);
             }
         w2.setJour(1);
+        w2.setDureeJour(1); w2.setSeasonLengthDays(1); w2.setIteration(28); // AUTUMN (28%14==0)
         Mouton a = new Mouton(cx, cy, w2);
         a.energie = a.energieMAX;
         a.Prepro = 1.0;
@@ -1796,6 +1800,7 @@ class AgentBehaviorTest {
                 w.setForestCAValue(cx + dx, cy + dy, 0);
             }
         w.setJour(1);
+        w.setDureeJour(1); w.setSeasonLengthDays(1); w.setIteration(28); // AUTUMN (28%14==0)
 
         Mouton a = new Mouton(cx, cy, w);
         a.energie = a.energieMAX;
@@ -1839,6 +1844,7 @@ class AgentBehaviorTest {
                 w.setForestCAValue(cx + dx, cy + dy, 0);
             }
         w.setJour(1);
+        w.setDureeJour(1); w.setSeasonLengthDays(1); w.setIteration(54); // WINTER (54%9==0)
 
         Loup a = new Loup(cx, cy, w);
         a.energie = (int) (a.energieD * 0.9);   // au-dessus du seuil 60%

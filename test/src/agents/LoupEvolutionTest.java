@@ -48,6 +48,7 @@ class LoupEvolutionTest {
     @Test
     void louveteauDeParentInfertileMalusLongevite() {
         WorldOfCells world = AgentTestSupport.buildWorld();
+        world.setDureeJour(1); world.setSeasonLengthDays(1); world.setIteration(54); // WINTER (54%9==0)
         Loup l = new Loup(20, 20, world);
         l.genome.set(Axis.FERTILITY, Pole.NEGATIVE);
         l.genome.set(Axis.LONGEVITY, Pole.POSITIVE);

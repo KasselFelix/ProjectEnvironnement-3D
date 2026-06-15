@@ -480,7 +480,7 @@ public class Mouton extends Agent {
 		// Reproduction gardée par le STADE (§ 10.1) : bébé et jeune ne se
 		// reproduisent pas. La proba est modulée par la fertilité du génome
 		// (§ 4.1/§ 4.3) : FERTILE ×1.5, INFERTILE ×0.2 (cul-de-sac mou).
-		if(currentStage().canReproduce() && energie >= energieMAX * reproEnergyThreshold && mate != null
+		if(inMatingSeason() && currentStage().canReproduce() && energie >= energieMAX * reproEnergyThreshold && mate != null
 				&& Math.random() < Prepro * genome.reproProbaFactor() * currentStage().fertilityFactor()) {
 			double invest = energieMAX * reproOffspringRatio;
 			Mouton prea=new Mouton(this.x, this.y, this._world);

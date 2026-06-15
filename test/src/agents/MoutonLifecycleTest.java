@@ -56,6 +56,7 @@ class MoutonLifecycleTest {
 
         // --- contrôle : adulte fondateur, même montage → naissance ---
         WorldOfCells world2 = AgentTestSupport.buildWorld();
+        world2.setDureeJour(1); world2.setSeasonLengthDays(1); world2.setIteration(28); // AUTUMN (28%14==0)
         Mouton adult = new Mouton(20, 20, world2);   // fondateur = adulte
         adult.energie = adult.energieMAX;
         adult.maxAgeDays = 100.0;
@@ -76,6 +77,7 @@ class MoutonLifecycleTest {
     @Test
     void agneauHeriteSizeFactorMoyenneAvecMutation() {
         WorldOfCells world = AgentTestSupport.buildWorld();
+        world.setDureeJour(1); world.setSeasonLengthDays(1); world.setIteration(28); // AUTUMN (28%14==0)
         Mouton m = new Mouton(20, 20, world);
         m.sizeFactor = 1.2;
         m.energie = m.energieMAX;
