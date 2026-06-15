@@ -264,6 +264,15 @@ public class Mouton extends Agent {
 		return isGrazingNow();
 	}
 
+	// Sous-projet D : risque = rester près d'une odeur de loup sans fuir.
+	@Override protected boolean riskSituation(agents.ai.Percept p) {
+		return p != null && p.scentDangerDetected();
+	}
+	@Override protected boolean tookRisk(agents.ai.Percept p) {
+		// Pas de dépendance à p : currentState reflète la décision de ce tick.
+		return currentState != agents.ai.AgentState.FLEE_PREDATOR;
+	}
+
 	/** La proie ne bloque pas son prédateur : un Loup peut entrer sur sa case
 	 *  pour la dévorer (chevauchement transitoire). Bloque tous les autres. */
 	@Override
@@ -555,7 +564,12 @@ public class Mouton extends Agent {
 		// Trace de loup forte/fraîche → fuite ; faible → méfiance. scentDangerKinds
 		// = {LOUP} (Task 1) → l'odeur humaine n'arrive jamais ici (berger).
 		ui.SimulationConfig cfgScent = ui.SimulationConfig.getInstance();
-		if (p.scentDangerDetected() && p.scentDangerIntensity >= cfgScent.scentFleeIntensity)
+		// Sous-projet D : le seuil de fuite est modulé par le trait — TÉMÉRAIRE le
+		// relève (reste WARY plus longtemps), PRUDENT l'abaisse (fuit plus tôt),
+		// NEUTRE → facteur 1.0 (identique à avant D).
+		double scentFleeThreshold = cfgScent.scentFleeIntensity
+				* character.boldnessFactor(cfgScent.fleeBoldnessDelta);
+		if (p.scentDangerDetected() && p.scentDangerIntensity >= scentFleeThreshold)
 			return AgentState.FLEE_PREDATOR;
 		if (p.scentDangerDetected() || scentCommitLeft > 0)
 			return AgentState.WARY;
