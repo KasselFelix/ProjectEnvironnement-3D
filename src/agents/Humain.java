@@ -45,6 +45,7 @@ public class Humain extends Agent {
 		if (_fireState == 1)  return "En feu";
 		if (currentState == agents.ai.AgentState.FLEE_LAVA) return "Fuit lave";
 		if (currentState == agents.ai.AgentState.HUNT) return "Chasse loup";
+		if (currentState == agents.ai.AgentState.CONFRONT) return "Confronte";
 		if (currentState == agents.ai.AgentState.HOME) return "Rentre au foyer";
 		return currentState == agents.ai.AgentState.HERD ? "Garde le troupeau" : "Errance";
 	}
@@ -84,6 +85,15 @@ public class Humain extends Agent {
 		return world.loups;
 	}
 
+	// Sous-projet D : risque = aller confronter un loup (au lieu de rester au troupeau).
+	@Override protected boolean riskSituation(agents.ai.Percept p) {
+		return p != null && p.predatorVisible();
+	}
+	@Override protected boolean tookRisk(agents.ai.Percept p) {
+		return currentState == agents.ai.AgentState.CONFRONT
+				|| currentState == agents.ai.AgentState.HUNT;
+	}
+
 	@Override
 	protected agents.ai.AgentState decideState(agents.ai.Percept p) {
 		if (isOnFire())          return agents.ai.AgentState.ON_FIRE;
@@ -91,6 +101,15 @@ public class Humain extends Agent {
 		// L3 — chasseur : pourchasse le loup le plus proche, même la nuit (il
 		// protège le troupeau des attaques nocturnes).
 		if (chasseur && p.predatorVisible()) return agents.ai.AgentState.HUNT;
+		// Sous-projet D : un berger (non-chasseur) confronte un loup proche du
+		// troupeau ; le rayon d'engagement croît avec la témérité (dispo dès NONE
+		// pour amorcer le trait). Le loup fuit déjà l'humain → repousser est gratuit.
+		if (!chasseur && p.predatorVisible()) {
+			ui.SimulationConfig cfg = ui.SimulationConfig.getInstance();
+			int rayon = (int) Math.round(cfg.confrontRadiusBase
+					* character.boldnessFactor(cfg.confrontBoldnessDelta));
+			if (p.predatorDist <= rayon) return agents.ai.AgentState.CONFRONT;
+		}
 		if (world.getJour() == 0) return agents.ai.AgentState.HOME;  // la nuit, rentre au foyer
 		if (p.preyVisible())     return agents.ai.AgentState.HERD;   // berger : rejoint le troupeau
 		return agents.ai.AgentState.WANDER;
@@ -120,6 +139,13 @@ public class Humain extends Agent {
 		if (s == agents.ai.AgentState.HUNT) {
 			// L3 — fonce VERS le loup le plus proche (cap = predatorDir, pas son
 			// opposé), au sprint. Le loup le fuyant, l'Humain doit courir.
+			if (p.predatorDir >= 0) _orient = p.predatorDir;
+			vitesse = vcourse;
+			return agents.ai.MoveConstraints.landBound();
+		}
+		if (s == agents.ai.AgentState.CONFRONT) {
+			// Le berger fonce vers le loup pour le repousser (cap = predatorDir).
+			// Pas de mise à mort : le loup, qui craint l'humain, s'enfuit de lui-même.
 			if (p.predatorDir >= 0) _orient = p.predatorDir;
 			vitesse = vcourse;
 			return agents.ai.MoveConstraints.landBound();

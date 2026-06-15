@@ -11,6 +11,7 @@ public enum AgentState {
     ON_FIRE, FLEE_LAVA, FLEE_PREDATOR, HUNT, HOWL, LOCALISATION, RECALL_FOOD, // affame, rien en vue -> rejoint une carcasse memorisee
     SCENT_TRACK,   // sous-projet C : le loup piste une proie a l'odeur (perdue de vue)
     WARY,          // sous-projet C : le mouton se mefie d'une trace de loup (sans le voir)
+    CONFRONT,      // sous-projet D : berger temeraire confronte un loup pres du troupeau
     SEARCH, EAT, SEEK_LAND, SEEK_WATER, SEEK_FOOD, FOLLOW_PARENT, HERD, HOME, REST, WANDER, CONTROLLED;
 
     /** Orientation opposée (0↔2, 1↔3). -1 reste -1 (pas de cible). */
