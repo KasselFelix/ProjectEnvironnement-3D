@@ -233,6 +233,7 @@ public class Loup extends Agent {
 			case HOWL:         return "Hurle";
 			case LOCALISATION: return "Rallie le cri";
 			case RECALL_FOOD:  return "Va vers nourriture";
+			case SCENT_TRACK:  return "Piste (odeur)";
 			default:        return attaqueNuit == 1 ? "Rode (nuit)" : "Errance";
 		}
 	}
@@ -562,6 +563,15 @@ public class Loup extends Agent {
 		if (p.inWater)                        return AgentState.SEEK_LAND;
 		if (affame && hasHowlTarget())        return AgentState.LOCALISATION;    // a entendu un hurlement
 		if (affame && recallTarget != null)   return AgentState.RECALL_FOOD;    // rejoint une carcasse memorisee
+		// Sous-projet C : pistage olfactif quand la VUE ne donne rien. Sous tous
+		// les déclencheurs visuels, juste avant le balayage aveugle. On n'ENTRE que
+		// sur une trace DIRECTIONNELLE au-dessus du seuil ; la garde scentCommitLeft
+		// fournit l'hystérésis (pas de flap SCENT_TRACK↔SEARCH).
+		ui.SimulationConfig cfgScent = ui.SimulationConfig.getInstance();
+		if (enChasse && !p.preyVisible() && !hasFreshTrack()
+				&& ((p.scentPreyDir >= 0 && p.scentPreyIntensity >= cfgScent.scentTrackCastIntensity)
+					|| scentCommitLeft > 0))
+			return AgentState.SCENT_TRACK;
 		if (enChasse)                         return AgentState.SEARCH;          // balayage spirale
 		if (energie >= energieD)              return AgentState.REST;            // repu plein → repos
 		return AgentState.WANDER;                                                 // flânerie économe
@@ -685,6 +695,29 @@ public class Loup extends Agent {
 			case RECALL_FOOD:
 				vitesse = vtrot;
 				return recallFoodStep(p, recallTarget, vision);
+			case SCENT_TRACK: {
+				// « Nez au sol » : trot plafonné. On poursuit un POINT DE TRACE
+				// ENGAGÉ (stable) via pursuitStep (gate record → anti-oscillation),
+				// pas la direction brute du gradient (qui peut s'inverser au tick).
+				ui.SimulationConfig cfg = ui.SimulationConfig.getInstance();
+				vitesse = vtrot;
+				boolean reached = (scentWpX >= 0 && world.distance(x, y, scentWpX, scentWpY) <= 1);
+				if (scentCommitLeft <= 0 || reached || scentWpX < 0) {
+					if (p.scentPreyDir >= 0 && p.scentPreyIntensity >= cfg.scentTrackCastIntensity) {
+						int[] wp = projectScentWaypoint(p.scentPreyDir, Math.max(3, vision / 2));
+						scentWpX = wp[0]; scentWpY = wp[1];
+						scentCommitLeft = cfg.scentCommitTicks;   // (re)charge ; décru en step()
+					} else {
+						scentWpX = -1; scentWpY = -1;             // pas de cap fiable
+					}
+				}
+				if (scentWpX >= 0)                                // SUIT le point engagé
+					return pursuitStep(p, new int[]{scentWpX, scentWpY}, vision);
+				// CAST (re-renifler) : pas de cap → ralentit fort + balayage anti-revisite.
+				// Borné : scentCommitLeft décroît, à 0 sans cap → chooseState cède à SEARCH.
+				vitesse = vpas;
+				return steerAroundObstacles(p, true, vision);
+			}
 			case WANDER:
 			default:
 				lazyWander();

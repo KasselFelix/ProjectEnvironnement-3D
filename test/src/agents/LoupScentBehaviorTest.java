@@ -1,6 +1,8 @@
 package agents;
 
 import agents.ai.AgentState;
+import agents.ai.Percept;
+import agents.ai.Perception;
 import landscapegenerator.PerlinNoiseLandscapeGenerator;
 import org.junit.jupiter.api.Test;
 import scent.ScentKind;
@@ -56,4 +58,55 @@ class LoupScentBehaviorTest {
         assertNotNull(AgentState.valueOf("SCENT_TRACK"));
         assertNotNull(AgentState.valueOf("WARY"));
     }
+
+	@Test
+	void loupPisteLaProieHorsVue() {
+		WorldOfCells w = flatWorld();
+		Loup l = hungryLoup(w, 10, 10);
+		int now = w.getIteration();
+		// Trace MOUTON (proie) à l'EST, sur la sonde du loup (probe ≈ 4) : senti,
+		// PAS vu (aucun mouton-agent) → doit déclencher le pistage olfactif.
+		w.getScentField().emit(99, ScentKind.MOUTON, -1, 14, 10, now, 0.9f);
+		Percept p = Perception.sense(l, w, w.humains, w.moutons);
+		assertEquals(AgentState.SCENT_TRACK, l.decideState(p), "affamé + trace proie hors vue → SCENT_TRACK");
+	}
+
+	@Test
+	void loupProgresseVersLaTrace() {
+		WorldOfCells w = flatWorld();
+		Loup l = hungryLoup(w, 10, 10);
+		int startX = l.x;
+		// Re-pose la trace à l'EST à chaque tick (proie qui « reste » dans le coin)
+		// pour que le loup ait toujours un cap olfactif vers l'Est.
+		for (int t = 0; t < 12; t++) {
+			w.getScentField().emit(99, ScentKind.MOUTON, -1, 14, 10, w.getIteration(), 0.9f);
+			w.step();
+		}
+		assertTrue(l.x > startX, "le loup s'est rapproché de la trace (déplacement vers l'Est)");
+		assertTrue(l._alive, "le loup est toujours vivant");
+	}
+
+	@Test
+	void loupNePingPongPasSurLaTrace() {
+		WorldOfCells w = flatWorld();
+		Loup l = hungryLoup(w, 10, 10);
+		java.util.Set<Long> visited = new java.util.HashSet<>();
+		for (int t = 0; t < 40; t++) {
+			w.getScentField().emit(99, ScentKind.MOUTON, -1, 14, 10, w.getIteration(), 0.6f);
+			w.step();
+			visited.add(((long) l.x << 20) | l.y);
+		}
+		assertTrue(l._alive, "le loup ne meurt pas en oscillant");
+		assertTrue(visited.size() >= 4,
+				"pistage : pas d'aller-retour sur 1-2 cases (cases visitées=" + visited.size() + ")");
+	}
+
+	@Test
+	void loupSansOdeurResteEnRecherche() {
+		WorldOfCells w = flatWorld();
+		Loup l = hungryLoup(w, 10, 10);
+		Percept p = Perception.sense(l, w, w.humains, w.moutons);   // aucune odeur posée
+		assertNotEquals(AgentState.SCENT_TRACK, l.decideState(p),
+				"sans trace, pas de pistage olfactif (→ SEARCH)");
+	}
 }
