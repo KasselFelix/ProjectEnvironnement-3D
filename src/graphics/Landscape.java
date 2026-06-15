@@ -754,6 +754,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             { 0.45f, 0.27f, 0.10f},  // OURS    — marron
             { 0.55f, 0.55f, 0.55f},  // CARCASS — gris
         };
+        /** Sous-projet E : teinte des puffs de SÉDUCTION (magenta), distincte de
+         *  la couleur d'espèce. Index virtuel = SCENT_KIND_RGB.length. */
+        private static final float[] SCENT_MATING_RGB = { 1f, 0f, 1f };
         private static final int   SCENT_ALPHA_LEVELS = 5;     // paliers de transparence
         private static final float SCENT_MAX_ALPHA     = 0.6f;  // alpha du palier le plus fort
         private static final float SCENT_MIN_VISIBLE   = 0.04f; // sous ce seuil l'odeur a disparu
@@ -802,7 +805,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 scentY[i] = (float) (offset + y2 * stepY - lenY);
                 scentZ[i] = (float) _myWorld.getCellTopAltitude(cx, cy) + 0.4f;
                 int k = (int) puffs[i][3];
-                scentKindBuf[i] = (k >= 0 && k < SCENT_KIND_RGB.length) ? k : 0;
+                boolean mating = puffs[i][4] > 0.5f;             // sous-projet E
+                scentKindBuf[i] = mating ? SCENT_KIND_RGB.length
+                                         : ((k >= 0 && k < SCENT_KIND_RGB.length) ? k : 0);
                 int lvl = (int) Math.ceil(Math.min(1f, inten) * SCENT_ALPHA_LEVELS);
                 scentLvlBuf[i] = Math.max(1, Math.min(SCENT_ALPHA_LEVELS, lvl));
             }
@@ -823,8 +828,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
             float hs = (float) stepX * 0.5f;
             // Trace groupe par (espece, palier) : 1 seul glColor4f + glBegin/glEnd par groupe.
-            for (int k = 0; k < SCENT_KIND_RGB.length; k++) {
-                float[] rgb = SCENT_KIND_RGB[k];
+            for (int k = 0; k <= SCENT_KIND_RGB.length; k++) {       // +1 groupe = SÉDUCTION (sous-projet E)
+                float[] rgb = (k < SCENT_KIND_RGB.length) ? SCENT_KIND_RGB[k] : SCENT_MATING_RGB;
                 for (int L = 1; L <= SCENT_ALPHA_LEVELS; L++) {
                     float a = (float) L / SCENT_ALPHA_LEVELS * SCENT_MAX_ALPHA;
                     boolean opened = false;

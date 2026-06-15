@@ -107,12 +107,13 @@ public final class ScentField {
         final int hz = hz();
         final double te = tauEff(SimulationConfig.getInstance().scentLifetimeSec,
                                  Math.hypot(world.getWindX(), world.getWindY()), world.isRaining());
-        float[][] out = new float[puffs.size()][4];
+        float[][] out = new float[puffs.size()][5];
         for (int i = 0; i < puffs.size(); i++) {
             ScentPuff p = puffs.get(i);
             out[i][0] = p.cx; out[i][1] = p.cy;
             out[i][2] = (float) peakIntensity(p, now, hz, te);
             out[i][3] = p.kind.ordinal();
+            out[i][4] = p.mating ? 1f : 0f;          // sous-projet E
         }
         return out;
     }
