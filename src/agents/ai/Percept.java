@@ -33,6 +33,9 @@ public final class Percept {
     public final int    scentPreyDir;     public final double scentPreyIntensity;
     public final int    scentDangerDir;   public final double scentDangerIntensity;
     public final int    scentCarcassDir;  public final double scentCarcassIntensity;
+    /** Sous-projet E : direction/intensité de l'odeur de SÉDUCTION d'un congénère
+     *  (canal de la propre espèce, hors soi). dir -1 si rien ; intensity = pic. */
+    public final int    scentMateDir;     public final double scentMateIntensity;
     /** Acuité olfactive effective de l'agent. Un agent sous le gate garde sa
      *  vraie acuité (faible, p.ex. 0.15 pour l'humain) ; seul un non-agent vaut 0. */
     public final double olfactionAcuity;
@@ -53,6 +56,7 @@ public final class Percept {
                    int scentPreyDir, double scentPreyIntensity,
                    int scentDangerDir, double scentDangerIntensity,
                    int scentCarcassDir, double scentCarcassIntensity,
+                   int scentMateDir, double scentMateIntensity,
                    double olfactionAcuity) {
         this.predatorDir = predatorDir; this.predatorDist = predatorDist;
         this.preyDir = preyDir;         this.preyDist = preyDist;
@@ -69,6 +73,7 @@ public final class Percept {
         this.scentPreyDir = scentPreyDir;       this.scentPreyIntensity = scentPreyIntensity;
         this.scentDangerDir = scentDangerDir;   this.scentDangerIntensity = scentDangerIntensity;
         this.scentCarcassDir = scentCarcassDir; this.scentCarcassIntensity = scentCarcassIntensity;
+        this.scentMateDir = scentMateDir;       this.scentMateIntensity = scentMateIntensity;
         this.olfactionAcuity = olfactionAcuity;
         this.canSmellFrozen = olfactionAcuity >= ui.SimulationConfig.getInstance().olfactionGate;
     }
@@ -83,6 +88,7 @@ public final class Percept {
     public boolean scentPreyDetected()    { return scentPreyIntensity > 0; }
     public boolean scentDangerDetected()  { return scentDangerIntensity > 0; }
     public boolean scentCarcassDetected() { return scentCarcassIntensity > 0; }
+    public boolean scentMateDetected() { return scentMateIntensity > 0; }
     /** true si l'agent a un odorat fonctionnel (au-dessus du gate au moment du
      *  sense). Valeur gelée à la construction → stable pour la vie du Percept. */
     public boolean canSmell() {

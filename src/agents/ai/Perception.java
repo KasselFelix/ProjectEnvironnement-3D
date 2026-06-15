@@ -117,8 +117,8 @@ public final class Perception {
         boolean onLava  = world.getLavaCAValue(ax, ay) > 0;
 
         // ── Olfaction (sous-projet B) : gate biologique + sondes cardinales ──
-        int scentPreyDir = -1, scentDangerDir = -1, scentCarcassDir = -1;
-        double scentPreyI = 0, scentDangerI = 0, scentCarcassI = 0;
+        int scentPreyDir = -1, scentDangerDir = -1, scentCarcassDir = -1, scentMateDir = -1;
+        double scentPreyI = 0, scentDangerI = 0, scentCarcassI = 0, scentMateI = 0;
         double acuity = olfactionAcuity(self);
         ui.SimulationConfig cfg = ui.SimulationConfig.getInstance();
         if (acuity >= cfg.olfactionGate && self instanceof agents.Agent) {
@@ -158,6 +158,19 @@ public final class Perception {
             if (dangerMax > thr) { scentDangerI = dangerMax; scentDangerDir = (dangerBest > thr) ? dangerBestDir : -1; }
             double carcMax = Math.max(carcHere, carcBest);
             if (carcMax > thr) { scentCarcassI = carcMax; scentCarcassDir = (carcBest > thr) ? carcBestDir : -1; }
+            // Sous-projet E : canal de SÉDUCTION = odeur mating de la PROPRE espèce,
+            // hors soi (emitterId). Mêmes sondes cardinales, même seuil de détection.
+            scent.ScentKind ownKind = ag.scentKind();
+            double mateHere = fld.matingIntensityAt(ax, ay, now, ownKind, ag.agentId);
+            double mateBest = 0; int mateBestDir = -1;
+            for (int d = 0; d < 4; d++) {
+                int px = ((ax + pdx[d]) % w + w) % w;
+                int py = ((ay + pdy[d]) % h + h) % h;
+                double mv = fld.matingIntensityAt(px, py, now, ownKind, ag.agentId);
+                if (mv > mateBest) { mateBest = mv; mateBestDir = d; }
+            }
+            double mateMax = Math.max(mateHere, mateBest);
+            if (mateMax > thr) { scentMateI = mateMax; scentMateDir = (mateBest > thr) ? mateBestDir : -1; }
         }
 
         return new Percept(predatorDir, predatorDist, preyDir, preyDist, preyX, preyY,
@@ -165,7 +178,7 @@ public final class Perception {
                 waterDir, waterDist, landDir, landDist, grassDir, grassDist,
                 lavaDir, lavaDist, fireAdj, lavaAdj, inWater, onLava, cardinalFree,
                 scentPreyDir, scentPreyI, scentDangerDir, scentDangerI,
-                scentCarcassDir, scentCarcassI, acuity);
+                scentCarcassDir, scentCarcassI, scentMateDir, scentMateI, acuity);
     }
 
     /**

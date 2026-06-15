@@ -1443,7 +1443,7 @@ public class Agent extends UniqueDynamicObject{
 	public scent.ScentKind[] scentDangerKinds() { return NO_SCENT_KINDS; }
 
 	/** Classe d'odeur de cet agent (resolue par type, comme Landscape.speciesOf). */
-	protected scent.ScentKind scentKind() {
+	public scent.ScentKind scentKind() {
 		if (this instanceof Loup)   return scent.ScentKind.LOUP;
 		if (this instanceof Ours)   return scent.ScentKind.OURS;
 		if (this instanceof Mouton) return scent.ScentKind.MOUTON;
