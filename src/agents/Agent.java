@@ -1505,6 +1505,6 @@ public class Agent extends UniqueDynamicObject{
         if (lastScentEmit != Integer.MIN_VALUE && now - lastScentEmit < period) return;
         lastScentEmit = now;
         float scale = (wetTicks > 0) ? scent.ScentField.WET_EMIT_FACTOR : 1f;
-        field.emit(agentId, scentKind(), familyId(), x, y, now, baseScentIntensity() * scale);
+        field.emit(agentId, scentKind(), familyId(), x, y, now, baseScentIntensity() * scale, inRut());
     }
 }
