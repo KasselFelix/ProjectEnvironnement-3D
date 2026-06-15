@@ -94,14 +94,16 @@ class PerceptionScentTest {
         WorldOfCells w = flatWorld();
         Mouton m1 = new Mouton(10, 10, w);
         int now = w.getIteration();
-        // 1 puff HUMAIN à l'EST (mouton acuité 0.4 → sonde round(0.4*4)=2)
-        w.getScentField().emit(1, scent.ScentKind.HUMAIN, -1, 12, 10, now, 1.0f);
+        // 1 puff LOUP à l'EST (mouton acuité 0.4 → sonde round(0.4*4)=2). Sous-projet C
+        // (berger) : le mouton ne traite plus HUMAIN comme danger, donc on teste la
+        // concentration sur LOUP, qui reste dans son canal danger.
+        w.getScentField().emit(1, scent.ScentKind.LOUP, -1, 12, 10, now, 1.0f);
         double i1 = Perception.sense(m1, w, null, null).scentDangerIntensity;
-        // un 2e puff HUMAIN empilé au même endroit
+        // un 2e puff LOUP empilé au même endroit
         Mouton m2 = new Mouton(10, 10, w);
-        w.getScentField().emit(2, scent.ScentKind.HUMAIN, -1, 12, 10, now, 1.0f);
+        w.getScentField().emit(2, scent.ScentKind.LOUP, -1, 12, 10, now, 1.0f);
         double i2 = Perception.sense(m2, w, null, null).scentDangerIntensity;
-        assertTrue(i2 > i1, "deux odeurs humaines empilees = intensite plus forte");
+        assertTrue(i2 > i1, "deux odeurs de loup empilees = intensite plus forte");
     }
 
     @Test

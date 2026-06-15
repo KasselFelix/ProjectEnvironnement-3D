@@ -344,7 +344,10 @@ public class Mouton extends Agent {
 		return world.loups;
 	}
 
-	private static final scent.ScentKind[] SCENT_DANGER_KINDS = { scent.ScentKind.LOUP, scent.ScentKind.HUMAIN };
+	// Sous-projet C (berger) : le mouton ne craint PAS l'humain (sinon il fuirait
+	// son berger). Aligné sur predators() = world.loups. Futur : par-instance pour
+	// distinguer mouton sauvage vs apprivoisé.
+	private static final scent.ScentKind[] SCENT_DANGER_KINDS = { scent.ScentKind.LOUP };
 	@Override public scent.ScentKind[] scentDangerKinds() { return SCENT_DANGER_KINDS; }
 
 	@Override
