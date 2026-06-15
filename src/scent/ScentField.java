@@ -43,11 +43,18 @@ public final class ScentField {
     /** Nombre de puffs vivants (tests + debug). */
     public int size() { return puffs.size(); }
 
-    /** Ajoute un puff. Ignore les intensites nulles/negatives. */
+    /** Ajoute un puff ORDINAIRE (sans seduction). Compat sous-projets A-D. */
     public void emit(int emitterId, ScentKind kind, int familyId,
                      int x, int y, int birthTick, float baseIntensity) {
+        emit(emitterId, kind, familyId, x, y, birthTick, baseIntensity, false);
+    }
+
+    /** Ajoute un puff, eventuellement marque SEDUCTION (sous-projet E). Ignore
+     *  les intensites nulles/negatives. */
+    public void emit(int emitterId, ScentKind kind, int familyId,
+                     int x, int y, int birthTick, float baseIntensity, boolean mating) {
         if (baseIntensity <= 0f) return;
-        puffs.add(new ScentPuff(emitterId, kind, familyId, x, y, birthTick, baseIntensity));
+        puffs.add(new ScentPuff(emitterId, kind, familyId, x, y, birthTick, baseIntensity, mating));
     }
 
     /**
@@ -218,6 +225,44 @@ public final class ScentField {
         float bestI = EPSILON;
         for (int d = 0; d < 4; d++) {
             float i = sampleAt(nx[d], ny[d], now).of(kind);
+            if (i > bestI) { bestI = i; best = d; }
+        }
+        return best;
+    }
+
+    /**
+     * Sous-projet E : intensite de SEDUCTION de la classe {@code kind} en (px,py),
+     * limitee aux puffs {@code mating} et EXCLUANT l'emetteur {@code excludeEmitter}
+     * (le pretendant ne s'auto-attire pas). 0 si aucun.
+     */
+    public float matingIntensityAt(int px, int py, int now, ScentKind kind, int excludeEmitter) {
+        final int hz = hz();
+        final double lifeSec = SimulationConfig.getInstance().scentLifetimeSec;
+        final double windX = world.getWindX(), windY = world.getWindY();
+        final double windMag = Math.hypot(windX, windY);
+        final boolean raining = world.isRaining();
+        final int w = world.getWidth(), h = world.getHeight();
+        float sum = 0f;
+        for (ScentPuff p : puffs) {
+            if (!p.mating || p.kind != kind || p.emitterId == excludeEmitter) continue;
+            sum += intensityAt(p, px, py, now, hz, lifeSec, windX, windY, windMag, raining, w, h);
+        }
+        return sum;
+    }
+
+    /**
+     * Sous-projet E : direction cardinale (0=N/1=E/2=S/3=O, -1 si rien) de plus
+     * forte odeur de SEDUCTION de la classe {@code kind} parmi les 4 voisins,
+     * EXCLUANT {@code excludeEmitter}. Miroir de {@link #gradientToward}.
+     */
+    public int matingGradientToward(int px, int py, int now, ScentKind kind, int excludeEmitter) {
+        final int w = world.getWidth(), h = world.getHeight();
+        int[] nx = { px, (px + 1) % w, px, (px - 1 + w) % w };
+        int[] ny = { (py - 1 + h) % h, py, (py + 1) % h, py };
+        int best = -1;
+        float bestI = EPSILON;
+        for (int d = 0; d < 4; d++) {
+            float i = matingIntensityAt(nx[d], ny[d], now, kind, excludeEmitter);
             if (i > bestI) { bestI = i; best = d; }
         }
         return best;
