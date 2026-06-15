@@ -122,6 +122,11 @@ public class SimulationConfig {
     public double olfactionDetectBase = 0.15;  // seuil détection = base / acuité
     public double olfactionProbeK     = 4.0;   // distance sonde ≈ acuité × K
 
+    // ── Comportements olfactifs (sous-projet C) ──────────────────────────────
+    public double scentFleeIntensity      = 0.5;   // mouton : intensité danger ≥ → fuite ; < → méfiance
+    public double scentTrackCastIntensity = 0.15;  // loup : intensité proie ≥ → suit le cap ; < → caste
+    public int    scentCommitTicks        = 5;     // ticks d'engagement d'un cap (anti-oscillation)
+
     /** Durée totale d'un cycle 24h jeu en secondes réelles (jour + nuit cumulés).
      *  Default 240s ⇒ 1h jeu = 10s réelles. */
     public float  cycleTotalSec      = 240f;
