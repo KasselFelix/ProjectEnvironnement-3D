@@ -362,6 +362,11 @@ public class Mouton extends Agent {
 	// distinguer mouton sauvage vs apprivoisé.
 	private static final scent.ScentKind[] SCENT_DANGER_KINDS = { scent.ScentKind.LOUP };
 	@Override public scent.ScentKind[] scentDangerKinds() { return SCENT_DANGER_KINDS; }
+	private static final worlds.Season[] MATING_SEASONS = { worlds.Season.AUTUMN };
+	@Override protected worlds.Season[] matingSeasons() { return MATING_SEASONS; }
+	@Override protected boolean matingReady() {
+		return currentStage().canReproduce() && energie >= energieMAX * reproEnergyThreshold;
+	}
 
 	@Override
 	protected boolean canMove() { return energie > 2; }

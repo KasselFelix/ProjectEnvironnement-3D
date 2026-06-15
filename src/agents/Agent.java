@@ -1464,6 +1464,30 @@ public class Agent extends UniqueDynamicObject{
 	/** Famille (meute/troupeau/portee) — branche en B/E ; neutre en A. */
 	protected int familyId() { return -1; }
 
+	// ── Sous-projet E : saison des amours ────────────────────────────────────
+	private static final worlds.Season[] NO_SEASONS = new worlds.Season[0];
+	/** Saisons de reproduction de l'espèce (sous-projet E). Vide = NON saisonnier
+	 *  (se reproduit toute l'année, ex. Humain). Surchargé par espèce. */
+	protected worlds.Season[] matingSeasons() { return NO_SEASONS; }
+
+	/** True si l'agent peut se reproduire CETTE saison : espèce non saisonnière
+	 *  (liste vide) OU saison courante du monde dans sa liste. */
+	public boolean inMatingSeason() {
+		worlds.Season[] s = matingSeasons();
+		if (s.length == 0) return true;
+		worlds.Season now = world.currentSeason();
+		for (worlds.Season z : s) if (z == now) return true;
+		return false;
+	}
+
+	/** True si l'agent est PRÊT à se reproduire (fertile + assez nourri), saison
+	 *  IGNORÉE. Défaut : false (base/Humain ne se reproduisent pas). Surchargé. */
+	protected boolean matingReady() { return false; }
+
+	/** En rut (sous-projet E) : prêt à se reproduire ET en saison des amours.
+	 *  → émet l'odeur de séduction + candidat SEEK_MATE. */
+	public boolean inRut() { return matingReady() && inMatingSeason(); }
+
     /**
      * Depose l'odeur de l'agent dans le champ (appele chaque tick par stepAgents,
      * uniquement si l'agent est vivant). Dans l'eau : aucune emission + fenetre
