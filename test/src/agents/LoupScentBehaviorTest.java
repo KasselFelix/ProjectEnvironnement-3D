@@ -4,6 +4,7 @@ import agents.ai.AgentState;
 import agents.ai.Percept;
 import agents.ai.Perception;
 import landscapegenerator.PerlinNoiseLandscapeGenerator;
+import objects.Species;
 import org.junit.jupiter.api.Test;
 import scent.ScentKind;
 import worlds.WorldOfCells;
@@ -108,5 +109,61 @@ class LoupScentBehaviorTest {
 		Percept p = Perception.sense(l, w, w.humains, w.moutons);   // aucune odeur posée
 		assertNotEquals(AgentState.SCENT_TRACK, l.decideState(p),
 				"sans trace, pas de pistage olfactif (→ SEARCH)");
+	}
+
+	// ====================================================================
+	// Vérif « pister → tuer → manger » (demande utilisateur). La CHASSE
+	// complète (poursuite émergente) est STOCHASTIQUE par nature (jitter
+	// d'errance, cadence, fuite de la proie) : mesurée ~55/60 même dans des
+	// scénarios serrés, donc non assertable sans rendre la suite instable.
+	// On vérifie donc chaque MAILLON de façon DÉTERMINISTE.
+	// ====================================================================
+
+	/** Cas extrême : un loup quasi-AVEUGLE (vision=1) ne voit pas la proie mais
+	 *  la PISTE à l'odeur (la portée de sonde dépend de l'acuité, pas de la vue). */
+	@Test
+	void loupAveuglePisteUneProieParOdorat() {
+		WorldOfCells w = flatWorld();
+		Loup l = hungryLoup(w, 10, 10);
+		l.vision = 1;                                   // quasi-aveugle
+		int now = w.getIteration();
+		// Trace MOUTON à 4 cases (sonde du loup), bien au-delà de sa vue (1).
+		w.getScentField().emit(99, ScentKind.MOUTON, -1, 14, 10, now, 0.9f);
+		Percept p = Perception.sense(l, w, w.humains, w.moutons);
+		assertFalse(p.preyVisible(), "vision=1 : la proie à 4 cases n'est PAS vue");
+		assertTrue(p.scentPreyDetected(), "mais elle est SENTIE (odorat indépendant de la vue)");
+		assertEquals(AgentState.SCENT_TRACK, l.decideState(p),
+				"aveugle + trace proie → pistage olfactif");
+	}
+
+	/** Maillon « tuer » (déterministe) : un loup AFFAMÉ sur la même case qu'un
+	 *  mouton le tue et laisse une carcasse. On exerce la mécanique de prédation
+	 *  (postMove) directement, sans dépendre de la poursuite stochastique. */
+	@Test
+	void loupAffameTueProieEtLaisseCarcasse() {
+		WorldOfCells w = flatWorld();
+		Loup l = hungryLoup(w, 10, 10);                 // energie < HUNGER_RATIO → tue
+		Mouton proie = new Mouton(10, 10, w);           // MÊME case que le loup
+		w.moutons.add(proie); w.agents.add(proie); w.uniqueDynamicObjects.add(proie);
+		assertTrue(w.carcasses.isEmpty(), "aucune carcasse au départ");
+		l.postMove(Perception.sense(l, w, w.humains, w.moutons));   // déclenche la prédation
+		assertFalse(proie._alive, "le mouton sur la case du loup affamé est tué");
+		assertFalse(w.carcasses.isEmpty(), "la mise à mort laisse une carcasse");
+	}
+
+	/** Maillon « manger » (déterministe) : un loup affamé avec une carcasse
+	 *  adjacente la consomme par bouchées et son énergie remonte. */
+	@Test
+	void loupMangeCarcasseEtGagneEnergie() {
+		WorldOfCells w = flatWorld();
+		Loup l = hungryLoup(w, 10, 10);
+		w.spawnCarcass(11, 10, 40.0, Species.MOUTON);   // carcasse adjacente (Est)
+		int energieDepart = l.energie, energieMax = l.energie;
+		for (int t = 0; t < 60 && l._alive; t++) {
+			w.step();
+			energieMax = Math.max(energieMax, l.energie);
+		}
+		assertTrue(energieMax > energieDepart,
+				"le loup a mangé la carcasse (energie passée de " + energieDepart + " à " + energieMax + ")");
 	}
 }
