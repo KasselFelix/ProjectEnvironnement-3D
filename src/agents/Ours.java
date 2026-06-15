@@ -94,6 +94,7 @@ public class Ours extends Agent {
             case EAT:        return "Mange";
             case SEEK_FOOD:  return "Cherche carcasse";
             case RECALL_FOOD: return "Va vers nourriture";
+            case SEEK_MATE:  return "Cherche partenaire";
             default:         return "Errance";
         }
     }
@@ -170,6 +171,8 @@ public class Ours extends Agent {
         if (p.inWater)                   return AgentState.SEEK_LAND;
         if (affame && recallTarget != null) return AgentState.RECALL_FOOD; // rejoint une carcasse mémorisée
         if (affame)                      return AgentState.SEARCH;
+        // Sous-projet E : ours repu en rut (printemps/été) cherche un partenaire.
+        if (wantsToSeekMate(p))          return AgentState.SEEK_MATE;
         if (energie >= energieD)         return AgentState.REST;
         return AgentState.WANDER;
     }
@@ -234,6 +237,9 @@ public class Ours extends Agent {
                 agents.ai.MoveConstraints c = seekCarcassStep(p, vision);
                 return c != null ? c : steerAroundObstacles(p, true, vision);
             }
+            case SEEK_MATE:
+                vitesse = vtrot;
+                return seekMateStep(p, vision);
             case WANDER:
             default:
                 lazyWander();

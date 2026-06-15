@@ -295,6 +295,7 @@ public class Mouton extends Agent {
 			case HERD:          return "Regroupement";
 			case REST:          return "Repos";
 			case WARY:          return "Méfiance";
+			case SEEK_MATE:     return "Cherche partenaire";
 			default:            return "Errance";
 		}
 	}
@@ -585,6 +586,9 @@ public class Mouton extends Agent {
 		// Suivi du parent (§ 10.3) : un agneau colle à son parent, priorité sur
 		// l'herbe / le troupeau / l'errance (mais après la survie ci-dessus).
 		if (shouldFollowParent()) return AgentState.FOLLOW_PARENT;
+		// Sous-projet E : un mouton adulte en rut (automne) cherche un partenaire à
+		// l'odeur — au-dessus du regroupement/broutage, sous la survie (ci-dessus).
+		if (wantsToSeekMate(p)) return AgentState.SEEK_MATE;
 		// La nuit : le troupeau se regroupe (sécurité du nombre) s'il voit des
 		// congénères — SAUF un SOLITAIRE qui évite le troupeau (§ 7.2). Sinon, un
 		// mouton ISOLÉ qui connaît un lieu sûr y rentre (§ 9).
@@ -737,6 +741,9 @@ public class Mouton extends Agent {
 				m = 0;
 				return steerAroundObstacles(p, false, vision);
 			}
+			case SEEK_MATE:
+				vitesse = vmarche;
+				return seekMateStep(p, vision);
 			case WANDER:
 			default:
 				return wanderMove();
