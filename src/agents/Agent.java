@@ -632,6 +632,11 @@ public class Agent extends UniqueDynamicObject{
 	 *  d'une proie à une case d'eau, ou changer de proie). Une proie MOBILE ne bouge
 	 *  que de ~1 case/tick (< seuil) → le suivi n'est pas réinitialisé à tort. */
 	protected int lastAimX = -1, lastAimY = -1;
+	// Sous-projet C : engagement de cap olfactif (anti-oscillation). Le timer
+	// scentCommitLeft est décrémenté UNE fois par tick de décision dans step().
+	protected int scentWpX = -1, scentWpY = -1;   // point de trace engagé (pistage loup)
+	protected int scentFleeDir = -1;              // cap de fuite/méfiance engagé (mouton)
+	protected int scentCommitLeft = 0;            // ticks d'engagement restants
 	/** Saut de cible (cases) au-delà duquel on considère un CHANGEMENT DE BUT → reset.
 	 *  NB : suppose LEAD_PURSUIT=false. Si l'interception est réactivée, la cible
 	 *  anticipée peut sauter de LEAD_FACTOR×2=6 cases quand la proie inverse sa
@@ -793,6 +798,17 @@ public class Agent extends UniqueDynamicObject{
 	protected void resetPursuit() {
 		pursuitTrackTtl = 0; lastPreyX = -1; lastPreyY = -1;
 		huntBestDist = Double.MAX_VALUE; huntStuck = 0; lastAimX = -1; lastAimY = -1;
+		scentWpX = -1; scentWpY = -1; scentFleeDir = -1; scentCommitLeft = 0;   // sous-projet C
+	}
+
+	/** Sous-projet C : case projetée à {@code dist} cases dans la direction
+	 *  cardinale {@code dir} (0=N/1=E/2=S/3=O), tore-aware. Donne un « point de
+	 *  trace » devant l'agent pour le pistage (cible STABLE → pas d'oscillation). */
+	protected int[] projectScentWaypoint(int dir, int dist) {
+		int w = world.getWidth(), h = world.getHeight();
+		int nx = ((x + orientDx(dir) * dist) % w + w) % w;
+		int ny = ((y + orientDy(dir) * dist) % h + h) % h;
+		return new int[]{nx, ny};
 	}
 
 	/**
@@ -1299,6 +1315,7 @@ public class Agent extends UniqueDynamicObject{
 				_lastDx = orientDx(_orient);
 				_lastDy = orientDy(_orient);
 			} else {
+				if (scentCommitLeft > 0) scentCommitLeft--;   // sous-projet C : décroissance de l'engagement
 				currentState = decideState(p);
 				agents.ai.MoveConstraints c = applyState(currentState, p);
 				if (canMove() && wantsToMove) agents.ai.Locomotion.move(this, world, _orient, c);
