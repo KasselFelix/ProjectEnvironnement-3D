@@ -59,6 +59,7 @@ class AgentEmitScentTest {
         loup.x = 11; loup.y = 10;               // sort sur terre (case plate)
         loup.emitScent(f, 5);                   // emet attenue (x0.2)
         assertEquals(1, f.size());
-        assertEquals(0.2f, f.sampleAt(11, 10, 5).of(ScentKind.LOUP), 0.05f);
+        // base Loup 1.25 × WET_EMIT_FACTOR 0.2 = 0.25 (frais, au centre du puff).
+        assertEquals(0.25f, f.sampleAt(11, 10, 5).of(ScentKind.LOUP), 0.05f);
     }
 }

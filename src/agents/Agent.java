@@ -1450,12 +1450,14 @@ public class Agent extends UniqueDynamicObject{
 		return scent.ScentKind.HUMAIN;
 	}
 
-	/** Intensite de base de l'odeur (proportionnelle a la taille du corps). */
+	/** Intensite de base de l'odeur (proportionnelle a la taille du corps). Les
+	 *  rapports inter-especes sont conserves (anciennement 1.4 / 1.0 / 0.8) mais
+	 *  remontes ×1.25 pour que le mouton parte de 1.0 (trace plus persistante). */
 	protected float baseScentIntensity() {
 		float species;
-		if (this instanceof Ours)        species = 1.4f;
-		else if (this instanceof Mouton) species = 0.8f;
-		else                             species = 1.0f;   // Loup, Humain
+		if (this instanceof Ours)        species = 1.75f;
+		else if (this instanceof Mouton) species = 1.0f;
+		else                             species = 1.25f;   // Loup, Humain
 		return species * (float) ui.SimulationConfig.getInstance().scentBaseScale;
 	}
 
