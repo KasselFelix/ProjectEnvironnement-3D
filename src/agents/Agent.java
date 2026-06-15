@@ -667,6 +667,14 @@ public class Agent extends UniqueDynamicObject{
 	// pistage de proie SCENT_TRACK pour éviter toute interférence d'état).
 	protected int mateWpX = -1, mateWpY = -1;
 	protected int mateCommitLeft = 0;
+	// Détecteur de blocage BFS DÉDIÉ au pistage partenaire. pursuitStep utilise des
+	// champs PARTAGÉS (huntStuck/huntBestDist/lastAim) que resetPursuit() remet à zéro
+	// chaque tick hors-chasse (Loup/Ours) ; on isole donc l'état du partenaire ici et
+	// on l'échange le temps de l'appel à pursuitStep (cf. seekMateStep) pour que
+	// l'accumulation anti-blocage survive — comme pour le Mouton qui ne reset jamais.
+	protected double mateBestDist = Double.MAX_VALUE;
+	protected int mateStuck = 0;
+	protected int mateLastAimX = -1, mateLastAimY = -1;
 	/** Saut de cible (cases) au-delà duquel on considère un CHANGEMENT DE BUT → reset.
 	 *  NB : suppose LEAD_PURSUIT=false. Si l'interception est réactivée, la cible
 	 *  anticipée peut sauter de LEAD_FACTOR×2=6 cases quand la proie inverse sa
@@ -829,7 +837,12 @@ public class Agent extends UniqueDynamicObject{
 		pursuitTrackTtl = 0; lastPreyX = -1; lastPreyY = -1;
 		huntBestDist = Double.MAX_VALUE; huntStuck = 0; lastAimX = -1; lastAimY = -1;
 		scentWpX = -1; scentWpY = -1; scentFleeDir = -1; scentCommitLeft = 0;   // sous-projet C
-		mateWpX = -1; mateWpY = -1; mateCommitLeft = 0;   // sous-projet E
+		// Sous-projet E : l'état partenaire (mateWp*/mateCommitLeft/mateStuck) n'est
+		// VOLONTAIREMENT pas réinitialisé ici. resetPursuit() est un nettoyage de
+		// pistage de PROIE appelé chaque tick hors-chasse par Loup/Ours ; effacer le
+		// cap partenaire à ce moment défaisait son anti-oscillation (le mouton, qui
+		// n'appelle pas resetPursuit, ne souffrait pas du bug). Le cycle de vie du
+		// pistage partenaire est géré par seekMateStep + le décrément de step().
 	}
 
 	/** Sous-projet C : case projetée à {@code dist} cases dans la direction
@@ -1516,7 +1529,22 @@ public class Agent extends UniqueDynamicObject{
 				mateWpX = -1; mateWpY = -1;
 			}
 		}
-		if (mateWpX >= 0) return pursuitStep(p, new int[]{mateWpX, mateWpY}, vision);
+		if (mateWpX >= 0) {
+			// pursuitStep lit/écrit les champs de blocage PARTAGÉS (huntStuck/
+			// huntBestDist/lastAim). On y bascule l'état DÉDIÉ au partenaire le temps
+			// de l'appel, puis on le récupère — ainsi l'accumulation anti-blocage
+			// survit au resetPursuit() per-tick de Loup/Ours sans perturber la chasse.
+			double savedBest = huntBestDist; int savedStuck = huntStuck;
+			int savedAimX = lastAimX, savedAimY = lastAimY;
+			huntBestDist = mateBestDist; huntStuck = mateStuck;
+			lastAimX = mateLastAimX; lastAimY = mateLastAimY;
+			agents.ai.MoveConstraints mc = pursuitStep(p, new int[]{mateWpX, mateWpY}, vision);
+			mateBestDist = huntBestDist; mateStuck = huntStuck;
+			mateLastAimX = lastAimX; mateLastAimY = lastAimY;
+			huntBestDist = savedBest; huntStuck = savedStuck;
+			lastAimX = savedAimX; lastAimY = savedAimY;
+			return mc;
+		}
 		return steerAroundObstacles(p, true, vision);   // pas de cap fiable → balaye
 	}
 

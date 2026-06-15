@@ -74,4 +74,42 @@ class LoupSeekMateTest {
         assertTrue(l.mateCommitLeft > 0, "un cap partenaire est engagé");
         assertTrue(l.mateWpY > l.y, "le waypoint partenaire est au Sud (vers l'odeur)");
     }
+
+    /** M1 : decideState (qui appelle resetPursuit chaque tick hors-chasse) ne doit
+     *  PAS effacer l'engagement de cap partenaire — sinon le loup ré-projette son
+     *  waypoint à chaque tick (anti-oscillation défait, contrairement au mouton). */
+    @Test
+    void decideStateNeReinitialisePasLEngagementPartenaire() {
+        WorldOfCells w = flatWorld();
+        setSeason(w, 3);                          // WINTER
+        Loup l = new Loup(10, 10, w); l.energie = l.energieD;
+        w.loups.add(l); w.agents.add(l); w.uniqueDynamicObjects.add(l);
+        Percept p = senseWithMateScent(l, w);
+        assertEquals(AgentState.SEEK_MATE, l.decideState(p));
+        l.applyState(AgentState.SEEK_MATE, p);   // engage un cap stable
+        int commit = l.mateCommitLeft, wpX = l.mateWpX, wpY = l.mateWpY;
+        assertTrue(commit > 0, "cap engagé");
+        // Tick suivant : decideState seul (comme la boucle réelle) ne doit rien effacer.
+        l.decideState(senseWithMateScent(l, w));
+        assertEquals(commit, l.mateCommitLeft, "decideState ne réinitialise pas mateCommitLeft");
+        assertEquals(wpX, l.mateWpX, "waypoint partenaire conservé (X)");
+        assertEquals(wpY, l.mateWpY, "waypoint partenaire conservé (Y)");
+    }
+
+    /** M1 : le détecteur de blocage BFS du pistage partenaire est DÉDIÉ (mateStuck)
+     *  et survit au resetPursuit() per-tick — il s'accumule quand la distance au
+     *  waypoint ne s'améliore pas (ici l'agent ne bouge pas faute de world.step). */
+    @Test
+    void seekMateAccumuleLeBlocageMalgreResetPursuit() {
+        WorldOfCells w = flatWorld();
+        setSeason(w, 3);
+        Loup l = new Loup(10, 10, w); l.energie = l.energieD;
+        w.loups.add(l); w.agents.add(l); w.uniqueDynamicObjects.add(l);
+        for (int t = 0; t < 5; t++) {            // boucle réelle : decideState puis applyState
+            Percept p = senseWithMateScent(l, w);
+            l.decideState(p);                    // appelle resetPursuit (hors-chasse)
+            l.applyState(AgentState.SEEK_MATE, p);
+        }
+        assertTrue(l.mateStuck > 0, "le blocage partenaire s'accumule (isolé de resetPursuit)");
+    }
 }
