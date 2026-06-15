@@ -58,6 +58,22 @@ public class Ours extends Agent {
     /** Écriture d'énergie depuis Agent.eatStep — bornée à energieD. */
     @Override protected void gainEnergie(int delta) { energie = Math.min(energie + delta, energieD); }
 
+    // Sous-projet D : risque = engager un loup (le chasser).
+    @Override protected boolean riskSituation(agents.ai.Percept p) {
+        return p != null && (p.preyVisible() || p.scentPreyDetected() || hasFreshTrack());
+    }
+    @Override protected boolean tookRisk(agents.ai.Percept p) {
+        return currentState == agents.ai.AgentState.HUNT;
+    }
+
+    /** Sous-projet D : l'ours n'avait pas de satisfaction propre (→ 1.0 toujours,
+     *  trait dénué de sens). On la fonde sur faim + sécurité (pas d'axe social). */
+    @Override public double satisfaction() {
+        double hunger = Math.max(0.0, Math.min(1.0, energie / (double) energieD));
+        double safety = isOnFire() ? 0.0 : 1.0;
+        return (hunger + safety) / 2.0;
+    }
+
     /** Stabilise la vitesse à vpas pendant EAT (évite la dérive par postMove). */
     @Override protected void applyEatSpeed() { vitesse = vpas; }
 
@@ -130,7 +146,8 @@ public class Ours extends Agent {
 
     @Override
     public AgentState decideState(Percept p) {
-        boolean affame = energie < energieD * HUNGER_RATIO;
+        boolean affame = energie < energieD * HUNGER_RATIO
+                * character.boldnessFactor(ui.SimulationConfig.getInstance().hungerBoldnessDelta);
         if (!affame) resetPursuit();                       // plus en chasse → oublie la piste
         reinforceFoodSighting(p);
         // Purge les souvenirs FOOD forcément périmés (carcasse déjà décomposée).
@@ -234,7 +251,8 @@ public class Ours extends Agent {
     @Override
     protected void postMove(Percept p) {
         // L4 — dévore tout loup sur la case ; depuis Task 3 la mise à mort crée une carcasse (plus de gain instantané).
-        if (energie < energieD * HUNGER_RATIO) {
+        if (energie < energieD * HUNGER_RATIO
+                * character.boldnessFactor(ui.SimulationConfig.getInstance().hungerBoldnessDelta)) {
             for (Loup l : world.loups) {
                 if (l._alive && l.x == x && l.y == y) {
                     // Task 3 (carcasse) : plus de gain instantané. La mise à mort
