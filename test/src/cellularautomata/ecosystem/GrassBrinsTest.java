@@ -34,4 +34,25 @@ class GrassBrinsTest {
         int max = w.getGrassMaxBrins(10, 10);
         assertTrue(max >= 1 && max <= 5, "dans la bande → max entre 1 et 5 (mesuré=" + max + ")");
     }
+
+    @Test
+    void getGrassCAValueResteBooleen() {
+        WorldOfCells w = flatWorld(0.4);
+        // Force une case herbe pleine puis broute jusqu'à 0 → cellState repasse à 0.
+        w.setGrassBrins(10, 10, 3);
+        assertEquals(1, w.getGrassCAValue(10, 10), "brins>0 → herbe (1)");
+        w.grazeGrassBrin(10, 10);
+        w.grazeGrassBrin(10, 10);
+        w.grazeGrassBrin(10, 10);
+        assertEquals(0, w.getGrassBrins(10, 10), "broutée à 0");
+        assertEquals(0, w.getGrassCAValue(10, 10), "0 brin → plus d'herbe (0)");
+    }
+
+    @Test
+    void brinsBornesAuMax() {
+        WorldOfCells w = flatWorld(0.4);
+        int max = w.getGrassMaxBrins(10, 10);
+        w.setGrassBrins(10, 10, 99);
+        assertEquals(max, w.getGrassBrins(10, 10), "set est borné au max de la case");
+    }
 }

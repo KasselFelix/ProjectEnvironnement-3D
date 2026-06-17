@@ -777,6 +777,10 @@ public class WorldOfCells extends World {
         return grassCA.maxBrinsAt(x % dxCA, y % dyCA);
     }
 
+    public int  getGrassBrins(int x, int y)        { return grassCA.getBrins(x % dxCA, y % dyCA); }
+    public void setGrassBrins(int x, int y, int n) { grassCA.setBrins(x % dxCA, y % dyCA, n); }
+    public void grazeGrassBrin(int x, int y)       { grassCA.grazeBrin(x % dxCA, y % dyCA); }
+
     public int getLavaCAValue(int x, int y)
     {
     	// Système Layer : si la couche du sommet est LAVA, on retourne son

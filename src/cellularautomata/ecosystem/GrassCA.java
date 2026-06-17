@@ -42,6 +42,11 @@ public class GrassCA extends CellularAutomataInteger {
 	/** Durée en ticks de l'état rase, calculée depuis simulationHz (hz-invariant). */
 	public int getGrazedDuration() { return secToTicks(GRAZED_SEC); }
 
+	/** Phase 2 : stock de brins par case (0..maxBrinsAt). Invariant : brins>0 ⟺ cellState==1. */
+	private int[][] brins;
+	/** Remplissage initial des brins, en fraction du max (config). */
+	public double brinsInitialFill = 1.0;
+
 	public GrassCA ( World __world, int __dx , int __dy, CellularAutomataDouble cellsHeightValuesCA )
 	{
 		// Asynchrone in-place (mono-buffer) DÉLIBÉRÉ ; le feu est borné à ~1 case/tick
@@ -53,6 +58,7 @@ public class GrassCA extends CellularAutomataInteger {
 		this.world = __world;
 		this.ashBoost = new int[_dx][_dy];
 		this.grazed   = new int[_dx][_dy];
+		this.brins    = new int[_dx][_dy];
 		this.ignitedThisTick = new boolean[_dx][_dy];
 		this.tDispertion = secToTicks(1.0);   // 1 s de cycle cendre
 	}
@@ -68,7 +74,29 @@ public class GrassCA extends CellularAutomataInteger {
 	/** Tours restants d'état rase pour la cellule (V4) ; 0 = herbe normale.
 	 *  Lu par le rendu pour brunir/raccourcir l'herbe broutée. */
 	public int getGrazed(int x, int y) { return grazed[x % _dx][y % _dy]; }
-	
+
+	public int getBrins(int x, int y) { return brins[x % _dx][y % _dy]; }
+
+	/** Pose un nombre de brins, borné [0, maxBrinsAt] ; synchronise cellState
+	 *  (brins>0 ⟺ herbe). */
+	public void setBrins(int x, int y, int n) {
+		int xm = x % _dx, ym = y % _dy;
+		int m = maxBrinsAt(xm, ym);
+		int v = Math.max(0, Math.min(m, n));
+		brins[xm][ym] = v;
+		setCellState(xm, ym, v > 0 ? 1 : 0);
+	}
+
+	/** Broute 1 brin (une bouchée). Met l'état rase (visuel) et, si plus de brins,
+	 *  remet la case à vide (cellState 0). */
+	public void grazeBrin(int x, int y) {
+		int xm = x % _dx, ym = y % _dy;
+		if (brins[xm][ym] <= 0) return;
+		brins[xm][ym]--;
+		grazed[xm][ym] = getGrazedDuration();
+		if (brins[xm][ym] == 0) setCellState(xm, ym, 0);
+	}
+
 	/**
 	 * Invariant d'altitude de l'herbe : elle ne pousse que dans une bande
 	 * d'altitude [maxH/12, maxH×0.7] — ni dans l'eau / le littoral très bas
@@ -162,10 +190,14 @@ public class GrassCA extends CellularAutomataInteger {
     			{
     				if ( Math.random() < dherbe && canGrowGrass(x, y)){
     					this.setCellState(x, y, 1); // grass
+    					int m = maxBrinsAt(x, y);
+    					brins[x][y] = Math.max(1, (int) Math.round(m * brinsInitialFill));
     					NbHerbe+=1;
     				}
-    				else
+    				else {
     					this.setCellState(x, y, 0); // empty
+    					brins[x][y] = 0;
+    				}
     			}
     			else
     			{
