@@ -91,6 +91,11 @@ public class SimulationConfig {
      *  d'herbe modeste et récupère vite (petit né avec peu, parent peu ponctionné). */
     public double moutonReproEnergyThreshold = 0.40;
     public double moutonReproOffspringRatio  = 0.25;
+    /** Rayon (cases, distance torique) dans lequel un agent trouve un partenaire de
+     *  reproduction. Historiquement 3 (le regroupement nocturne devait suffire), mais à
+     *  faible densité les congénères sont trop dispersés → reproduction étouffée. Partagé
+     *  loup + mouton. Plage utile [3, 15]. */
+    public int    reproRadius                = 3;
 
     // ───── Contrôle manuel d'agent (touche 'c') ───────────────────────────
     /** Sensibilité du mouse-look en pilotage 1ère personne (degrés de rotation

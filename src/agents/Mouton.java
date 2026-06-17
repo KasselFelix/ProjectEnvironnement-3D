@@ -254,10 +254,26 @@ public class Mouton extends Agent {
 
 	@Override public String getTypeName() { return "Mouton"; }
 
-	/** Conditions de broutage : pas en fuite, faim modérée, sur de l'herbe. Partagé par
-	 *  postMove (effet) et isFeeding (vigilance réduite) pour rester synchrones. */
+	/** Case d'herbe broutable : la case courante en priorité, sinon une des 8 voisines
+	 *  (BROUTAGE ADJACENT). Un mouton peut manger l'herbe d'à côté sans marcher dessus,
+	 *  ce qui débloque l'herbe poussée sous un arbre (case impraticable) et facilite
+	 *  énormément l'accès à la nourriture. Renvoie {x,y} de la case à brouter, ou null. */
+	private int[] grassBiteCell() {
+		if (world.getGrassCAValue(x, y) == 1) return new int[]{x, y};
+		int w = world.getWidth(), h = world.getHeight();
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++) {
+				if (dx == 0 && dy == 0) continue;
+				int nx = ((x + dx) % w + w) % w, ny = ((y + dy) % h + h) % h;
+				if (world.getGrassCAValue(nx, ny) == 1) return new int[]{nx, ny};
+			}
+		return null;
+	}
+
+	/** Conditions de broutage : pas en fuite, faim modérée, herbe accessible (sur place
+	 *  ou adjacente). Partagé par postMove (effet) et isFeeding (vigilance réduite). */
 	private boolean isGrazingNow() {
-		return fuite == 0 && energie < (energieMAX * 0.75) && world.getGrassCAValue(x, y) == 1;
+		return fuite == 0 && energie < (energieMAX * 0.75) && grassBiteCell() != null;
 	}
 
 	@Override public boolean isFeeding() {
@@ -383,14 +399,16 @@ public class Mouton extends Agent {
 
 	@Override
 	protected void postMove(Percept p) {
-		//Broute
-		if (isGrazingNow()) {
-			// V4 — broutage : la cellule passe en herbe RASE (markGrazed) au lieu
-			// de disparaître net → repousse différée + rendu « tondu » visible.
-			((worlds.WorldOfCells) world).grassCA.markGrazed(x, y);
-			energie+=energieMAX/100;
-			m=1;
-			//System.out.println("broute");
+		//Broute (sur place OU sur une case adjacente — broutage adjacent)
+		if (fuite == 0 && energie < energieMAX * 0.75) {
+			int[] bite = grassBiteCell();
+			if (bite != null) {
+				// V4 — broutage : la cellule broutée passe en herbe RASE (markGrazed)
+				// → repousse différée + rendu « tondu » visible.
+				((worlds.WorldOfCells) world).grassCA.markGrazed(bite[0], bite[1]);
+				energie+=energieMAX/100;
+				m=1;
+			}
 		}
 
 
@@ -536,10 +554,9 @@ public class Mouton extends Agent {
 
 	/** Rayon (cases) dans lequel un congénère vivant compte comme partenaire de
 	 *  reproduction. La reproduction sexuée exige un tel partenaire à portée. */
-	private static final int REPRO_RADIUS = 3;
 	// Héritage du génome + helpers de mutation/taille : factorisés dans Agent (C3).
 
-	/** Partenaire de reproduction le plus proche (Mouton vivant dans REPRO_RADIUS),
+	/** Partenaire de reproduction le plus proche (Mouton vivant dans reproRadius),
 	 *  ou null si aucun. La reproduction sexuée l'exige ; il fournit aussi la
 	 *  moitié des traits hérités par l'agneau. Le regroupement nocturne maintient
 	 *  le troupeau assez serré pour éviter l'extinction par dispersion. */
@@ -549,7 +566,7 @@ public class Mouton extends Agent {
 		for (Mouton other : world.moutons) {
 			if (other == this || !other._alive) continue;
 			double d = world.distance(other.x, other.y, x, y);
-			if (d <= REPRO_RADIUS && d < bestD) { bestD = d; best = other; }
+			if (d <= ui.SimulationConfig.getInstance().reproRadius && d < bestD) { bestD = d; best = other; }
 		}
 		return best;
 	}
@@ -589,6 +606,12 @@ public class Mouton extends Agent {
 		// Sous-projet E : un mouton adulte en rut (automne) cherche un partenaire à
 		// l'odeur — au-dessus du regroupement/broutage, sous la survie (ci-dessus).
 		if (wantsToSeekMate(p)) return AgentState.SEEK_MATE;
+		// Un mouton AFFAMÉ broute en priorité, MÊME la nuit : la faim prime sur le
+		// regroupement. Sinon le troupeau s'agglutine sur une case sans herbe et meurt
+		// de faim au milieu de la nourriture (les agents se bloquant entre eux, le
+		// troupeau ne pouvait plus se disperser vers l'herbe). Seul un mouton rassasié
+		// (≥ 60 %) se regroupe la nuit pour la sécurité du nombre.
+		if (energie < energieMAX * 0.6 && p.grassVisible()) return AgentState.SEEK_FOOD;
 		// La nuit : le troupeau se regroupe (sécurité du nombre) s'il voit des
 		// congénères — SAUF un SOLITAIRE qui évite le troupeau (§ 7.2). Sinon, un
 		// mouton ISOLÉ qui connaît un lieu sûr y rentre (§ 9).

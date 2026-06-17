@@ -508,10 +508,9 @@ public class Loup extends Agent {
 	}
 
 	/** Rayon dans lequel un congénère vivant compte comme partenaire de repro. */
-	private static final int REPRO_RADIUS = 3;
 	// Mutation/taille + héritage du génome : factorisés dans Agent (C3).
 
-	/** Partenaire de reproduction le plus proche (Loup vivant dans REPRO_RADIUS),
+	/** Partenaire de reproduction le plus proche (Loup vivant dans reproRadius),
 	 *  ou null. Exigé par la reproduction sexuée ; fournit la moitié des gènes. */
 	private Loup findReproPartner() {
 		Loup best = null;
@@ -519,7 +518,7 @@ public class Loup extends Agent {
 		for (Loup other : world.loups) {
 			if (other == this || !other._alive) continue;
 			double d = world.distance(other.x, other.y, x, y);
-			if (d <= REPRO_RADIUS && d < bestD) { bestD = d; best = other; }
+			if (d <= ui.SimulationConfig.getInstance().reproRadius && d < bestD) { bestD = d; best = other; }
 		}
 		return best;
 	}
