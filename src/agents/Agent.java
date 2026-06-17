@@ -371,6 +371,10 @@ public class Agent extends UniqueDynamicObject{
 	public boolean playerControlled = false;
 	/** Intention joueur : manger a la prochaine etape (pose par la hotbar, consomme par step). */
 	public boolean playerWantsEat = false;
+	/** Intention joueur : brouter a la prochaine etape (pose par la hotbar, consomme par step). */
+	public boolean playerWantsGraze = false;
+	/** Phase 2 : par defaut un agent ne broute pas (surcharge par Mouton). */
+	public boolean canGrazeNow() { return false; }
 	/** Cap du corps à appliquer ce tour (0=N/1=E/2=S/3=O, -1 = ne pas tourner).
 	 *  Découplé du regard caméra : Landscape ne le change que quand l'agent avance
 	 *  ou quand l'angle regard/torse devient trop grand. */

@@ -14,7 +14,7 @@ public enum HotbarAction {
     MANGER        ("Manger",        true),
     HURLER        ("Hurler",        true),
     SE_REPOSER    ("Se reposer",    false),
-    BROUTER       ("Brouter",       false),
+    BROUTER       ("Brouter",       true),
     BOIRE         ("Boire",         false),
     SAUTER        ("Sauter",        false),
     ORDRE         ("Donner ordre",  false),
@@ -32,9 +32,10 @@ public enum HotbarAction {
     public boolean available(Agent a) {
         if (!isImplemented()) return false;
         switch (this) {
-            case MANGER: return a.canEatCarcassNow();
-            case HURLER: return (a instanceof Loup) && ((Loup) a).canHowlNow();
-            default:     return false;
+            case MANGER:  return a.canEatCarcassNow();
+            case HURLER:  return (a instanceof Loup) && ((Loup) a).canHowlNow();
+            case BROUTER: return a.canGrazeNow();
+            default:      return false;
         }
     }
 
@@ -42,8 +43,9 @@ public enum HotbarAction {
     public void execute(Agent a) {
         if (!available(a)) return;
         switch (this) {
-            case MANGER: a.playerWantsEat = true; break;
-            case HURLER: ((Loup) a).playerWantsHowl = true; break;
+            case MANGER:  a.playerWantsEat = true; break;
+            case HURLER:  ((Loup) a).playerWantsHowl = true; break;
+            case BROUTER: a.playerWantsGraze = true; break;
             default: break;
         }
     }
@@ -51,18 +53,20 @@ public enum HotbarAction {
     /** Fraction [0,1] du cooldown restant pour cet agent (0 = pret / sans objet) — balayage radial UI. */
     public double cooldownFraction(Agent a) {
         switch (this) {
-            case MANGER: return a.eatBiteCooldownFraction();
-            case HURLER: return (a instanceof Loup) ? ((Loup) a).howlCooldownFraction() : 0.0;
-            default:     return 0.0;
+            case MANGER:  return a.eatBiteCooldownFraction();
+            case HURLER:  return (a instanceof Loup) ? ((Loup) a).howlCooldownFraction() : 0.0;
+            case BROUTER: return a.eatBiteCooldownFraction();
+            default:      return 0.0;
         }
     }
 
     /** Secondes reelles restantes du cooldown (compte a rebours UI). */
     public double cooldownSeconds(Agent a) {
         switch (this) {
-            case MANGER: return a.eatBiteCooldownSeconds();
-            case HURLER: return (a instanceof Loup) ? ((Loup) a).howlCooldownSeconds() : 0.0;
-            default:     return 0.0;
+            case MANGER:  return a.eatBiteCooldownSeconds();
+            case HURLER:  return (a instanceof Loup) ? ((Loup) a).howlCooldownSeconds() : 0.0;
+            case BROUTER: return a.eatBiteCooldownSeconds();
+            default:      return 0.0;
         }
     }
 

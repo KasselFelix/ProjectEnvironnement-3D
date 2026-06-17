@@ -286,6 +286,29 @@ public class Mouton extends Agent {
 		return isGrazingNow();
 	}
 
+	@Override public boolean canGrazeNow() {
+		return eatBiteCooldown == 0 && grassBiteCell() != null;
+	}
+
+	@Override
+	protected boolean consumePlayerActions(agents.ai.Percept p) {
+		boolean acted = super.consumePlayerActions(p);
+		if (playerWantsGraze) {
+			playerWantsGraze = false;
+			int[] bite = grassBiteCell();
+			if (bite != null && eatBiteCooldown == 0) {
+				((worlds.WorldOfCells) world).grazeGrassBrin(bite[0], bite[1]);
+				energie += (int) ui.SimulationConfig.getInstance().energyPerBrin;
+				if (energie > energieMAX) energie = energieMAX;
+				eatBiteCooldown = Math.max(1, (int) Math.round(
+						ui.SimulationConfig.getInstance().grazeCooldownSec * simulationHz()));
+				m = 1;   // cohérent avec postMove : état « Broute » + vigilance réduite
+				acted = true;
+			}
+		}
+		return acted;
+	}
+
 	// Sous-projet D : risque = rester près d'une odeur de loup sans fuir.
 	@Override protected boolean riskSituation(agents.ai.Percept p) {
 		return p != null && p.scentDangerDetected();
