@@ -71,4 +71,14 @@ class GrassBrinsTest {
                 .anyMatch(d -> d.label.toLowerCase().contains("brin"));
         assertTrue(found, "un reglage de brins doit apparaitre au menu HERBE");
     }
+
+    @Test
+    void echelleHerbeProportionnelleAuxBrins() {
+        // 0 brin → échelle min ; au max → 1.0 ; monotone.
+        float s0 = objects.vegetation.Grass.bladeScale(0, 5);
+        float sFull = objects.vegetation.Grass.bladeScale(5, 5);
+        float sMid = objects.vegetation.Grass.bladeScale(2, 5);
+        assertTrue(sFull > sMid && sMid > s0, "echelle croissante avec les brins");
+        assertEquals(1.0f, sFull, 1e-4, "au max → echelle pleine");
+    }
 }

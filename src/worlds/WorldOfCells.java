@@ -902,11 +902,15 @@ public class WorldOfCells extends World {
 	{
 		switch ( cellState )
 		{
-		case 1: // grass: green, fire, burnt
+		case 1: // grass vivante : échelle proportionnelle aux brins
+			float bs = objects.vegetation.Grass.bladeScale(getGrassBrins(x, y), getGrassMaxBrins(x, y));
+			Grass.displayObjectAt(_myWorld,gl,cellState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeight,movingX,movingY, bs);
+			break;
 		case 2:
 		case 3:
-		case 4:
-			Grass.displayObjectAt(_myWorld,gl,cellState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeight,movingX,movingY);
+		case 4: // feu, brûlé : échelle pleine (pas affectée par les brins)
+			Grass.displayObjectAt(_myWorld,gl,cellState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeight,movingX,movingY, 1f);
+			break;
 		default:
 			// nothing to display at this location.
 		}

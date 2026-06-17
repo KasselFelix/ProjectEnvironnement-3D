@@ -19,7 +19,16 @@ public class Grass {
         return (h & 0x7FFFFFFF) / (double) Integer.MAX_VALUE;
     }
 
-    public static void displayObjectAt(World myWorld, GL2 gl, int cellState, float x, float y, double height, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight,int movingX,int movingY )
+    /** Phase 2 : échelle (hauteur/densité) d'une touffe selon ses brins.
+     *  0 brin → SAPLING_MIN (rase), max → 1.0, linéaire entre les deux. */
+    private static final float GRASS_SAPLING_MIN = 0.3f;
+    public static float bladeScale(int brins, int maxBrins) {
+        if (maxBrins <= 0) return GRASS_SAPLING_MIN;
+        float f = Math.max(0f, Math.min(1f, brins / (float) maxBrins));
+        return GRASS_SAPLING_MIN + (1f - GRASS_SAPLING_MIN) * f;
+    }
+
+    public static void displayObjectAt(World myWorld, GL2 gl, int cellState, float x, float y, double height, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight,int movingX,int movingY, float bladeScale )
     {
 
         if ( cellState > 0 )
@@ -56,9 +65,9 @@ public class Grass {
             		break;
             }
     		gl.glVertex3f( px, py, altitude );
-            gl.glVertex3f( px, py+lenY*0.4f, altitude+1.f);
+            gl.glVertex3f( px, py+lenY*0.4f*bladeScale, altitude+bladeScale);
             gl.glVertex3f( px, py, altitude );
-            gl.glVertex3f( px, py-lenY*0.4f, altitude+1.f);
+            gl.glVertex3f( px, py-lenY*0.4f*bladeScale, altitude+bladeScale);
 
             switch ( cellState )
             {
@@ -75,9 +84,9 @@ public class Grass {
             		break;
             }
             gl.glVertex3f( px, py, altitude );
-            gl.glVertex3f( px-lenX*0.4f, py, altitude+1.f);
+            gl.glVertex3f( px-lenX*0.4f*bladeScale, py, altitude+bladeScale);
     		gl.glVertex3f( px, py, altitude );
-            gl.glVertex3f( px+lenX*0.4f, py, altitude+1.f);
+            gl.glVertex3f( px+lenX*0.4f*bladeScale, py, altitude+bladeScale);
         }
     }
 }
