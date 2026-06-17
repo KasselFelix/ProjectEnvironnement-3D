@@ -46,6 +46,8 @@ public class GrassCA extends CellularAutomataInteger {
 	private int[][] brins;
 	/** Remplissage initial des brins, en fraction du max (config). */
 	public double brinsInitialFill = 1.0;
+	/** Brins regagnés par seconde-jeu quand la case est sous son max saisonnier (config). */
+	public double brinsRegrowthPerSec = 6.0;
 
 	public GrassCA ( World __world, int __dx , int __dy, CellularAutomataDouble cellsHeightValuesCA )
 	{
@@ -68,6 +70,7 @@ public class GrassCA extends CellularAutomataInteger {
 	 *  le Mouton quand il broute. */
 	public void markGrazed(int x, int y) {
 		setCellState(x, y, 0);
+		brins[x % _dx][y % _dy] = 0;   // I1 : pas de brins fantômes (cellState 0 ⟹ brins 0)
 		grazed[x % _dx][y % _dy] = getGrazedDuration();
 	}
 
@@ -95,6 +98,20 @@ public class GrassCA extends CellularAutomataInteger {
 		brins[xm][ym]--;
 		grazed[xm][ym] = getGrazedDuration();
 		if (brins[xm][ym] == 0) setCellState(xm, ym, 0);
+	}
+
+	/** Fait tendre les brins de la case vers son max saisonnier : repousse si en
+	 *  dessous, décroissance douce si au-dessus (le max a baissé en hiver).
+	 *  Probabilité par tick dérivée d'un taux par seconde-jeu → hz-invariant (on
+	 *  divise par simulationHz), même idiome Math.random()/tick que la germination. */
+	private void regrowBrins(int x, int y) {
+		int m = maxBrinsAt(x, y);
+		if (brins[x][y] == m) return;
+		double p = brinsRegrowthPerSec * world.seasonalFertility()
+				/ SimulationConfig.getInstance().simulationHz;
+		if (Math.random() >= p) return;
+		if (brins[x][y] < m) brins[x][y]++;   // repousse
+		else                  brins[x][y]--;   // décroît si au-dessus du max saisonnier
 	}
 
 	/**
@@ -228,11 +245,8 @@ public class GrassCA extends CellularAutomataInteger {
     				// V4 : une cellule encore RASE (récemment broutée) ne repousse pas.
     				if ( this.getCellState(i,j) == 0
     						&& world.getLavaCAValue(i, j)==0 && grazed[i][j]==0){
-    					if(Math.random() < grassGerminationProb(i, j) * tickRateScale() && canGrowGrass(i, j)){
-    						this.setCellState(i,j,1);
-    						/*solid[x][y][]=1;*/
-    						NbHerbe+=1;
-    					}
+    					regrowBrins(i, j);                 // 0 → 1+ brin si le max le permet
+    					if (brins[i][j] > 0) { this.setCellState(i,j,1); NbHerbe+=1; }
 	    			}
     				//pour un herbe en cendre
     				else if ( this.getCellState(i,j) == 3+tDispertion){
@@ -242,10 +256,12 @@ public class GrassCA extends CellularAutomataInteger {
     				// Pour une case avec herbe
 	    			else if ( this.getCellState(i,j) == 1 ) // grass
 	    			{
+	    				regrowBrins(i, j);   // repousse vers le max saisonnier (ou décroît si au-dessus)
 	    				if(world.getLavaCAValue(i, j)!=0){
 	    					// Lave directement sur la cellule : l'herbe (petite) est
 	    					// consumée instantanément, pas de phase visible de combustion.
 	    					this.setCellState(i,j,0);
+	    					brins[i][j] = 0;   // invariant I1 : brins>0 ⟺ cellState==1
 						}else{
 		    				// Propagation — Option 2 : herbe→herbe 8-connexe probabiliste
 		    				// bornée par tick (ignitedThisTick) ; sources de chaleur EXTERNES
@@ -276,6 +292,7 @@ public class GrassCA extends CellularAutomataInteger {
 		    					this.setCellState(i,j,2);
 		    					ignitedThisTick[i][j] = true;
 		    					NbHerbe-=1;
+		    					brins[i][j] = 0;   // invariant I1 : brins>0 ⟺ cellState==1
 		    				}
 		    				else
 		    					if ( Math.random() < pF * tickRateScale() ) // feu spontané
@@ -283,6 +300,7 @@ public class GrassCA extends CellularAutomataInteger {
 		    						this.setCellState(i,j,2);
 		    						ignitedThisTick[i][j] = true;
 		    						NbHerbe-=1;
+		    						brins[i][j] = 0;   // invariant I1 : brins>0 ⟺ cellState==1
 		    					}
 		    					else
 		    					{

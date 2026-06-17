@@ -55,4 +55,13 @@ class GrassBrinsTest {
         w.setGrassBrins(10, 10, 99);
         assertEquals(max, w.getGrassBrins(10, 10), "set est borné au max de la case");
     }
+
+    @Test
+    void repousseVersLeMaxApresPlusieursTicks() {
+        WorldOfCells w = flatWorld(0.4);
+        w.setGrassBrins(10, 10, 0);              // case rase
+        w.grassCA.brinsRegrowthPerSec = 50.0;    // repousse rapide pour un test court (grassCA est public)
+        for (int t = 0; t < 200; t++) w.step();  // ~10 s de jeu
+        assertTrue(w.getGrassBrins(10, 10) >= 1, "l'herbe repousse (>=1 brin)");
+    }
 }
