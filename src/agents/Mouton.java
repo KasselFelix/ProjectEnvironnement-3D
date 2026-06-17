@@ -254,20 +254,26 @@ public class Mouton extends Agent {
 
 	@Override public String getTypeName() { return "Mouton"; }
 
-	/** Case d'herbe broutable : la case courante en priorité, sinon une des 8 voisines
-	 *  (BROUTAGE ADJACENT). Un mouton peut manger l'herbe d'à côté sans marcher dessus,
-	 *  ce qui débloque l'herbe poussée sous un arbre (case impraticable) et facilite
-	 *  énormément l'accès à la nourriture. Renvoie {x,y} de la case à brouter, ou null. */
+	/** Case d'herbe broutable la plus fournie : la case courante en priorité à brins
+	 *  égaux, sinon la voisine (8-conn) la plus riche en brins. Un mouton peut manger
+	 *  l'herbe d'à côté sans marcher dessus, ce qui débloque l'herbe sous un arbre
+	 *  (case impraticable) et facilite l'accès à la nourriture.
+	 *  Renvoie {x,y} de la case à brouter, ou null. */
 	private int[] grassBiteCell() {
-		if (world.getGrassCAValue(x, y) == 1) return new int[]{x, y};
 		int w = world.getWidth(), h = world.getHeight();
+		int bx = -1, by = -1, bestBrins = 0;
+		// case courante prioritaire à brins égaux
+		if (world.getGrassCAValue(x, y) == 1) { bx = x; by = y; bestBrins = ((worlds.WorldOfCells) world).getGrassBrins(x, y); }
 		for (int dx = -1; dx <= 1; dx++)
 			for (int dy = -1; dy <= 1; dy++) {
 				if (dx == 0 && dy == 0) continue;
 				int nx = ((x + dx) % w + w) % w, ny = ((y + dy) % h + h) % h;
-				if (world.getGrassCAValue(nx, ny) == 1) return new int[]{nx, ny};
+				if (world.getGrassCAValue(nx, ny) == 1) {
+					int b = ((worlds.WorldOfCells) world).getGrassBrins(nx, ny);
+					if (b > bestBrins) { bestBrins = b; bx = nx; by = ny; }
+				}
 			}
-		return null;
+		return (bx >= 0) ? new int[]{bx, by} : null;
 	}
 
 	/** Conditions de broutage : pas en fuite, faim modérée, herbe accessible (sur place
@@ -399,15 +405,16 @@ public class Mouton extends Agent {
 
 	@Override
 	protected void postMove(Percept p) {
-		//Broute (sur place OU sur une case adjacente — broutage adjacent)
-		if (fuite == 0 && energie < energieMAX * 0.75) {
+		//Broute (sur place OU case adjacente la plus fournie ; 1 brin / cooldown)
+		if (fuite == 0 && energie < energieMAX * 0.75 && eatBiteCooldown == 0) {
 			int[] bite = grassBiteCell();
 			if (bite != null) {
-				// V4 — broutage : la cellule broutée passe en herbe RASE (markGrazed)
-				// → repousse différée + rendu « tondu » visible.
-				((worlds.WorldOfCells) world).grassCA.markGrazed(bite[0], bite[1]);
-				energie+=energieMAX/100;
-				m=1;
+				((worlds.WorldOfCells) world).grazeGrassBrin(bite[0], bite[1]);
+				energie += (int) ui.SimulationConfig.getInstance().energyPerBrin;
+				if (energie > energieMAX) energie = energieMAX;
+				m = 1;
+				eatBiteCooldown = Math.max(1, (int) Math.round(
+						ui.SimulationConfig.getInstance().grazeCooldownSec * simulationHz()));
 			}
 		}
 
@@ -545,6 +552,7 @@ public class Mouton extends Agent {
 
 	@Override
 	protected void postTick() {
+		if (eatBiteCooldown > 0) eatBiteCooldown--;   // Phase 2 : cadence du broutage (cf. Loup)
 		if ( world.getIteration() % ticksPerGameSecond() == 0 )if(_fireState==1)energie-=energieMAX/10;
 
 		// Entraînement cérébral (§ 6.2) + émergence du caractère (§ 7) :
