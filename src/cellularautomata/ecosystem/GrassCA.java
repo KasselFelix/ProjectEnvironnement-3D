@@ -104,6 +104,39 @@ public class GrassCA extends CellularAutomataInteger {
 		return h >= maxH / 12 && h <= maxH * 0.7;
 	}
 
+	/** Plafond ABSOLU de brins par case (config Phase 2). */
+	public int brinsMax = 5;
+
+	/** Fertilité d'altitude CONTINUE ∈ [0,1] : 0 hors bande (canGrowGrass false),
+	 *  sinon bosse lisse avec optimum au milieu de la bande [maxH/12, 0.7·maxH].
+	 *  Donne le gradient 1-5 (≠ le booléen canGrowGrass). */
+	public double grassFertility(int x, int y) {
+		if (!canGrowGrass(x, y)) return 0.0;
+		double maxH = world.getMaxEverHeight();
+		double lo = maxH / 12.0, hi = maxH * 0.7;
+		double hN = (world.getCellHeight(x, y) - lo) / (hi - lo);   // 0 au bas de bande, 1 au haut
+		double bump = 1.0 - Math.pow((hN - 0.5) / 0.5, 2);          // optimum au milieu
+		return Math.max(0.0, Math.min(1.0, bump));
+	}
+
+	/** Max de brins de la case CE tick : 0 hors bande, sinon
+	 *  clamp(round(brinsMax × fertilité × sol × saison), 1, brinsMax).
+	 *  La saison fait respirer la pâture (hiver → max plus bas). */
+	public int maxBrinsAt(int x, int y) {
+		double f = grassFertility(x, y);
+		if (f <= 0.0) return 0;
+		// Sol : malus pierre, bonus cendre post-incendie (cohérent avec grassGerminationProb).
+		double soil = (world.getStoneCAValue(x, y) > 0) ? STONE_FERTILITY_MAX : 1.0;
+		if (ashBoost[x % _dx][y % _dy] > 0) soil = Math.min(1.0, soil * ASH_BOOST_FACTOR);
+		double v = brinsMax * f * soil * world.seasonalFertility();
+		int m = (int) Math.round(v);
+		return Math.max(1, Math.min(brinsMax, m));
+	}
+
+	/** Plafond de brins sur sol minéral (≠ STONE_GROWTH_FACTOR qui régit la PROBA
+	 *  de germination ; ici c'est le plafond de brins, pas une probabilité). */
+	private static final double STONE_FERTILITY_MAX = 0.3;
+
 	/** Marque la cellule comme enrichie par la cendre : booste pH pendant
 	 *  ASH_BOOST_DURATION ticks (succession après incendie). */
 	public void markAsh(int x, int y) {

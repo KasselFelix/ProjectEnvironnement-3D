@@ -771,7 +771,12 @@ public class WorldOfCells extends World {
     {
     	return grassCA.getCellState(x%dxCA,y%dyCA);
     }
-    
+
+    /** Phase 2 : max de brins de la case (0 hors bande d'herbe). */
+    public int getGrassMaxBrins(int x, int y) {
+        return grassCA.maxBrinsAt(x % dxCA, y % dyCA);
+    }
+
     public int getLavaCAValue(int x, int y)
     {
     	// Système Layer : si la couche du sommet est LAVA, on retourne son
