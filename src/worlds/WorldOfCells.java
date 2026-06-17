@@ -411,6 +411,9 @@ public class WorldOfCells extends World {
     		grassCA.dherbe = config.herbeDensite;
     		grassCA.pH     = config.herbeProbApparition;
     		grassCA.pF     = config.herbeProbFeu;
+    		grassCA.brinsMax            = config.brinsMax;
+    		grassCA.brinsRegrowthPerSec = config.brinsRegrowthPerSec;
+    		grassCA.brinsInitialFill    = config.brinsInitialFill;
     	}
     	if (lavaCA != null) {
     		lavaCA.pErruption      = config.laveProbErruption;

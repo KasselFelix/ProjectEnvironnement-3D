@@ -189,10 +189,14 @@ public final class ParamRegistry {
         // ───── HERBE ───────────────────────────────────────────────────────
         defs.add(doubleDef("HERBE", "Densite initiale", Visibility.LAUNCH_ONLY,
                 () -> config.herbeDensite, v -> config.herbeDensite = v, 0.0, 1.0, 0.05, "%.2f"));
-        defs.add(doubleDef("HERBE", "Croissance / tick", Visibility.BOTH,
-                () -> config.herbeProbApparition, v -> config.herbeProbApparition = v, 0.0, 0.001, 0.000002, "%.6f"));
         defs.add(doubleDef("HERBE", "Combustion / tick", Visibility.LAUNCH_ONLY,
                 () -> config.herbeProbFeu, v -> config.herbeProbFeu = v, 0.0, 0.001, 0.0000001, "%.7f"));
+        defs.add(intDef("HERBE", "Brins max/case", Visibility.BOTH,
+                () -> config.brinsMax, v -> config.brinsMax = v, 1, 9, 1));
+        defs.add(doubleDef("HERBE", "Energie/brin", Visibility.BOTH,
+                () -> config.energyPerBrin, v -> config.energyPerBrin = v, 1, 200, 5, "%.0f"));
+        defs.add(doubleDef("HERBE", "Repousse brins/s", Visibility.BOTH,
+                () -> config.brinsRegrowthPerSec, v -> config.brinsRegrowthPerSec = v, 0.5, 20, 0.5, "%.1f"));
 
         // ───── LAVE ────────────────────────────────────────────────────────
         defs.add(doubleDef("LAVE", "Proba eruption", Visibility.BOTH,

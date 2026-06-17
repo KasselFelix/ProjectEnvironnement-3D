@@ -64,4 +64,11 @@ class GrassBrinsTest {
         for (int t = 0; t < 200; t++) w.step();  // ~10 s de jeu
         assertTrue(w.getGrassBrins(10, 10) >= 1, "l'herbe repousse (>=1 brin)");
     }
+
+    @Test
+    void reglagesBrinsExposesAuMenu() {
+        boolean found = ui.ParamRegistry.build(new ui.SimulationConfig()).stream()
+                .anyMatch(d -> d.label.toLowerCase().contains("brin"));
+        assertTrue(found, "un reglage de brins doit apparaitre au menu HERBE");
+    }
 }

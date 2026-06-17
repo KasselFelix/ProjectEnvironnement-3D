@@ -162,6 +162,12 @@ public class SimulationConfig {
     public double herbeDensite         = 0.55;      // dherbe   — densité initiale d'herbe
     public double herbeProbApparition  = 0.000006;  // pH       — proba de pousse / tick / case
     public double herbeProbFeu         = 0.0000003; // pF       — proba que l'herbe prenne feu spontanément
+    // ── Herbe en brins (Phase 2) ─────────────────────────────────────────────
+    public int    brinsMax           = 5;     // plafond de brins par case
+    public double energyPerBrin      = 60.0;  // énergie gagnée par bouchée (1 brin) — calibré
+    public double grazeCooldownSec   = 0.5;   // secondes-jeu entre deux bouchées (mouton)
+    public double brinsRegrowthPerSec= 6.0;   // brins/sec quand sous le max (×saison) — calibré
+    public double brinsInitialFill   = 1.0;   // fraction du max remplie à l'init
 
     // ───── Lave (cf. LavaCA.java) ──────────────────────────────────────────
     public double laveProbErruption    = 0.0;       // pErruption — 0 = jamais (sauf touche `r`)
