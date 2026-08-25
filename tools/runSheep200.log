@@ -1,0 +1,38 @@
+Map : 17-603-1887-898786-1955240417, persistence : 1.0, octave : 3.0, fact : 0.04, periods : (8,8)
+# dim=200 saison=3j an=57600 ticks | loups=0 moutons=30 ours=0 humains=0
+# loupAge=15 moutonAge=24 loupE=1500 moutonE=1500
+day	season	loups	moutons	ours	humains
+0	SPRING	0	30	0	0	Em=1500	El=0	herbe=45%	moutonSurHerbe=43%
+1	SPRING	0	29	0	0	Em=1099	El=0	herbe=66%	moutonSurHerbe=10%
+2	SPRING	0	29	0	0	Em=906	El=0	herbe=73%	moutonSurHerbe=17%
+3	SUMMER	0	29	0	0	Em=782	El=0	herbe=73%	moutonSurHerbe=14%
+4	SUMMER	0	23	0	0	Em=720	El=0	herbe=73%	moutonSurHerbe=17%
+5	SUMMER	0	20	0	0	Em=630	El=0	herbe=74%	moutonSurHerbe=0%
+6	AUTUMN	0	16	0	0	Em=669	El=0	herbe=72%	moutonSurHerbe=6%
+7	AUTUMN	0	15	0	0	Em=324	El=0	herbe=63%	moutonSurHerbe=7%
+8	AUTUMN	0	7	0	0	Em=351	El=0	herbe=67%	moutonSurHerbe=0%
+9	WINTER	0	4	0	0	Em=538	El=0	herbe=68%	moutonSurHerbe=0%
+10	WINTER	0	3	0	0	Em=791	El=0	herbe=62%	moutonSurHerbe=0%
+11	WINTER	0	3	0	0	Em=1117	El=0	herbe=58%	moutonSurHerbe=0%
+12	SPRING	0	3	0	0	Em=1127	El=0	herbe=53%	moutonSurHerbe=100%
+13	SPRING	0	3	0	0	Em=987	El=0	herbe=64%	moutonSurHerbe=67%
+14	SPRING	0	3	0	0	Em=1123	El=0	herbe=66%	moutonSurHerbe=0%
+15	SUMMER	0	3	0	0	Em=1112	El=0	herbe=74%	moutonSurHerbe=67%
+16	SUMMER	0	3	0	0	Em=1128	El=0	herbe=74%	moutonSurHerbe=100%
+17	SUMMER	0	3	0	0	Em=1132	El=0	herbe=76%	moutonSurHerbe=67%
+18	AUTUMN	0	3	0	0	Em=1126	El=0	herbe=76%	moutonSurHerbe=100%
+19	AUTUMN	0	3	0	0	Em=1133	El=0	herbe=74%	moutonSurHerbe=100%
+20	AUTUMN	0	3	0	0	Em=1116	El=0	herbe=73%	moutonSurHerbe=67%
+21	WINTER	0	3	0	0	Em=1106	El=0	herbe=74%	moutonSurHerbe=33%
+22	WINTER	0	3	0	0	Em=1136	El=0	herbe=66%	moutonSurHerbe=67%
+23	WINTER	0	3	0	0	Em=1126	El=0	herbe=59%	moutonSurHerbe=0%
+24	SPRING	0	2	0	0	Em=1115	El=0	herbe=55%	moutonSurHerbe=50%
+25	SPRING	0	0	0	0	Em=0	El=0	herbe=67%	moutonSurHerbe=0%
+# EXTINCTION TOTALE jour 25
+# --- BILAN ---
+# loups   min=0  EXTINCT à un moment
+# moutons min=0  EXTINCT à un moment
+  [rut MOUTON] j6 : 16 moutons
+  [rut LOUP]   j9 : 0 loups
+  [rut MOUTON] j18 : 3 moutons
+  [rut LOUP]   j21 : 0 loups

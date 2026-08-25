@@ -58,10 +58,24 @@ class CarcasseTest {
         w.spawnCarcass(25, 25, 200.0, objects.Species.MOUTON);   // sur la case du loup
         for (int t = 0; t < 2000; t++) {
             w.setIteration(t); l.step();
-            if (l.energie >= (int) (l.energieD * Loup.HUNGER_RATIO)) break;
+            if (l.energie >= (int) (l.energieD * ui.SimulationConfig.getInstance().loupHungerRatio)) break;
         }
-        assertTrue(l.energie >= (int) (l.energieD * Loup.HUNGER_RATIO), "le loup a mange jusqu'a ne plus etre affame");
+        assertTrue(l.energie >= (int) (l.energieD * ui.SimulationConfig.getInstance().loupHungerRatio), "le loup a mange jusqu'a ne plus etre affame");
         assertTrue(w.carcasses.get(0).mass < 200.0, "la carcasse a diminue");
+    }
+
+    @Test
+    void loupSeGaveDeSaProieMemeNonAffame() {
+        // Gorge-feeding : au-dessus du seuil de faim (donc PAS affamé) mais ventre non
+        // plein, un loup à côté d'une carcasse la MANGE quand même (finit sa proie) au
+        // lieu de flâner / re-chasser → supprime le surplus killing.
+        WorldOfCells w = flat();
+        Loup l = new Loup(25, 25, w); l.isFounder = true; w.loups.add(l);
+        l.energie = (int) (l.energieD * 0.85);             // ~85% : ni affamé (<70%) ni plein (100%)
+        w.spawnCarcass(26, 25, 50.0, objects.Species.MOUTON);   // carcasse adjacente
+        agents.ai.Percept p = agents.ai.Perception.sense(l, w, w.humains, w.moutons);
+        assertEquals(agents.ai.AgentState.EAT, l.decideState(p),
+                "un loup non affamé mais pas rassasié se gave de sa carcasse adjacente");
     }
 
     @Test

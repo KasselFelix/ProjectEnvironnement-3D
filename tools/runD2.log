@@ -1,0 +1,17 @@
+Map : 23-110-10634-468198-961606986, persistence : 1.0, octave : 3.0, fact : 0.08, periods : (8,8)
+# dim=100 saison=3j an=57600 ticks | loups=0 moutons=20 ours=0 humains=0
+# loupAge=15 moutonAge=24 loupE=1500 moutonE=1500
+day	season	loups	moutons	ours	humains
+0	SPRING	0	20	0	0
+1	SPRING	0	20	0	0
+2	SPRING	0	15	0	0
+3	SUMMER	0	11	0	0
+4	SUMMER	0	5	0	0
+5	SUMMER	0	1	0	0
+6	AUTUMN	0	1	0	0
+7	AUTUMN	0	0	0	0
+# EXTINCTION TOTALE jour 7
+# --- BILAN ---
+# loups   min=0  EXTINCT à un moment
+# moutons min=0  EXTINCT à un moment
+  [rut MOUTON] j6 : 1 moutons

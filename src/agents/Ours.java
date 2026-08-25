@@ -31,8 +31,9 @@ public class Ours extends Agent {
 
     public double swimFactor = 0.5;
 
-    /** Sous ce seuil de faim (fraction de energieD) l'ours chasse et dévore. */
-    public static final double HUNGER_RATIO = 0.7;
+    /** Sous ce seuil de faim (fraction de energieD) l'ours chasse et dévore.
+     *  Configurable (équilibre) ; tous les comportements de faim lisent ce seuil. */
+    private double hungerRatio() { return ui.SimulationConfig.getInstance().oursHungerRatio; }
 
     /** Cible mémorisée courante du fourragement (RECALL_FOOD) ; null = aucune. */
     private int[] recallTarget = null;
@@ -152,7 +153,7 @@ public class Ours extends Agent {
 
     @Override
     public AgentState decideState(Percept p) {
-        boolean affame = energie < energieD * HUNGER_RATIO
+        boolean affame = energie < energieD * hungerRatio()
                 * character.boldnessFactor(ui.SimulationConfig.getInstance().hungerBoldnessDelta);
         if (!affame) resetPursuit();                       // plus en chasse → oublie la piste
         reinforceFoodSighting(p);
@@ -160,11 +161,12 @@ public class Ours extends Agent {
         memory.purgeStale(agents.ai.MemoryKind.FOOD, world.getIteration(), foodTtlTicks());
         // Calcule la cible de fourragement (RECALL_FOOD) depuis la mémoire.
         double[] food = bestRememberedFood();
-        recallTarget = (food != null && food[2] >= acceptThreshold(energie, energieD * HUNGER_RATIO))
+        recallTarget = (food != null && food[2] >= acceptThreshold(energie, energieD * hungerRatio()))
                 ? new int[]{(int) food[0], (int) food[1]} : null;
+        boolean rassasie = energie >= energieD;   // gorge-feeding : finit sa proie avant de re-chasser
         if (isOnFire())                  return AgentState.ON_FIRE;
         if (p.lavaVisible())             return AgentState.FLEE_LAVA;   // L2
-        if (affame && carcassAdjacente(p)) return AgentState.EAT;         // carcasse adjacente : festin
+        if (!rassasie && carcassAdjacente(p)) return AgentState.EAT;    // se gave jusqu'à satiété (pas seulement affamé)
         if (affame && p.carcassVisible()) return AgentState.SEEK_FOOD;  // carcasse en vue : s'y rendre
         if (affame && p.preyVisible())   return AgentState.HUNT;        // proie en vue (prioritaire)
         if (affame && hasFreshTrack())   return AgentState.HUNT;        // proie perdue de vue mais piste fraîche → persistance
@@ -262,7 +264,7 @@ public class Ours extends Agent {
     @Override
     protected void postMove(Percept p) {
         // L4 — dévore tout loup sur la case ; depuis Task 3 la mise à mort crée une carcasse (plus de gain instantané).
-        if (energie < energieD * HUNGER_RATIO
+        if (energie < energieD * hungerRatio()
                 * character.boldnessFactor(ui.SimulationConfig.getInstance().hungerBoldnessDelta)) {
             for (Loup l : world.loups) {
                 if (l._alive && l.x == x && l.y == y) {
@@ -288,7 +290,8 @@ public class Ours extends Agent {
             if (world.getCellHeight(x, y) < 0) energie -= 2;
             // ÷windF SEULEMENT si l'ours a bougé ce tour (à l'arrêt le vent ne change pas l'effort).
             boolean moved = (x != lastX || y != lastY);
-            energie -= metabolicCost(moved ? 1.0 / windF : 1.0);   // L8 — coût métabolique modulé par l'activité
+            energie -= metabolicCost((moved ? 1.0 / windF : 1.0)
+                    * ui.SimulationConfig.getInstance().oursMetabolicFactor);   // L8 + facteur métabolique configurable (équilibre)
         }
         if (world.getCellHeight(x, y) < 0) vitesse *= swimFactor;
         vitesse *= world.coldSpeedFactor();   // L6
@@ -299,8 +302,10 @@ public class Ours extends Agent {
 
         // Reproduction sexuée (mirror Loup).
         Ours mate = findReproPartner();
-        if (inMatingSeason() && currentStage().canReproduce() && energie >= energieD * reproEnergyThreshold && mate != null
+        if (inMatingSeason() && currentMatingPeriod() != lastBredPeriod
+                && currentStage().canReproduce() && energie >= energieD * reproEnergyThreshold && mate != null
                 && Math.random() < Prepro * genome.reproProbaFactor() * currentStage().fertilityFactor()) {
+            lastBredPeriod = currentMatingPeriod();   // une seule portée par saison des amours (anti-boom)
             double invest = energieD * reproOffspringRatio;
             Ours cub = new Ours(x, y, _world);
             cub.isFounder = false;

@@ -3,7 +3,6 @@ bin/
 
 # Sortie de compilation des tests et fat-jar JUnit (téléchargé via test-setup.sh)
 test/bin/
-test/lib/
 
 # Crash dumps JVM
 hs_err_pid*.log

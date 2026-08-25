@@ -98,8 +98,12 @@ public class Loup extends Agent {
 	/** Seuil de faim (fraction de energieD) : sous ce niveau le loup chasse ET
 	 *  consomme. Au-dessus il est repu — la nuit il poursuit quand même pour
 	 *  effrayer/disperser le troupeau, mais ne TUE pas (pas de surplus killing :
-	 *  il en laisse pour la meute). Partagé par decideState et le bloc prédation. */
-	public static final double HUNGER_RATIO = 0.7;
+	 *  il en laisse pour la meute). Partagé par decideState et le bloc prédation.
+	 *  Désormais CONFIGURABLE (équilibre proie-prédateur) : tous les comportements de
+	 *  faim — chasse, gate de mise à mort, sprint, ralliement meute, acceptation des
+	 *  souvenirs de nourriture — lisent ce même seuil via {@link #hungerRatio()}, donc
+	 *  ils glissent ensemble quand on l'abaisse. */
+	private double hungerRatio() { return ui.SimulationConfig.getInstance().loupHungerRatio; }
 
 	public int lastX;
 	public int lastY;
@@ -333,7 +337,7 @@ public class Loup extends Agent {
 		// Consommation gâtée par la FAIM (pas par 90% comme avant) : un loup repu
 		// (≥ HUNGER_RATIO) ne tue pas, même s'il rattrape un mouton la nuit — il
 		// n'a fait que l'effrayer. Évite qu'un seul loup décime tout le troupeau.
-		if (energie < energieD * HUNGER_RATIO
+		if (energie < energieD * hungerRatio()
 				* character.boldnessFactor(ui.SimulationConfig.getInstance().hungerBoldnessDelta)) {
 			for (Mouton ag : this.world.moutons) {
 				UniqueDynamicObject pag = (UniqueDynamicObject) ag;
@@ -388,7 +392,8 @@ public class Loup extends Agent {
 			// ÷windF SEULEMENT si l'agent a bougé ce tour (sinon le vent ne fournit pas
 			// de propulsion : à l'arrêt l'effort ne dépend pas du vent).
 			boolean moved = (x != lastX || y != lastY);
-			energie -= metabolicCost(moved ? 1.0 / windF : 1.0);   // L8 — coût métabolique modulé par l'activité
+			energie -= metabolicCost((moved ? 1.0 / windF : 1.0)
+					* ui.SimulationConfig.getInstance().loupMetabolicFactor);   // L8 + facteur métabolique configurable (équilibre)
 		}
 		if (energie < 10 && vitesse >= vcourse) {
 			vitesse = vcourse / 2;
@@ -422,8 +427,10 @@ public class Loup extends Agent {
 		Loup mate = findReproPartner();
 		// Gating par STADE (§ 10.1 : bébé/jeune ne se reproduisent pas, vieux à
 		// taux réduit) + proba modulée par la fertilité du génome (§ 4.1/§ 4.3).
-		if (inMatingSeason() && currentStage().canReproduce() && energie >= energieD * reproEnergyThreshold && mate != null
+		if (inMatingSeason() && currentMatingPeriod() != lastBredPeriod
+				&& currentStage().canReproduce() && energie >= energieD * reproEnergyThreshold && mate != null
 				&& Math.random() < Prepro * genome.reproProbaFactor() * currentStage().fertilityFactor()) {
+			lastBredPeriod = currentMatingPeriod();   // une seule portée par saison des amours (anti-boom)
 			double invest = energieD * reproOffspringRatio;
 			Loup prea = new Loup(this.x, this.y, this._world);
 			prea.isFounder = false;          // né → démarre BÉBÉ (§ 10.1)
@@ -533,7 +540,7 @@ public class Loup extends Agent {
 	}
 
 	public AgentState decideState(Percept p) {
-		boolean affame   = energie < energieD * HUNGER_RATIO
+		boolean affame   = energie < energieD * hungerRatio()
 				* character.boldnessFactor(ui.SimulationConfig.getInstance().hungerBoldnessDelta);
 		boolean enChasse = affame || attaqueNuit == 1;
 		if (!enChasse) resetPursuit();        // plus en chasse → on oublie la piste
@@ -543,7 +550,7 @@ public class Loup extends Agent {
 		memory.purgeStale(agents.ai.MemoryKind.FOOD, world.getIteration(), foodTtlTicks());
 		// Calcule la cible de fourragement (RECALL_FOOD) depuis la mémoire.
 		double[] food = bestRememberedFood();
-		recallTarget = (food != null && food[2] >= acceptThreshold(energie, energieD * HUNGER_RATIO))
+		recallTarget = (food != null && food[2] >= acceptThreshold(energie, energieD * hungerRatio()))
 				? new int[]{(int) food[0], (int) food[1]} : null;
 		AgentState s = chooseState(p, affame, enChasse);
 		// spec §4 : une balise de hurlement devient caduque dès qu'un danger ou une vraie
@@ -563,11 +570,16 @@ public class Loup extends Agent {
 	/** Sélection d'état pure (ladder de priorités). La gestion de la caducité de balise
 	 *  est faite par l'appelant {@link #decideState}. */
 	private AgentState chooseState(Percept p, boolean affame, boolean enChasse) {
+		// Gorge-feeding (éthologie : le loup est un mange-tout par à-coups). Tant qu'il
+		// n'a pas le ventre plein, une carcasse à portée prime sur tout le reste sauf le
+		// danger immédiat : il FINIT sa proie (1 mise à mort = 1 repas complet) au lieu
+		// d'en laisser et de re-chasser → supprime le surplus killing à la racine.
+		boolean rassasie = energie >= energieD;
 		if (isOnFire())                       return AgentState.ON_FIRE;
 		if (p.lavaVisible())                  return AgentState.FLEE_LAVA;       // L2 — la lave tue au contact
 		if (p.predatorVisible())              return AgentState.FLEE_PREDATOR;  // fuit l'Humain (prime sur la faim)
 		if (howlDurationLeft > 0 && !p.inWater) return AgentState.HOWL;           // hurlement en cours → jusqu'au bout (pas dans l'eau)
-		if (affame && carcassAdjacente(p))    return AgentState.EAT;             // carcasse à portée de bouchée
+		if (!rassasie && carcassAdjacente(p)) return AgentState.EAT;             // se gave de sa proie jusqu'à satiété (pas seulement affamé)
 		if (affame && p.carcassVisible())     return AgentState.SEEK_FOOD;       // une carcasse en vue : charogner (moins cher que chasser)
 		if (affame && p.preyVisible())        return AgentState.HUNT;            // affamé : chasse/tue en solo
 		if (!affame && p.preyVisible() && howlReady() && !p.inWater)
@@ -625,7 +637,7 @@ public class Loup extends Agent {
 				// simple TROT (vtrot) : il effraie/disperse le troupeau sans se
 				// vider en énergie. Comme vtrot(8) < vcourse mouton(9), le loup
 				// repu ne rattrape pas — il ne fait qu'effrayer, ce qui est voulu.
-				vitesse = (energie < energieD * HUNGER_RATIO) ? vcourse : vtrot;
+				vitesse = (energie < energieD * hungerRatio()) ? vcourse : vtrot;
 				// Case visée : proie EN VUE → sa case (met à jour la piste) ; HORS DE
 				// VUE → persistance vers la dernière position connue (case « fantôme »).
 				int[] aim = p.preyVisible() ? pursuitSeen(p) : pursuitGhost();
@@ -818,7 +830,7 @@ public class Loup extends Agent {
 			int[] pos = l.noisyLocation(x, y, l.genome.orientationErrorProb(), HOWL_NOISE_MAX, EVO_RNG);
 			l.memory.reinforce(howlSubject, pos[0], pos[1], mass, world.getIteration(),
 					MEMORY_MERGE_RADIUS, l.memDistance);
-			if (l.energie < l.energieD * HUNGER_RATIO) {        // affamé → se déplace
+			if (l.energie < l.energieD * hungerRatio()) {        // affamé → se déplace
 				if (!l.hasHowlTarget()
 						|| world.distance(l.x, l.y, pos[0], pos[1])
 						   < world.distance(l.x, l.y, l.howlTargetX, l.howlTargetY)) {

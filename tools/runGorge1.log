@@ -1,0 +1,66 @@
+Map : 12-785-6396-580714-2050006002, persistence : 1.0, octave : 3.0, fact : 0.1, periods : (8,8)
+# dim=80 saison=3j an=57600 ticks | loups=4 moutons=70 ours=0 humains=0
+# loupAge=30 moutonAge=30 loupE=1500 moutonE=1500
+day	season	loups	moutons	ours	humains
+0	SPRING	4	70	0	0	Em=1500	El=1500	herbe=40%	brinsMoy=3.68	moutonSurHerbe=23%	{Errance=70}
+1	SPRING	4	65	0	0	Em=1116	El=1133	herbe=72%	brinsMoy=3.72	moutonSurHerbe=68%	{Cherche terre=2, Fuit loup=5, Regroupement=58}
+2	SPRING	4	53	0	0	Em=1141	El=1286	herbe=72%	brinsMoy=3.72	moutonSurHerbe=42%	{Broute=1, Cherche terre=1, Errance=2, Regroupement=49}
+3	SUMMER	4	48	0	0	Em=1114	El=1072	herbe=72%	brinsMoy=3.74	moutonSurHerbe=50%	{Cherche terre=1, Errance=2, Fuit loup=20, Regroupement=25}
+4	SUMMER	4	42	0	0	Em=1115	El=1144	herbe=72%	brinsMoy=3.42	moutonSurHerbe=74%	{Broute=1, Cherche terre=2, Fuit loup=5, Regroupement=34}
+5	SUMMER	4	36	0	0	Em=1072	El=1062	herbe=72%	brinsMoy=3.42	moutonSurHerbe=25%	{Broute=1, Cherche terre=7, Errance=1, Fuit loup=6, Regroupement=21}
+6	AUTUMN	4	29	0	0	Em=1074	El=1108	herbe=72%	brinsMoy=3.43	moutonSurHerbe=59%	{Broute=1, Cherche terre=1, Errance=2, Fuit loup=10, Regroupement=15}
+7	AUTUMN	3	22	0	0	Em=1051	El=963	herbe=71%	brinsMoy=2.23	moutonSurHerbe=68%	{Broute=2, Cherche partenaire=10, Cherche terre=2, Fuit loup=6, Regroupement=2}
+8	AUTUMN	3	21	0	0	Em=908	El=1116	herbe=71%	brinsMoy=2.23	moutonSurHerbe=38%	{Cherche partenaire=7, Cherche terre=6, Errance=1, Regroupement=7}
+9	WINTER	2	23	0	0	Em=786	El=838	herbe=71%	brinsMoy=2.23	moutonSurHerbe=78%	{Broute=1, Cherche partenaire=7, Cherche terre=2, Errance=4, Fuit loup=2, Regroupement=7}
+10	WINTER	9	9	0	0	Em=933	El=354	herbe=70%	brinsMoy=0.99	moutonSurHerbe=44%	{Cherche terre=1, Errance=3, Fuit loup=4, Regroupement=1}
+11	WINTER	3	2	0	0	Em=1161	El=407	herbe=71%	brinsMoy=0.99	moutonSurHerbe=50%	{Errance=1, Fuit loup=1}
+12	SPRING	0	2	0	0	Em=1165	El=0	herbe=69%	brinsMoy=0.99	moutonSurHerbe=100%	{Regroupement=2}
+13	SPRING	0	2	0	0	Em=1144	El=0	herbe=71%	brinsMoy=3.77	moutonSurHerbe=100%	{Regroupement=2}
+14	SPRING	0	2	0	0	Em=1132	El=0	herbe=71%	brinsMoy=3.77	moutonSurHerbe=100%	{Regroupement=2}
+15	SUMMER	0	2	0	0	Em=1164	El=0	herbe=71%	brinsMoy=3.78	moutonSurHerbe=100%	{Regroupement=2}
+16	SUMMER	0	2	0	0	Em=1144	El=0	herbe=69%	brinsMoy=3.42	moutonSurHerbe=100%	{Regroupement=2}
+17	SUMMER	0	2	0	0	Em=1151	El=0	herbe=71%	brinsMoy=3.46	moutonSurHerbe=0%	{Regroupement=2}
+18	AUTUMN	0	2	0	0	Em=1161	El=0	herbe=71%	brinsMoy=3.46	moutonSurHerbe=100%	{Regroupement=2}
+19	AUTUMN	0	21	0	0	Em=382	El=0	herbe=71%	brinsMoy=2.25	moutonSurHerbe=67%	{Cherche terre=1, Errance=19, Regroupement=1}
+20	AUTUMN	0	21	0	0	Em=315	El=0	herbe=71%	brinsMoy=2.25	moutonSurHerbe=0%	{Cherche partenaire=9, Cherche terre=10, Errance=1, Regroupement=1}
+21	WINTER	0	21	0	0	Em=355	El=0	herbe=71%	brinsMoy=2.25	moutonSurHerbe=33%	{Broute=2, Cherche herbe=1, Cherche partenaire=10, Errance=1, Regroupement=7}
+22	WINTER	0	21	0	0	Em=352	El=0	herbe=71%	brinsMoy=1.00	moutonSurHerbe=48%	{Cherche herbe=1, Errance=1, Regroupement=19}
+23	WINTER	0	20	0	0	Em=372	El=0	herbe=71%	brinsMoy=1.00	moutonSurHerbe=55%	{Broute=1, Regroupement=19}
+24	SPRING	0	20	0	0	Em=363	El=0	herbe=71%	brinsMoy=1.00	moutonSurHerbe=85%	{Errance=2, Regroupement=18}
+25	SPRING	0	20	0	0	Em=369	El=0	herbe=71%	brinsMoy=3.78	moutonSurHerbe=80%	{Errance=2, Regroupement=18}
+26	SPRING	0	20	0	0	Em=363	El=0	herbe=71%	brinsMoy=3.78	moutonSurHerbe=65%	{Errance=2, Regroupement=18}
+27	SUMMER	0	20	0	0	Em=366	El=0	herbe=71%	brinsMoy=3.78	moutonSurHerbe=65%	{Broute=1, Errance=2, Regroupement=17}
+28	SUMMER	0	19	0	0	Em=367	El=0	herbe=65%	brinsMoy=3.40	moutonSurHerbe=89%	{Broute=1, Errance=1, Regroupement=17}
+29	SUMMER	0	19	0	0	Em=358	El=0	herbe=71%	brinsMoy=3.47	moutonSurHerbe=63%	{Errance=1, Regroupement=18}
+30	AUTUMN	0	19	0	0	Em=366	El=0	herbe=71%	brinsMoy=3.47	moutonSurHerbe=84%	{Broute=1, Errance=1, Regroupement=17}
+31	AUTUMN	0	3	0	0	Em=231	El=0	herbe=70%	brinsMoy=2.25	moutonSurHerbe=0%	{Cherche partenaire=1, Cherche terre=1, Errance=1}
+32	AUTUMN	0	2	0	0	Em=330	El=0	herbe=71%	brinsMoy=2.25	moutonSurHerbe=100%	{Cherche partenaire=2}
+33	WINTER	0	2	0	0	Em=353	El=0	herbe=70%	brinsMoy=2.26	moutonSurHerbe=100%	{Cherche partenaire=2}
+34	WINTER	0	2	0	0	Em=319	El=0	herbe=70%	brinsMoy=1.00	moutonSurHerbe=100%	{Regroupement=2}
+35	WINTER	0	2	0	0	Em=318	El=0	herbe=71%	brinsMoy=1.00	moutonSurHerbe=0%	{Regroupement=2}
+36	SPRING	0	2	0	0	Em=313	El=0	herbe=71%	brinsMoy=1.00	moutonSurHerbe=100%	{Regroupement=2}
+37	SPRING	0	2	0	0	Em=350	El=0	herbe=71%	brinsMoy=3.79	moutonSurHerbe=100%	{Regroupement=2}
+38	SPRING	0	2	0	0	Em=335	El=0	herbe=71%	brinsMoy=3.79	moutonSurHerbe=0%	{Regroupement=2}
+39	SUMMER	0	2	0	0	Em=321	El=0	herbe=71%	brinsMoy=3.79	moutonSurHerbe=100%	{Regroupement=2}
+40	SUMMER	0	2	0	0	Em=310	El=0	herbe=70%	brinsMoy=3.48	moutonSurHerbe=0%	{Regroupement=2}
+41	SUMMER	0	2	0	0	Em=342	El=0	herbe=71%	brinsMoy=3.47	moutonSurHerbe=100%	{Broute=1, Regroupement=1}
+42	AUTUMN	0	2	0	0	Em=341	El=0	herbe=71%	brinsMoy=3.47	moutonSurHerbe=0%	{Regroupement=2}
+43	AUTUMN	0	2	0	0	Em=313	El=0	herbe=71%	brinsMoy=2.25	moutonSurHerbe=0%	{Cherche partenaire=2}
+44	AUTUMN	0	2	0	0	Em=335	El=0	herbe=71%	brinsMoy=2.25	moutonSurHerbe=0%	{Cherche partenaire=1, Cherche terre=1}
+45	WINTER	0	2	0	0	Em=323	El=0	herbe=71%	brinsMoy=2.25	moutonSurHerbe=0%	{Cherche partenaire=2}
+46	WINTER	0	2	0	0	Em=311	El=0	herbe=71%	brinsMoy=1.00	moutonSurHerbe=50%	{Regroupement=2}
+47	WINTER	0	2	0	0	Em=339	El=0	herbe=71%	brinsMoy=1.00	moutonSurHerbe=0%	{Regroupement=2}
+48	SPRING	0	2	0	0	Em=295	El=0	herbe=71%	brinsMoy=1.00	moutonSurHerbe=0%	{Regroupement=2}
+49	SPRING	0	0	0	0	Em=0	El=0	herbe=71%	brinsMoy=3.79	moutonSurHerbe=0%	{}
+# EXTINCTION TOTALE jour 49
+# --- BILAN ---
+# loups   min=0  EXTINCT à un moment
+# moutons min=0  EXTINCT à un moment
+  [rut MOUTON] j6 : 29 moutons
+  [rut LOUP]   j9 : 2 loups
+  [rut MOUTON] j18 : 2 moutons
+  [rut LOUP]   j21 : 0 loups
+  [rut MOUTON] j30 : 19 moutons
+  [rut LOUP]   j33 : 0 loups
+  [rut MOUTON] j42 : 2 moutons
+  [rut LOUP]   j45 : 0 loups

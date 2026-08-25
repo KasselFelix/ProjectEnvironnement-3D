@@ -1,0 +1,20 @@
+Map : 4-83-10120-1095625-1557179927, persistence : 1.0, octave : 3.0, fact : 0.1, periods : (8,8)
+# dim=80 saison=3j an=57600 ticks | loups=0 moutons=25 ours=0 humains=0
+# loupAge=15 moutonAge=8 loupE=1500 moutonE=1500
+day	season	loups	moutons	ours	humains
+0	SPRING	0	25	0	0	Em=1500	El=0	herbe=44%	brinsMoy=3.88	moutonSurHerbe=32%	{Errance=25}
+1	SPRING	0	25	0	0	Em=1155	El=0	herbe=82%	brinsMoy=3.86	moutonSurHerbe=84%	{Broute=1, Regroupement=24}
+2	SPRING	0	25	0	0	Em=1151	El=0	herbe=82%	brinsMoy=3.86	moutonSurHerbe=72%	{Broute=1, Regroupement=24}
+3	SUMMER	0	25	0	0	Em=1150	El=0	herbe=82%	brinsMoy=3.86	moutonSurHerbe=80%	{Regroupement=25}
+4	SUMMER	0	25	0	0	Em=1142	El=0	herbe=82%	brinsMoy=3.55	moutonSurHerbe=52%	{Regroupement=25}
+5	SUMMER	0	25	0	0	Em=1148	El=0	herbe=82%	brinsMoy=3.56	moutonSurHerbe=44%	{Regroupement=25}
+6	AUTUMN	0	25	0	0	Em=1156	El=0	herbe=81%	brinsMoy=3.56	moutonSurHerbe=52%	{Broute=1, Regroupement=24}
+7	AUTUMN	0	25	0	0	Em=1119	El=0	herbe=81%	brinsMoy=2.29	moutonSurHerbe=32%	{Cherche partenaire=21, Cherche terre=3, Regroupement=1}
+8	AUTUMN	0	25	0	0	Em=1132	El=0	herbe=81%	brinsMoy=2.30	moutonSurHerbe=28%	{Cherche partenaire=20, Cherche terre=4, Regroupement=1}
+9	WINTER	0	0	0	0	Em=0	El=0	herbe=75%	brinsMoy=2.25	moutonSurHerbe=0%	{}
+# EXTINCTION TOTALE jour 9
+# --- BILAN ---
+# loups   min=0  EXTINCT à un moment
+# moutons min=0  EXTINCT à un moment
+  [rut MOUTON] j6 : 25 moutons
+  [rut LOUP]   j9 : 0 loups

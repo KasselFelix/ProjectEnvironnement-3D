@@ -1504,6 +1504,18 @@ public class Agent extends UniqueDynamicObject{
 		return false;
 	}
 
+	/** Bloc-saison GLOBAL courant (jour-jeu / longueur de saison, SANS modulo 4) :
+	 *  identifiant unique de la saison des amours en cours. Sert à plafonner la
+	 *  reproduction à UNE portée par saison des amours (réaliste : le loup/l'ours
+	 *  font une portée/an, pas une nichée continue). */
+	protected int currentMatingPeriod() {
+		int sl = world.getSeasonLengthDays();
+		return (sl > 0) ? world.getCurrentDay() / sl : world.getCurrentDay();
+	}
+	/** Dernier bloc-saison où l'agent s'est reproduit (-1 = jamais). Empêche plusieurs
+	 *  portées dans la même saison des amours (anti-boom prédateur). */
+	protected int lastBredPeriod = -1;
+
 	/** True si l'agent est PRÊT à se reproduire (fertile + assez nourri), saison
 	 *  IGNORÉE. Défaut : false (base/Humain ne se reproduisent pas). Surchargé. */
 	protected boolean matingReady() { return false; }

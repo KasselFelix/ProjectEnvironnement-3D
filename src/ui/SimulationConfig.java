@@ -53,6 +53,20 @@ public class SimulationConfig {
     /** Fraction de la vitesse terrestre conservée dans l'eau. Le loup nage bien
      *  (0.6) — bien mieux que le mouton. Plage utile [0.2, 1.0]. */
     public double loupSwimFactor  = 0.6;
+    /** Multiplicateur du coût métabolique du loup (énergie perdue par pas). < 1 → le
+     *  loup brûle moins → a faim moins souvent → chasse/tue moins souvent (clé de
+     *  l'équilibre proie-prédateur). 1.0 = comportement historique. Plage utile [0.1, 1.5]. */
+    public double loupMetabolicFactor = 1.0;
+    /** Idem pour l'ours (super-prédateur). 1.0 = comportement historique. */
+    public double oursMetabolicFactor = 1.0;
+    /** Seuil de faim du loup (fraction de energieD) : SOUS ce niveau il chasse, TUE
+     *  (au-dessus il est repu et ne tue pas — il en laisse pour la meute), sprinte et
+     *  rallie la meute. TOUS les comportements de faim lisent ce seuil → ils glissent
+     *  ensemble. Plus bas → le loup ne chasse que vraiment affamé → bien moins de
+     *  tueries (clé de l'équilibre). 0.7 = historique. Plage utile [0.2, 0.9]. */
+    public double loupHungerRatio = 0.7;
+    /** Idem pour l'ours. 0.7 = historique. */
+    public double oursHungerRatio = 0.7;
     /** Portée d'audition du hurlement de meute (cases, distance torique). Un loup
      *  repu voyant une proie hurle ; les loups affamés dans ce rayon convergent.
      *  Défaut 30 (~3× vision). Propagé sur Loup.HOWL_RADIUS via applyConfigToCAs. */
