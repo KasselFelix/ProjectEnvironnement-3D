@@ -221,28 +221,69 @@ PARAMS) pour `cycleTotalSec`, `dayFractionRatio`, `transitionJourSec`,
 
 --- Court terme ---
 
-    * Couleur du ciel qui varie selon la phase (bleu en plein jour, orange à
-      l'aube et au crépuscule, noir profond la nuit) — aujourd'hui seule la
-      luminosité globale change nettement.
-    * Lune avec son propre cycle et sa lumière douce la nuit.
+    * [RÉALISÉ — déjà en place] Couleur du ciel qui varie selon la phase (bleu
+      plein jour, orange aube/crépuscule, noir nuit) : `updateSunAndSky` interpole
+      SKY_NIGHT/SKY_HORIZON/SKY_NOON selon l'altitude solaire (glClearColor + fog).
+    * [RÉALISÉ 2026-06-06, V1] Lune avec sa lumière douce. Disque pâle rendu dans
+      `Landscape.displayStars` (points lissés additifs : halo large diffus + cœur
+      blanc-bleuté), positionné à l'OPPOSÉ du soleil (`-sunDirGL`) donc au-dessus
+      de l'horizon la nuit, fondu par `currentNightFactor`. La lumière lunaire au
+      sol était déjà assurée par `applyMoonLights` (6 lampes LIGHT2-7 bleutées).
 
 --- Moyen terme ---
 
-    * Comportements diurnes / nocturnes différenciés pour tous les agents (pas
-      seulement le Loup) : Moutons qui se groupent la nuit, Humains qui rentrent
-      au foyer, etc.
-    * Système de saisons (cycles plus longs affectant la pousse des arbres, la
-      couleur de la végétation…).
+    * [RÉALISÉ 2026-06-05, volet Mouton] Comportements diurnes / nocturnes
+      différenciés. Le Loup avait déjà `attaqueNuit`. Désormais le **Mouton se
+      regroupe la nuit** (jour=0) : s'il voit des congénères, il passe en HERD et
+      marche vers le centre de masse du troupeau (`Perception.dirToFlockCentroid`),
+      sécurité du nombre ; de jour il broute/erre normalement. Test :
+      `AgentBehaviorTest.moutonSeRegroupeLaNuitPasLeJour`. L'**Humain rentre au
+      foyer** la nuit : état HOME, il s'oriente vers la bergerie
+      (`WorldOfCells.getBergerieX/Y` + `Perception.dirToCell`). Test :
+      `humainRentreAuFoyerLaNuit`. Comportements diurnes/nocturnes désormais
+      couverts pour les trois espèces (Loup attaqueNuit, Mouton regroupement,
+      Humain repli au foyer).
+    * [RÉALISÉ 2026-06-06, L5, volet fertilité] Système de saisons. Enum
+      `worlds.Season` {PRINTEMPS, ÉTÉ, AUTOMNE, HIVER} avec un facteur de
+      fertilité (1.15 / 1.0 / 0.65 / 0.30). `World.currentSeason()` avance d'un
+      cran tous les `seasonLengthDays` jours-jeu (`getCurrentDay()` =
+      `iteration / (2·dureeJour)`), en boucle ; `seasonLengthDays=0` → été
+      perpétuel. `World.seasonalFertility()` multiplie `ForestCA.fertility` ET
+      `GrassCA.grassGerminationProb` → la végétation pousse vite au printemps, à
+      l'arrêt l'hiver. Config `SimulationConfig.seasonLengthDays` (défaut 3 ⇒ an =
+      12 jours-jeu) réglable dans LaunchMenu (section TEMPS) + InGameMenu PARAMS,
+      propagée par `applyConfigToCAs`. HUD : libellé saison + numéro de jour.
+      Tests : `WorldSeasonTest` (×4). 186 verts. RESTE (volet visuel, à traiter
+      avec le lot 2) : teinte de la végétation variant avec la saison (verdoyant
+      l'été, jauni l'automne).
 
 --- Long terme ---
 
-    * Météo dynamique indépendante du cycle solaire (pluie, neige, brouillard)
-      avec interaction sur les CAs (la pluie ralentit le feu, la neige recouvre
-      la végétation).
-    * Variation de température affectant la solidification de la lave, la
-      vitesse des agents et la zone habitable de l'herbe.
-    * Orages occasionnels déclenchant des feux de forêt par la foudre (déjà
-      partiellement modélisé via `pF` dans ForestCA, sans éclair visuel).
+    * [RÉALISÉ 2026-06-06, L6] Météo dynamique : `World.updateWeather()` tire une
+      fois par jour-jeu un état PLUIE selon `Season.rainProbability` (automne le
+      plus humide, été le plus sec). `World.fireSpreadFactor()` = 0.2 sous la
+      pluie → la propagation du feu dans `ForestCA` (ignition spontanée ×0.2 ET
+      contagion de proche en proche gatée par cette proba) est nettement ralentie
+      par temps de pluie (la lave embrase toujours, chaleur directe). HUD : °C +
+      « pluie ». Tests `WorldWeatherTest`. RESTE (long terme) : neige/brouillard.
+    * [RÉALISÉ 2026-06-06, L6, volet température+vitesse] `World.getTemperature()`
+      (°C) dérivée de la base saisonnière (`Season.baseTemperatureC`) ± le swing
+      jour/nuit ± la pluie. `World.coldSpeedFactor()` ∈ [0.7, 1.0] (no-op > 5°C)
+      ralentit Loup et Mouton par grand froid (nuits d'hiver). Test
+      `grandFroidRalentitLesAgents`. [RÉALISÉ 2026-06-06] Couplage température →
+      SOLIDIFICATION de la lave : `World.lavaCoolingFactor()` (1.0 à 20°C, jusqu'à
+      1.6 par grand froid, 0.6 par forte chaleur) multiplie le `coolingRate` de
+      `LavaCA` → la lave fige plus vite l'hiver, reste fondue plus longtemps par
+      chaleur. Test `leFroidAccelereLaSolidificationDeLaLave`. RESTE : zone
+      habitable de l'herbe selon T (la fertilité saisonnière L5 la couvre déjà en
+      partie l'hiver).
+    * [RÉALISÉ 2026-06-06, V8] Orages déclenchant des feux par la FOUDRE. Pendant
+      la pluie (`isRaining()`, L6), `WorldOfCells.strikeLightning()` peut frapper
+      (`LIGHTNING_PROB_PER_TICK`) : embrase un arbre vivant au hasard (FIRE_FIRST),
+      compte un arbre brûlé, émet la notification « Foudre ! » et pose un FLASH
+      blanc plein écran (`World.lightningFlash`, rendu bref dans `Landscape`). La
+      pluie ralentit ensuite la propagation (L6 `fireSpreadFactor`) — tension
+      réaliste allumage/extinction. Test `EventLogTest.laFoudreEmbraseUnArbreEtPoseUnFlash`.
 
 
 ================================================================================

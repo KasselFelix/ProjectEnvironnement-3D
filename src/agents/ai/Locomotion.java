@@ -18,7 +18,7 @@ public final class Locomotion {
             case 2: ty = (a.y + 1) % h;     break; // Sud
             case 3: tx = (a.x - 1 + w) % w; break; // Ouest
         }
-        if (passable(world, tx, ty, c)) {
+        if (passable(world, tx, ty, c, a)) {
             a.x = tx; a.y = ty;
             return true;
         }
@@ -30,7 +30,7 @@ public final class Locomotion {
             rx = (a.x + i + w) % w;
             ry = (a.y + j + h) % h;
             cpt--;
-        } while (!passable(world, rx, ry, c) && cpt != 0);
+        } while (!passable(world, rx, ry, c, a) && cpt != 0);
         if (cpt != 0) {
             a.x = (a.x + i + w) % w;
             a.y = (a.y + j + h) % h;
@@ -50,23 +50,27 @@ public final class Locomotion {
         final int w = world.getWidth(), h = world.getHeight();
         int tx = ((a.x + dx) % w + w) % w;
         int ty = ((a.y + dy) % h + h) % h;
-        if (passable(world, tx, ty, c)) { a.x = tx; a.y = ty; return true; }
+        if (passable(world, tx, ty, c, a)) { a.x = tx; a.y = ty; return true; }
         // Diagonale bloquée : glisse le long d'un mur (un seul axe).
         if (dx != 0) {
             int sx = ((a.x + dx) % w + w) % w;
-            if (passable(world, sx, a.y, c)) { a.x = sx; return true; }
+            if (passable(world, sx, a.y, c, a)) { a.x = sx; return true; }
         }
         if (dy != 0) {
             int sy = ((a.y + dy) % h + h) % h;
-            if (passable(world, a.x, sy, c)) { a.y = sy; return true; }
+            if (passable(world, a.x, sy, c, a)) { a.y = sy; return true; }
         }
         return false;
     }
 
-    private static boolean passable(World world, int x, int y, MoveConstraints c) {
+    private static boolean passable(World world, int x, int y, MoveConstraints c,
+                                    UniqueDynamicObject mover) {
         if (c.avoidForest && world.getForestCAValue(x, y) != 0) return false;
         if (c.avoidLava   && world.getLavaCAValue(x, y)   != 0) return false;
         if (!c.allowWater && world.getCellHeight(x, y) < 0)     return false;
+        // Les agents sont des obstacles les uns pour les autres (pas de
+        // superposition) — sauf un prédateur entrant sur la case de sa proie.
+        if (world.cellBlockedByAgent(x, y, mover)) return false;
         return true;
     }
 }

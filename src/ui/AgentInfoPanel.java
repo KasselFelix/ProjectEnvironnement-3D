@@ -17,7 +17,10 @@ import agents.Humain;
 public class AgentInfoPanel {
 
     private static final int PANEL_WIDTH  = 230;
-    private static final int PANEL_HEIGHT = 150;
+    // 304 = 240 + 4 ROW_HEIGHT : le bloc « Odorat » (sous-projet B) occupe jusqu'à
+    // 4 rangées (en-tête acuité + proie/danger/charogne) ; multi-lignes pour ne pas
+    // déborder en largeur. Sans cette hauteur, les canaux chevauchaient le pied.
+    private static final int PANEL_HEIGHT = 304;
     private static final int MARGIN = 10;
     private static final int ROW_HEIGHT = 16;
 
@@ -66,6 +69,14 @@ public class AgentInfoPanel {
                 0.95f, 0.95f, 0.95f);
         textY += ROW_HEIGHT;
 
+        // Traits évolutifs (§ 11) — communs à toutes les espèces depuis L1
+        // (Mouton, Loup et Humain partagent le socle cognitif d'Agent).
+        textY += 4;
+        for (String line : agent.evolutionSummary()) {
+            ui.drawText(gl, px + 10, textY, viewportHeight, line, 0.75f, 0.9f, 1f);
+            textY += ROW_HEIGHT;
+        }
+
         // Indicateur caméra-follow.
         if (cameraFollow) {
             ui.drawText(gl, px + 10, py + PANEL_HEIGHT - 24, viewportHeight,
@@ -104,12 +115,14 @@ public class AgentInfoPanel {
         if (a instanceof Loup)   return ((Loup) a).getEnergie();
         if (a instanceof Mouton) return (int) ((Mouton) a).getEnergie();
         if (a instanceof Humain) return ((Humain) a).getEnergie();
+        if (a instanceof agents.Ours) return ((agents.Ours) a).getEnergie();
         return 0;
     }
     private int energieMaxOf(Agent a) {
         if (a instanceof Loup)   return ((Loup) a).getEnergieMax();
         if (a instanceof Mouton) return (int) ((Mouton) a).getEnergieMax();
         if (a instanceof Humain) return ((Humain) a).getEnergieMax();
+        if (a instanceof agents.Ours) return ((agents.Ours) a).getEnergieMax();
         return 1;
     }
 }

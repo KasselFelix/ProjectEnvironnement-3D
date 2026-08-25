@@ -22,10 +22,12 @@ import agents.Agent;
 import cellularautomata.ecosystem.LavaCA;
 import worlds.WorldOfCells;
 import ui.AgentInfoPanel;
+import ui.CarcassInfoPanel;
 import ui.Hud;
 import ui.InGameMenu;
 import ui.LaunchMenu;
 import ui.PopulationGraph;
+import ui.ConfigPresets;
 import ui.SimulationConfig;
 import ui.UiRenderer;
 
@@ -205,27 +207,46 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 		private float translateZ=-44.0f;//hauteur de la camera
 
-		// État appui long des touches caméra-Z. AWT ne déclenche pas d'auto-
-		// repeat sur les modificateurs (SHIFT), donc on convertit SPACE et
-		// SHIFT en flags persistants appliqués par frame dans display() pour
-		// une descente / montée symétriques.
-		private boolean keySpaceHeld = false;
-		private boolean keyShiftHeld = false;
+		// V8 — secousse caméra (screen shake) déclenchée par une éruption.
+		private int   shakeTicks = 0;
+		private static final int SHAKE_DURATION = 32;
+		private float shakeMag = 0f;
+		/** Déclenche une secousse caméra d'amplitude {@code mag} (unités-monde). */
+		private void triggerShake(float mag) { shakeTicks = SHAKE_DURATION; shakeMag = mag; }
+		/** V8 — détection de front montant d'éruption (manuelle OU auto) pour la
+		 *  secousse précurseur, et état du flash de foudre. */
+		private boolean wasErupting = false;
+
+		// L'appui long des touches caméra-Z et le pilotage d'agent sont désormais
+		// gérés par le held-set de inputHandler (module input/). AWT ne déclenche
+		// pas d'auto-repeat sur les modificateurs (SHIFT), donc SPACE et SHIFT sont
+		// résolus en actions HELD (CAM_DOWN/CAM_UP) appliquées par frame dans
+		// display() pour une descente / montée symétriques.
 		private static final float CAMERA_Z_SPEED = 0.4f;
 
 		// ===== Pilotage manuel d'agent (touche 'c') =====
-		// Flags de direction maintenus : tant qu'une touche est tenue, l'agent
-		// avance. Le cap cardinal effectif (Agent.controlDir) est recalculé chaque
-		// frame par updateManualControlHeading() selon la VUE : cardinal direct en
-		// vue de dessus, relatif à la caméra (orbitYaw) en 3D façon Minecraft.
-		private boolean ctrlFwd, ctrlBack, ctrlLeft, ctrlRight;
-		// Rotation caméra au clavier en pilotage 3D (A = gauche, E = droite) — le
-		// mouse-look est inutilisable sur WSLg (curseur non masquable/verrouillable).
-		private boolean ctrlTurnLeft, ctrlTurnRight;
+		// Les directions maintenues (AGENT_FWD/BACK/LEFT/RIGHT) et la rotation
+		// caméra clavier (TURN_CAM_LEFT/RIGHT) sont des actions HELD dans le
+		// held-set de inputHandler. Le cap cardinal effectif (Agent.controlDir)
+		// est recalculé chaque frame par updateManualControlHeading() selon la VUE.
 		private static final float KEY_TURN_DEG_PER_FRAME = 14.0f;
 		// Agent actuellement piloté (au plus UN à la fois). Sert à relâcher le
 		// précédent quand on en sélectionne / contrôle un autre.
 		private agents.Agent controlledAgent = null;
+
+		// Slot de hotbar en echec (action indisponible) a faire clignoter (D5).
+		private int hotbarFlashSlot = -1;
+		private long hotbarFlashUntilMs = 0;
+		// Slot declenche avec succes (flash vert de confirmation) + petit message "<action> !".
+		private int hotbarSuccessSlot = -1;
+		private long hotbarSuccessUntilMs = 0;
+		private String hotbarToast = null;
+		private long hotbarToastUntilMs = 0;
+
+		// ----- Système d'input (module 1) : bindings persistés + held-set + dispatch -----
+		private final input.Settings settings = new input.Settings(input.Settings.DEFAULT_PATH);
+		private final input.InputHandler inputHandler = new input.InputHandler(
+				settings.bindings(), this::controllingAgent, this::dispatchTap);
 		// Capture souris (mouse-look 1ère personne) : via NEWT on masque le curseur
 		// (setPointerVisible(false)) + on le confine (confinePointer(true)) et on le
 		// recentre (warpPointer) à chaque mouvement → verrou propre au centre, sans
@@ -241,6 +262,24 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		// Demande de capture d'écran (F12). Écrit depuis l'AWT EDT (keyPressed),
 		// lu par le thread GL (display). volatile pour la visibilité cross-thread.
 		private volatile boolean screenshotRequested = false;
+		// Étiquette optionnelle du prochain fichier de capture (autoshot). Null → nom horodaté.
+		private volatile String screenshotLabel = null;
+
+		// ===== Mode autoshot (-Dautoshot) : validation visuelle non interactive =====
+		// Démarre la sim, déroule un scénario chronométré (jour → éruption → nuit →
+		// nuit+éruption), capture une PNG à chaque étape puis halt(0). Réutilisable
+		// pour valider le Lot 2 réalisme sans piloter le clavier à la main.
+		private static final String  AUTOSHOT_MODE = System.getProperty("autoshot");      // null, "true"/"top", ou "3d"
+		private static final boolean AUTOSHOT = (AUTOSHOT_MODE != null);
+		private static final boolean AUTOSHOT_3D = "3d".equalsIgnoreCase(AUTOSHOT_MODE); // vue perspective centrée volcan
+		private static final boolean AUTOSHOT_SELECT = "select".equalsIgnoreCase(AUTOSHOT_MODE); // suivi agent + halo V3
+		private static final boolean AUTOSHOT_MOON = "moon".equalsIgnoreCase(AUTOSHOT_MODE);   // cadrage lune V1 (balayage azimut)
+		private static final boolean AUTOSHOT_RAIN = "rain".equalsIgnoreCase(AUTOSHOT_MODE);   // pluie : tint d'eau + séchage (L7)
+		private static final boolean AUTOSHOT_SCENT = "scent".equalsIgnoreCase(AUTOSHOT_MODE); // overlay champ d'odeur (sous-projet A)
+		private static final boolean AUTOSHOT_ODORAT = "odorat".equalsIgnoreCase(AUTOSHOT_MODE); // fiche « Odorat » loup (canaux) vs humain (anosmique) — sous-projet B
+		private long autoshotStartMs = 0L;   // 0 tant que la 1re frame n'a pas tourné
+		private int  autoshotStep = 0;        // index d'étape franchie
+		private long odoratMark = 0L;         // horodatage (mode odorat) du tir loup → cadence le reste
 
 		// Texture de bruit grayscale tileable, modulée par la couleur de cellule
 		// (sable/montagne/eau via getCellColorValue). Null si chargement échoué.
@@ -250,9 +289,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		// gros à l'écran). 1/8 = un carreau de bruit couvre 8 cellules.
 		private static final float TEX_TILES_PER_CELL = 1f / 8f;
 
-		// Normales par sommet (vertex shading sur le terrain) précalculées une fois
-		// dans initLandscape() à partir de landscape[][]. Indexées comme landscape,
-		// donc [dxView][dyView][3] avec wrap torique pour les voisins.
+		// Normales par cellule (vertex shading sur le terrain) précalculées une fois
+		// dans initLandscape() à partir de getCellHeight (grille du tore = dxView-1).
+		// Dimensionnées [dxView-1][dyView-1][3] et indexées au rendu avec le MÊME
+		// modulo que les hauteurs (% (dxView-1)) — sinon une fissure d'éclairage
+		// balaie le sol au pan (cf. note dans precomputeNormals()).
 		private float[][][] normals;
 
 		// Couleur du ciel/brouillard recalculée chaque frame par updateSunAndSky.
@@ -281,7 +322,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private int[][] moonLightCells; // [N][2] : (cellX, cellY)
 		private static final int N_MOON_LIGHTS = 6;
 
-        int it = 0;
+        int it = 0;                  // horloge de SIMULATION (ticks) : pilote le cycle
+                                     // jour/nuit ; n'avance qu'avec world.step() → figée
+                                     // en pause, accélérée en x2/x4/x8.
+        private int renderFrames = 0; // compteur de frames de RENDU, pour le calcul du FPS
         int movingIt = 0;
         int dxView;
         int dyView;
@@ -302,6 +346,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         // Module 1 (refonte 2026-05) : fixed-timestep découplé du framerate.
         // Remplace l'ancien `_myWorld.step()` synchro frame par un loop accumulator.
         private final TimeKeeper timeKeeper = new TimeKeeper();
+        // Contrôle de lecture (pause + vitesse x1/x2/x4/x8), façon lecteur vidéo.
+        private final PlaybackControl playback = new PlaybackControl();
 
         // Menu de lancement (Phase 6 Pass B). Renseigné par le constructeur
         // Landscape(World, SimulationConfig). Si null, on saute toute la logique
@@ -313,11 +359,26 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         // Sélection d'agent (Phase 8). Mis à jour par le menu in-game (Enter sur
         // l'onglet AGENTS) ou par le picking 3D (clic souris).
         private Agent selectedAgent = null;
+        // Index LOCAL dans l'espece de l'agent selectionne (etiquette d'affichage AgentInfoPanel),
+        // PAS un index global dans world.agents.
         private int   selectedAgentIndex = -1;
         private boolean cameraFollow = false;
+
+        // V3 — survol : position écran du curseur (toujours suivie) et agent
+        // sous le pointeur (calculé chaque frame en 3D), pour la bulle d'info.
+        private int hoverX = -1, hoverY = -1;
+        private Agent hoverAgent = null;
+        // Task 4.1 — carcasse sous le curseur (tooltip espece + poids).
+        private objects.Carcass hoveredCarcass = null;
+        // Task 4.2 — carcasse selectionnee (double-clic) pour la fiche detaillee.
+        private objects.Carcass selectedCarcass = null;
         private final AgentInfoPanel agentInfoPanel = new AgentInfoPanel();
+        private final CarcassInfoPanel carcassInfoPanel = new CarcassInfoPanel();
+        private final ui.HotbarPanel hotbarPanel = new ui.HotbarPanel();
         private final PopulationGraph populationGraph = new PopulationGraph();
         private boolean showPopulationGraph = false;  // masqué au démarrage ; toggle par la touche `g`
+        private final ui.Minimap minimap = new ui.Minimap();   // V7
+        private boolean showMinimap = false;                   // toggle par F6
 
         // Focus clavier du menu in-game. Découplé d'`isOpen()` : le menu peut
         // rester visible (parqué, plus transparent) tout en laissant les
@@ -330,6 +391,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         private boolean pickRequested = false;
         private int pickClickX = 0;
         private int pickClickY = 0;
+        // Task 4.2 — double-clic carcasse : meme pattern deferred que pickRequested.
+        private boolean pickCarcassRequested = false;
+        private int pickCarcassX = 0;
+        private int pickCarcassY = 0;
         private final javax.media.opengl.glu.GLU pickGlu = new javax.media.opengl.glu.GLU();
         
         public static int lastItStamp = 0;
@@ -352,9 +417,19 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         float smoothFactor[];
         int smoothingDistanceThreshold;
         
-        int movingX = 0; 
+        int movingX = 0;
         int movingY = 0;
-   
+        // Déplacements de pan (flèches/ZQSD + drag clic droit + molette) accumulés
+        // par le THREAD D'ÉVÉNEMENTS NEWT, drainés et appliqués à movingX/movingY au
+        // début de display() (THREAD DE RENDU). Sans ce découplage, un input pendant
+        // que display() parcourt la grille modifiait movingX en plein milieu de la
+        // frame → une partie des sommets du terrain lus avec l'ancien movingX, l'autre
+        // avec le nouveau → DÉCHIRURE (« fissure ») d'une cellule, visible surtout en
+        // déplacement rapide. movingX/movingY ne sont désormais écrits que par le
+        // thread de rendu ; les handlers n'écrivent que ces deltas atomiques.
+        private final java.util.concurrent.atomic.AtomicInteger pendingMoveX = new java.util.concurrent.atomic.AtomicInteger();
+        private final java.util.concurrent.atomic.AtomicInteger pendingMoveY = new java.util.concurrent.atomic.AtomicInteger();
+
         
         /**
          * 
@@ -395,6 +470,13 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         }
         public Agent getSelectedAgent() { return selectedAgent; }
 
+        /** Espece dont la hotbar est editee dans le menu : agent pilote > selectionne > LOUP. */
+        public objects.Species hotbarEditSpecies() {
+        	if (controllingAgent() && controlledAgent != null) return speciesOf(controlledAgent);
+        	if (selectedAgent != null) return speciesOf(selectedAgent);
+        	return objects.Species.LOUP;
+        }
+
         /** Vrai si un agent est sélectionné ET sous pilotage manuel du joueur :
          *  dans ce cas, les flèches/ZQSD dirigent l'agent au lieu de la caméra. */
         private boolean controllingAgent() {
@@ -425,9 +507,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         /** Vérifie qu'un agent suivi est toujours vivant et dans le monde. */
         private boolean isAgentStillAlive(Agent a) {
         	if (a == null) return false;
-        	if (!(_myWorld instanceof WorldOfCells)) return true; // pas de moyen de vérifier
-        	WorldOfCells wc = (WorldOfCells) _myWorld;
-        	return wc.loups.contains(a) || wc.moutons.contains(a) || wc.humains.contains(a);
+        	if (!(_myWorld instanceof WorldOfCells)) return true; // pas de moyen de verifier
+        	return ((WorldOfCells) _myWorld).agents.contains(a);   // toutes especes (dont ours)
         }
 
         /**
@@ -456,23 +537,15 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         	int bestIndex = -1;
         	double bestDist = PICK_TOLERANCE_PX;
 
-        	// Loups
-        	for (int i = 0; i < wc.loups.size(); i++) {
-        		Agent a = wc.loups.get(i);
-        		double d = projectAndScreenDist(a, mv, proj, view, win);
-        		if (d >= 0 && d < bestDist) { best = a; bestIndex = i; bestDist = d; }
-        	}
-        	// Moutons
-        	for (int i = 0; i < wc.moutons.size(); i++) {
-        		Agent a = wc.moutons.get(i);
-        		double d = projectAndScreenDist(a, mv, proj, view, win);
-        		if (d >= 0 && d < bestDist) { best = a; bestIndex = i; bestDist = d; }
-        	}
-        	// Humains
-        	for (int i = 0; i < wc.humains.size(); i++) {
-        		Agent a = wc.humains.get(i);
-        		double d = projectAndScreenDist(a, mv, proj, view, win);
-        		if (d >= 0 && d < bestDist) { best = a; bestIndex = i; bestDist = d; }
+        	// Toutes les especes via AgentRoster (loups, moutons, humains, ours) ;
+        	// bestIndex = index LOCAL dans l'espece (sert d'etiquette #index).
+        	ui.AgentRoster roster = new ui.AgentRoster(wc);
+        	for (ui.AgentRoster.Group g : roster.groups()) {
+        		for (int i = 0; i < g.agents.size(); i++) {
+        			Agent a = g.agents.get(i);
+        			double d = projectAndScreenDist(a, mv, proj, view, win);
+        			if (d >= 0 && d < bestDist) { best = a; bestIndex = i; bestDist = d; }
+        		}
         	}
 
         	if (best != null) {
@@ -488,6 +561,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         		}
         		selectedAgent = best;
         		selectedAgentIndex = bestIndex;
+        		if (inGameMenu != null) inGameMenu.syncToAgent(best);   // deplie l'espece + curseur
         	}
         }
 
@@ -496,12 +570,22 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
          * ou -1 si l'agent est hors frustum (derrière la caméra ou clippé).
          */
         private double projectAndScreenDist(Agent a, double[] mv, double[] proj, int[] view, double[] win) {
+        	return projectScreenDist(a, mv, proj, view, win, pickClickX, pickClickY);
+        }
+
+        /** Distance pixel entre la projection écran de l'agent et le point cible
+         *  ({@code tx},{@code ty}) en coords AWT (origine haut-gauche), ou -1 si
+         *  l'agent est hors frustum. Partagé par le picking (clic) et le survol. */
+        private double projectScreenDist(Agent a, double[] mv, double[] proj, int[] view, double[] win,
+        		double tx, double ty) {
         	int w = _myWorld.getWidth();
         	int h = _myWorld.getHeight();
         	int x2 = ((a.x - (movingX % w)) % w + w) % w;
         	int y2 = ((a.y - (movingY % h)) % h + h) % h;
-        	double worldX = offset + x2 * stepX;
-        	double worldY = offset + y2 * stepY;
+        	// −lenX/−lenY : même position que le rendu de l'agent (planté sur le coin
+        	// de cellule, cf. Loup/Mouton.displayXxxAt) → picking aligné.
+        	double worldX = offset + x2 * stepX - lenX;
+        	double worldY = offset + y2 * stepY - lenY;
         	double cellH  = Math.max(0, _myWorld.getCellHeight(a.x, a.y));
         	// Centre approximatif de la boîte agent (h à h+5 dans Agent.displayUniqueObject).
         	double worldZ = cellH * nHeihtUniqueObj + 2.5;
@@ -512,9 +596,351 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
         	double sx = win[0];
         	double sy = viewportHeight - win[1]; // Y OpenGL bottom-left → AWT top-left
-        	double dx = sx - pickClickX;
-        	double dy = sy - pickClickY;
+        	double dx = sx - tx;
+        	double dy = sy - ty;
         	return Math.sqrt(dx*dx + dy*dy);
+        }
+
+        /**
+         * V3 — détermine l'agent sous le curseur (le plus proche dans une
+         * tolérance), pour la bulle d'info. Doit tourner pendant que MODELVIEW
+         * porte encore la caméra (même contrainte que doPicking). Stocke le
+         * résultat dans {@link #hoverAgent} (null si aucun).
+         */
+        private void computeHoverAgent(GL2 gl) {
+        	hoverAgent = null;
+        	if (hoverX < 0 || !(_myWorld instanceof WorldOfCells)) return;
+        	WorldOfCells wc = (WorldOfCells) _myWorld;
+        	double[] mv = new double[16], proj = new double[16], win = new double[3];
+        	int[] view = new int[] { 0, 0, viewportWidth, viewportHeight };
+        	gl.glGetDoublev(GL2.GL_MODELVIEW_MATRIX, mv, 0);
+        	gl.glGetDoublev(GL2.GL_PROJECTION_MATRIX, proj, 0);
+        	double best = HOVER_TOLERANCE_PX;
+        	for (Agent a : wc.agents) {
+        		double d = projectScreenDist(a, mv, proj, view, win, hoverX, hoverY);
+        		if (d >= 0 && d < best) { best = d; hoverAgent = a; }
+        	}
+        }
+
+        /** Tolérance pixel pour le survol d'agent (bulle d'info). */
+        private static final double HOVER_TOLERANCE_PX = 28.0;
+
+        /** V3 — bulle d'info au survol : nom de l'espèce + énergie, près du curseur. */
+        private void drawHoverTooltip(GL2 gl, Agent a, int mx, int my) {
+        	int e = hoverEnergy(a, false), em = hoverEnergy(a, true);
+        	String txt = a.getTypeName() + "  E:" + e + "/" + em;
+        	int wBox = txt.length() * 6 + 12;
+        	int hBox = 18;
+        	int bx = Math.min(mx + 14, viewportWidth - wBox - 4);
+        	int by = Math.max(2, my - 8);
+        	ui.drawQuad(gl, bx, by, wBox, hBox, 0.05f, 0.07f, 0.10f, 0.88f);
+        	ui.drawBorder(gl, bx, by, wBox, hBox, 0.4f, 0.7f, 1f, 1f);
+        	ui.drawText(gl, bx + 6, by + 13, viewportHeight, txt, 0.85f, 0.95f, 1f);
+        }
+
+        /**
+         * Task 4.1 — détermine la carcasse sous le curseur (la plus proche dans
+         * une tolérance), pour le tooltip espece + poids. Doit tourner pendant que
+         * MODELVIEW porte encore la caméra (même contrainte que doPicking /
+         * computeHoverAgent). Stocke le résultat dans {@link #hoveredCarcass}.
+         */
+        private void updateHoveredCarcass(GL2 gl) {
+            hoveredCarcass = null;
+            if (hoverX < 0 || !(_myWorld instanceof WorldOfCells)) return;
+            WorldOfCells wc = (WorldOfCells) _myWorld;
+            if (wc.carcasses == null || wc.carcasses.isEmpty()) return;
+
+            double[] mv   = new double[16];
+            double[] proj = new double[16];
+            int[]    view = new int[] { 0, 0, viewportWidth, viewportHeight };
+            double[] win  = new double[3];
+            gl.glGetDoublev(GL2.GL_MODELVIEW_MATRIX,  mv,   0);
+            gl.glGetDoublev(GL2.GL_PROJECTION_MATRIX, proj, 0);
+
+            int    w   = _myWorld.getWidth();
+            int    h   = _myWorld.getHeight();
+            double best = PICK_TOLERANCE_PX;
+
+            for (objects.Carcass c : wc.carcasses) {
+                // Position rendue : même formule que Carcass.displayUniqueObject
+                // et projectScreenDist pour les agents (pan-offset + coin de cellule).
+                int cx = c.getX(), cy = c.getY();
+                int x2 = ((cx - (movingX % w)) % w + w) % w;
+                int y2 = ((cy - (movingY % h)) % h + h) % h;
+                double worldX = offset + x2 * stepX - lenX;
+                double worldY = offset + y2 * stepY - lenY;
+                // Altitude : sommet de la pile, carcasse à plat au sol.
+                double worldZ = (double) _myWorld.getCellTopAltitude(cx, cy);
+
+                boolean ok = pickGlu.gluProject(worldX, worldY, worldZ,
+                        mv, 0, proj, 0, view, 0, win, 0);
+                if (!ok) continue;
+                if (win[2] < 0 || win[2] > 1) continue; // hors frustum
+
+                double sx = win[0];
+                double sy = viewportHeight - win[1]; // NEWT Y-flip : OpenGL bas-gauche → AWT haut-gauche
+                double ddx = sx - hoverX;
+                double ddy = sy - hoverY;
+                double dist = Math.sqrt(ddx * ddx + ddy * ddy);
+                if (dist < best) { best = dist; hoveredCarcass = c; }
+            }
+        }
+
+        /**
+         * Task 4.2 — picking carcasse au double-clic. Meme logique de projection que
+         * updateHoveredCarcass, mais cible le point de clic (pickCarcassX/Y) au lieu
+         * du curseur. Met a jour selectedCarcass.
+         */
+        private void doPickingCarcass(GL2 gl) {
+            if (!(_myWorld instanceof WorldOfCells)) return;
+            WorldOfCells wc = (WorldOfCells) _myWorld;
+            if (wc.carcasses == null || wc.carcasses.isEmpty()) {
+                selectedCarcass = null;
+                return;
+            }
+
+            double[] mv   = new double[16];
+            double[] proj = new double[16];
+            int[]    view = new int[] { 0, 0, viewportWidth, viewportHeight };
+            double[] win  = new double[3];
+            gl.glGetDoublev(GL2.GL_MODELVIEW_MATRIX,  mv,   0);
+            gl.glGetDoublev(GL2.GL_PROJECTION_MATRIX, proj, 0);
+
+            int    w    = _myWorld.getWidth();
+            int    h    = _myWorld.getHeight();
+            double best = PICK_TOLERANCE_PX;
+            objects.Carcass found = null;
+
+            for (objects.Carcass c : wc.carcasses) {
+                int cx = c.getX(), cy = c.getY();
+                int x2 = ((cx - (movingX % w)) % w + w) % w;
+                int y2 = ((cy - (movingY % h)) % h + h) % h;
+                double worldX = offset + x2 * stepX - lenX;
+                double worldY = offset + y2 * stepY - lenY;
+                double worldZ = (double) _myWorld.getCellTopAltitude(cx, cy);
+
+                boolean ok = pickGlu.gluProject(worldX, worldY, worldZ,
+                        mv, 0, proj, 0, view, 0, win, 0);
+                if (!ok) continue;
+                if (win[2] < 0 || win[2] > 1) continue;
+
+                double sx  = win[0];
+                double sy  = viewportHeight - win[1];
+                double ddx = sx - pickCarcassX;
+                double ddy = sy - pickCarcassY;
+                double dist = Math.sqrt(ddx * ddx + ddy * ddy);
+                if (dist < best) { best = dist; found = c; }
+            }
+            // On met a jour selectedCarcass : null si aucune carcasse trouvee,
+            // sinon la carcasse la plus proche. Pas de deselectionnement automatique
+            // ici si found == null (un double-clic dans le vide ne change rien —
+            // un simple clic hors-panneau suffit pour deselecter via pickRequested).
+            if (found != null) {
+                selectedCarcass = found;
+                // Un double-clic sur une carcasse deselectionne l'agent pour eviter
+                // que les deux fiches se chevauchent en bas-gauche.
+                selectedAgent = null;
+                selectedAgentIndex = -1;
+            }
+        }
+
+        // ── Overlay d'odeur : couleur par espece (= fleche d'orientation) ───────
+        // Index = scent.ScentKind.ordinal() {LOUP, MOUTON, HUMAIN, OURS, CARCASS}.
+        // RGB repris des triangles d'orientation (Loup/Mouton/Humain/Ours).
+        private static final float[][] SCENT_KIND_RGB = {
+            { 1f,    0f,    0f   },  // LOUP    — rouge
+            { 0f,    0f,    1f   },  // MOUTON  — bleu
+            { 0f,    1f,    0f   },  // HUMAIN  — vert
+            { 0.45f, 0.27f, 0.10f},  // OURS    — marron
+            { 0.55f, 0.55f, 0.55f},  // CARCASS — gris
+        };
+        /** Sous-projet E : teinte des puffs de SÉDUCTION (magenta), distincte de
+         *  la couleur d'espèce. Index virtuel = SCENT_KIND_RGB.length. */
+        private static final float[] SCENT_MATING_RGB = { 1f, 0f, 1f };
+        private static final int   SCENT_ALPHA_LEVELS = 5;     // paliers de transparence
+        private static final float SCENT_MAX_ALPHA     = 0.6f;  // alpha du palier le plus fort
+        private static final float SCENT_MIN_VISIBLE   = 0.04f; // sous ce seuil l'odeur a disparu
+
+        // Buffers reutilises d'une frame a l'autre (zero alloc en regime debug).
+        private float[] scentX, scentY, scentZ;
+        private int[]   scentKindBuf, scentLvlBuf;
+
+        /**
+         * Overlay debug du champ d'odeur (sous-projet A). Chaque puff devient un
+         * quad au sol, <b>colore par l'espece emettrice</b> (mêmes teintes que la
+         * fleche d'orientation : loup rouge, mouton bleu, humain vert, ours marron,
+         * carcasse gris) et dont la <b>transparence suit l'intensite</b> : l'odeur
+         * s'efface jusqu'a disparaitre en s'estompant.
+         * <p>Perf : l'alpha est quantifie en {@link #SCENT_ALPHA_LEVELS} paliers et
+         * les quads sont <b>groupes par (espece, palier)</b> → un seul
+         * {@code glColor4f} + un seul {@code glBegin/glEnd} par groupe (≤ kinds×levels
+         * appels couleur/frame au lieu d'un par puff). {@code glColor} coûte cher sur
+         * ce pipeline software (cf. note Landscape:98). Coût nul tant que l'overlay
+         * est off.
+         */
+        private void displayScentOverlay(GL2 gl) {
+            if (!SimulationConfig.getInstance().scentDebugOverlay) return;
+            scent.ScentField field = _myWorld.getScentField();
+            if (field.size() == 0) return;
+            int now = _myWorld.getIteration();
+            int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+            float[][] puffs = field.debugPuffSnapshot(now);
+            int n = puffs.length;
+
+            // (Re)dimensionne les buffers si besoin.
+            if (scentX == null || scentX.length < n) {
+                scentX = new float[n]; scentY = new float[n]; scentZ = new float[n];
+                scentKindBuf = new int[n]; scentLvlBuf = new int[n];
+            }
+
+            // Pre-pass : geometrie + bucket (espece, palier) par puff. Aucun appel GL.
+            for (int i = 0; i < n; i++) {
+                float inten = puffs[i][2];
+                if (inten < SCENT_MIN_VISIBLE) { scentLvlBuf[i] = 0; continue; }  // disparu
+                int cx = ((Math.round(puffs[i][0]) % w) + w) % w;
+                int cy = ((Math.round(puffs[i][1]) % h) + h) % h;
+                int x2 = ((cx - (movingX % w)) % w + w) % w;
+                int y2 = ((cy - (movingY % h)) % h + h) % h;
+                scentX[i] = (float) (offset + x2 * stepX - lenX);
+                scentY[i] = (float) (offset + y2 * stepY - lenY);
+                scentZ[i] = (float) _myWorld.getCellTopAltitude(cx, cy) + 0.4f;
+                int k = (int) puffs[i][3];
+                boolean mating = puffs[i][4] > 0.5f;             // sous-projet E
+                scentKindBuf[i] = mating ? SCENT_KIND_RGB.length
+                                         : ((k >= 0 && k < SCENT_KIND_RGB.length) ? k : 0);
+                int lvl = (int) Math.ceil(Math.min(1f, inten) * SCENT_ALPHA_LEVELS);
+                scentLvlBuf[i] = Math.max(1, Math.min(SCENT_ALPHA_LEVELS, lvl));
+            }
+
+            boolean lightingWas = gl.glIsEnabled(GL2.GL_LIGHTING);
+            boolean fogWas = gl.glIsEnabled(GL2.GL_FOG);
+            boolean cullWas = gl.glIsEnabled(GL.GL_CULL_FACE);
+            gl.glDisable(GL2.GL_LIGHTING);
+            gl.glDisable(GL2.GL_FOG);
+            gl.glDisable(GL.GL_TEXTURE_2D);
+            // La scene cull GL_FRONT (Landscape:1323) : un quad horizontal CCW
+            // verrait sa face visible (vue de dessus) ecartee. On desactive le
+            // cull pour cet overlay, puis on restaure.
+            gl.glDisable(GL.GL_CULL_FACE);
+            gl.glEnable(GL.GL_BLEND);
+            gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE_MINUS_SRC_ALPHA);
+            gl.glDepthMask(false);
+
+            float hs = (float) stepX * 0.5f;
+            // Trace groupe par (espece, palier) : 1 seul glColor4f + glBegin/glEnd par groupe.
+            for (int k = 0; k <= SCENT_KIND_RGB.length; k++) {       // +1 groupe = SÉDUCTION (sous-projet E)
+                float[] rgb = (k < SCENT_KIND_RGB.length) ? SCENT_KIND_RGB[k] : SCENT_MATING_RGB;
+                for (int L = 1; L <= SCENT_ALPHA_LEVELS; L++) {
+                    float a = (float) L / SCENT_ALPHA_LEVELS * SCENT_MAX_ALPHA;
+                    boolean opened = false;
+                    for (int i = 0; i < n; i++) {
+                        if (scentLvlBuf[i] != L || scentKindBuf[i] != k) continue;
+                        if (!opened) {
+                            gl.glColor4f(rgb[0], rgb[1], rgb[2], a);
+                            gl.glBegin(GL2.GL_QUADS);
+                            opened = true;
+                        }
+                        float x = scentX[i], y = scentY[i], z = scentZ[i];
+                        gl.glVertex3f(x - hs, y - hs, z);
+                        gl.glVertex3f(x + hs, y - hs, z);
+                        gl.glVertex3f(x + hs, y + hs, z);
+                        gl.glVertex3f(x - hs, y + hs, z);
+                    }
+                    if (opened) gl.glEnd();
+                }
+            }
+            gl.glDepthMask(true);
+            gl.glDisable(GL.GL_BLEND);
+            if (cullWas) gl.glEnable(GL.GL_CULL_FACE);
+            if (fogWas) gl.glEnable(GL2.GL_FOG);
+            if (lightingWas) gl.glEnable(GL2.GL_LIGHTING);
+        }
+
+        /** Espece d'un agent (pour resoudre la hotbar par espece). */
+        private static objects.Species speciesOf(agents.Agent a) {
+            if (a instanceof agents.Loup)   return objects.Species.LOUP;
+            if (a instanceof agents.Ours)   return objects.Species.OURS;
+            if (a instanceof agents.Mouton) return objects.Species.MOUTON;
+            return objects.Species.HUMAIN;
+        }
+
+        /** Déclenche l'action assignée au slot {@code slot} (0-8) pour l'agent piloté :
+         *  exécute si réalisable (flash vert + toast de confirmation), sinon flash rouge de refus. */
+        private void triggerHotbarSlot(int slot) {
+            if (controlledAgent == null || slot < 0 || slot >= input.HotbarLayout.SLOTS) return;
+            input.HotbarAction act = settings.hotbar().slot(speciesOf(controlledAgent), slot);
+            long now = System.currentTimeMillis();
+            if (act.available(controlledAgent)) {
+                act.execute(controlledAgent);
+                hotbarSuccessSlot = slot; hotbarSuccessUntilMs = now + 350;     // confirmation
+                hotbarToast = act.label + " !"; hotbarToastUntilMs = now + 900;
+            } else { hotbarFlashSlot = slot; hotbarFlashUntilMs = now + 300; }   // refus
+        }
+
+        /** Map le CARACTÈRE tapé vers un slot de hotbar (0-8), ou -1. Couvre la rangée de
+         *  chiffres AZERTY non-shiftée dont NEWT remonte bien le caractère (& " ' ( - _),
+         *  ET les chiffres 1-9 (QWERTY, AZERTY+Maj, ou pavé numérique NumLock actif).
+         *  Les touches accentuées (é è ç) remontent keyChar=0 → gérées par keyCode (cf.
+         *  {@link #hotbarSlotForKeyCode}). */
+        private static int hotbarSlotForChar(char c) {
+            if (c >= '1' && c <= '9') return c - '1';
+            switch (c) {
+                case '&':  return 0;   // touche 1
+                case '"':  return 2;   // touche 3
+                case '\'': return 3;   // touche 4
+                case '(':  return 4;   // touche 5
+                case '-':  return 5;   // touche 6
+                case '_':  return 7;   // touche 8
+                default:   return -1;
+            }
+        }
+
+        /** Map le keyCode NEWT vers un slot, pour les touches accentuées AZERTY qui ne
+         *  remontent pas de caractère exploitable (keyChar=0). Les keyCode mesurés sur
+         *  WSLg sont les points de code Latin-1 : é=233, è=232, ç=231 (à=224 → pas de slot,
+         *  la barre s'arrête à 9). */
+        private static int hotbarSlotForKeyCode(int code) {
+            switch (code) {
+                case 233: return 1;   // é (touche 2 = Manger par défaut)
+                case 232: return 6;   // è (touche 7)
+                case 231: return 8;   // ç (touche 9)
+                default:  return -1;
+            }
+        }
+
+        /** Étiquette d'espèce ASCII pour le tooltip carcasse. */
+        private static String speciesLabel(objects.Species s) {
+            switch (s) {
+                case MOUTON: return "mouton";
+                case LOUP:   return "loup";
+                case OURS:   return "ours";
+                case HUMAIN: return "humain";
+                default:     return "animal";
+            }
+        }
+
+        /**
+         * Task 4.1 — tooltip de carcasse au survol : espece + poids, pres du curseur.
+         */
+        private void drawCarcassTooltip(GL2 gl, objects.Carcass c, int mx, int my) {
+            String label = "Carcasse de " + speciesLabel(c.source) + " : "
+                    + Math.round(c.mass) + "kg";
+            int wBox = label.length() * 6 + 12;
+            int hBox = 18;
+            int bx = Math.min(mx + 14, viewportWidth - wBox - 4);
+            int by = Math.max(2, my - 8);
+            ui.drawQuad(gl, bx, by, wBox, hBox, 0.10f, 0.05f, 0.05f, 0.88f);
+            ui.drawBorder(gl, bx, by, wBox, hBox, 0.8f, 0.4f, 0.3f, 1f);
+            ui.drawText(gl, bx + 6, by + 13, viewportHeight, label, 0.95f, 0.80f, 0.70f);
+        }
+
+        /** Énergie (courante ou max) d'un agent, par espèce. */
+        private int hoverEnergy(Agent a, boolean max) {
+        	if (a instanceof agents.Loup)   return max ? ((agents.Loup) a).getEnergieMax()   : ((agents.Loup) a).getEnergie();
+        	if (a instanceof agents.Mouton) return max ? (int)((agents.Mouton) a).getEnergieMax() : (int)((agents.Mouton) a).getEnergie();
+        	if (a instanceof agents.Humain) return max ? ((agents.Humain) a).getEnergieMax() : ((agents.Humain) a).getEnergie();
+        	if (a instanceof agents.Ours)   return max ? ((agents.Ours) a).getEnergieMax()   : ((agents.Ours) a).getEnergie();
+        	return max ? 1 : 0;
         }
 
         /**
@@ -525,13 +951,158 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
          * son centre est sorti, d'où la marge). {@code win} est un scratch buffer
          * réutilisé entre appels pour éviter d'allouer par mouton.
          */
+        /**
+         * V3 — dessine un cercle pulsant au sol sous l'agent sélectionné. Tracé
+         * en lignes (non affectées par le cull GL_FRONT), lighting/fog/texture
+         * désactivés (couleur émissive pure), état restauré après — même pattern
+         * que le champ d'étoiles. Le cercle suit l'altitude du sommet de la pile.
+         */
+        private void drawSelectionHalo(GL2 gl, Agent a, float offset, float stepX,
+                float stepY, float lenX, float lenY, int movingX, int movingY) {
+        	int w = _myWorld.getWidth();
+        	int h = _myWorld.getHeight();
+        	int x2 = ((a.x - (movingX % w)) % w + w) % w;
+        	int y2 = ((a.y - (movingY % h)) % h + h) % h;
+        	// −lenX/−lenY : sous l'agent tel que rendu (coin de cellule, cf. Loup/Mouton).
+        	float px = offset + x2 * stepX - lenX;
+        	float py = offset + y2 * stepY - lenY;
+        	float z  = (float) _myWorld.getCellTopAltitude(a.x, a.y) + 0.6f;
+        	float r  = Math.abs(lenX) * 1.8f;
+
+        	boolean fogWas = gl.glIsEnabled(GL2.GL_FOG);
+        	boolean lightingWas = gl.glIsEnabled(GL2.GL_LIGHTING);
+        	gl.glDisable(GL2.GL_LIGHTING);
+        	gl.glDisable(GL2.GL_FOG);
+        	gl.glDisable(GL.GL_TEXTURE_2D);
+
+        	// Pulsation douce de la luminosité au rythme de l'itération.
+        	float pulse = 0.55f + 0.45f * (float) Math.sin(_myWorld.getIteration() * 0.2);
+        	gl.glColor3f(0.2f, pulse, 1f);
+        	gl.glLineWidth(2.5f);
+        	gl.glBegin(GL.GL_LINE_LOOP);
+        	final int SEG = 32;
+        	for (int k = 0; k < SEG; k++) {
+        		double ang = 2.0 * Math.PI * k / SEG;
+        		gl.glVertex3f(px + (float) Math.cos(ang) * r, py + (float) Math.sin(ang) * r, z);
+        	}
+        	gl.glEnd();
+        	gl.glLineWidth(1f);
+
+        	if (lightingWas) gl.glEnable(GL2.GL_LIGHTING);
+        	if (fogWas) gl.glEnable(GL2.GL_FOG);
+        }
+
+        /**
+         * V2 — fumée grise au-dessus de la lave fraîche : un panache vertical de
+         * points additifs montant au-dessus de chaque cellule LAVA visible. La
+         * lave la plus CHAUDE (state bas) fume le plus ; la lave immergée produit
+         * une VAPEUR (teinte plus claire). Rendu en points lissés additifs, état
+         * GL sauvé/restauré (non affecté par le cull). Plumes plafonnées pour le
+         * coût (rendu logiciel). Animation par l'itération.
+         */
+        private void displayLavaSmoke(GL2 gl, float offset, float stepX, float stepY,
+                float lenX, int movingX, int movingY, int[] xWin, int[] yWin) {
+        	if (VIEW_FROM_ABOVE) return;
+        	final int MAX_PLUMES = 90;
+        	int drawn = 0;
+        	int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+        	int it = _myWorld.getIteration();
+
+        	boolean fogWas = gl.glIsEnabled(GL2.GL_FOG);
+        	boolean lightingWas = gl.glIsEnabled(GL2.GL_LIGHTING);
+        	boolean smoothWas = gl.glIsEnabled(GL2.GL_POINT_SMOOTH);
+        	gl.glDisable(GL2.GL_LIGHTING);
+        	gl.glDisable(GL2.GL_FOG);
+        	gl.glDisable(GL.GL_TEXTURE_2D);
+        	gl.glEnable(GL.GL_BLEND);
+        	gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE);   // additif pondéré
+        	gl.glEnable(GL2.GL_POINT_SMOOTH);
+        	gl.glDepthMask(false);
+        	gl.glPointSize(16f);   // taille fixe : glPointSize interdit dans un glBegin
+        	gl.glBegin(GL.GL_POINTS);
+        	for (int x = xWin[0]; x < xWin[1] && drawn < MAX_PLUMES; x++) {
+        		for (int y = yWin[0]; y < yWin[1] && drawn < MAX_PLUMES; y++) {
+        			int cx = (x + movingX) % w, cy = (y + movingY) % h;
+        			int lava = _myWorld.getLavaCAValue(cx, cy);
+        			if (lava <= 0) continue;
+        			boolean submerged = _myWorld.getCellHeight(cx, cy) < 0;
+        			int x2 = ((x % w) + w) % w, y2 = ((y % h) + h) % h;
+        			float px = offset + x2 * stepX;
+        			float py = offset + y2 * stepY;
+        			float zBase = (float) _myWorld.getCellTopAltitude(cx, cy) + 1.5f;
+        			// Colonne de 5 bouffées montantes, jitter horizontal animé.
+        			for (int s = 0; s < 5; s++) {
+        				float t = (s + ((it * 0.05f + (cx * 7 + cy * 3)) % 1f));
+        				float rise = t * Math.abs(lenX) * 2.2f;
+        				float jit = (float) Math.sin(it * 0.1f + s + cx) * Math.abs(lenX) * 0.4f;
+        				float a = Math.max(0f, 0.5f - t * 0.09f);   // s'estompe en montant
+        				if (submerged) gl.glColor4f(0.85f, 0.88f, 0.95f, a);   // vapeur claire
+        				else           gl.glColor4f(0.32f, 0.30f, 0.28f, a);   // fumée grise
+        				gl.glVertex3f(px + jit, py + jit * 0.5f, zBase + rise);
+        			}
+        			drawn++;
+        		}
+        	}
+        	gl.glEnd();
+        	gl.glPointSize(2f);
+        	gl.glDepthMask(true);
+        	gl.glDisable(GL.GL_BLEND);
+        	if (!smoothWas) gl.glDisable(GL2.GL_POINT_SMOOTH);
+        	if (fogWas) gl.glEnable(GL2.GL_FOG);
+        	if (lightingWas) gl.glEnable(GL2.GL_LIGHTING);
+        }
+
+        /**
+         * V2 — lueur orangée pulsante au cratère pendant l'éruption : quelques
+         * gros points additifs lissés au-dessus du conduit, qui éclairent
+         * visuellement le panache. Position = `LavaCA.sourceX/sourceY`. État GL
+         * sauvé/restauré (additif, lighting/fog off, non affecté par le cull).
+         */
+        private void displayCraterGlow(GL2 gl, float offset, float stepX, float stepY,
+                float lenX, int movingX, int movingY) {
+        	if (VIEW_FROM_ABOVE) return;
+        	int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+        	int cx = cellularautomata.ecosystem.LavaCA.sourceX;
+        	int cy = cellularautomata.ecosystem.LavaCA.sourceY;
+        	int x2 = ((cx - (movingX % w)) % w + w) % w;
+        	int y2 = ((cy - (movingY % h)) % h + h) % h;
+        	float px = offset + x2 * stepX;
+        	float py = offset + y2 * stepY;
+        	float z  = (float) _myWorld.getCellTopAltitude(cx, cy) + 2f;
+
+        	boolean fogWas = gl.glIsEnabled(GL2.GL_FOG);
+        	boolean lightingWas = gl.glIsEnabled(GL2.GL_LIGHTING);
+        	boolean smoothWas = gl.glIsEnabled(GL2.GL_POINT_SMOOTH);
+        	gl.glDisable(GL2.GL_LIGHTING);
+        	gl.glDisable(GL2.GL_FOG);
+        	gl.glDisable(GL.GL_TEXTURE_2D);
+        	gl.glEnable(GL.GL_BLEND);
+        	gl.glBlendFunc(GL.GL_SRC_ALPHA, GL.GL_ONE);
+        	gl.glEnable(GL2.GL_POINT_SMOOTH);
+        	gl.glDepthMask(false);
+        	float pulse = 0.55f + 0.45f * (float) Math.sin(_myWorld.getIteration() * 0.25);
+        	gl.glPointSize(60f);
+        	gl.glColor4f(1f, 0.45f, 0.08f, 0.35f * pulse);   // halo orange
+        	gl.glBegin(GL.GL_POINTS); gl.glVertex3f(px, py, z); gl.glEnd();
+        	gl.glPointSize(34f);
+        	gl.glColor4f(1f, 0.75f, 0.25f, 0.55f * pulse);   // coeur incandescent
+        	gl.glBegin(GL.GL_POINTS); gl.glVertex3f(px, py, z + Math.abs(lenX)); gl.glEnd();
+        	gl.glPointSize(2f);
+        	gl.glDepthMask(true);
+        	gl.glDisable(GL.GL_BLEND);
+        	if (!smoothWas) gl.glDisable(GL2.GL_POINT_SMOOTH);
+        	if (fogWas) gl.glEnable(GL2.GL_FOG);
+        	if (lightingWas) gl.glEnable(GL2.GL_LIGHTING);
+        }
+
         private boolean isAgentOnScreen(Agent a, double[] mv, double[] proj, int[] view, double[] win, double marginPx) {
         	int w = _myWorld.getWidth();
         	int h = _myWorld.getHeight();
         	int x2 = ((a.x - (movingX % w)) % w + w) % w;
         	int y2 = ((a.y - (movingY % h)) % h + h) % h;
-        	double worldX = offset + x2 * stepX;
-        	double worldY = offset + y2 * stepY;
+        	// −lenX/−lenY : même position que le rendu (coin de cellule) → culling cohérent.
+        	double worldX = offset + x2 * stepX - lenX;
+        	double worldY = offset + y2 * stepY - lenY;
         	double cellH  = Math.max(0, _myWorld.getCellHeight(a.x, a.y));
         	double worldZ = cellH * nHeihtUniqueObj + 2.5; // centre approx du corps
 
@@ -552,7 +1123,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
     		this.launchMenu = new LaunchMenu(config);
     		if (__myWorld instanceof WorldOfCells) {
     			((WorldOfCells) __myWorld).config = config;
-    			this.inGameMenu = new InGameMenu(config, (WorldOfCells) __myWorld, this);
+    			this.inGameMenu = new InGameMenu(config, (WorldOfCells) __myWorld, this, settings);
     		}
 
     		if (config.landscapeSource == SimulationConfig.LandscapeSource.PNG) {
@@ -680,32 +1251,47 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         }
 
         /**
-         * Normales par sommet à partir des hauteurs voisines (différences centrées,
+         * Normales par cellule à partir des hauteurs voisines (différences centrées,
          * wrap torique). Donne au terrain un vrai relief pour la lumière directionnelle.
-         * Précalcul unique : O(dxView * dyView), une seule fois au boot.
+         * Précalcul unique : O(dxCA * dyCA), une seule fois au boot.
          * En vue de dessus (terrain plat à z=0) les normales encodent quand même la
          * pente — ça produit un effet "relief shading" agréable.
+         *
+         * IMPORTANT — la grille (et son wrap) doit être IDENTIQUE à celle des hauteurs
+         * rendues. Le rendu lit l'altitude des sommets via {@code getCellHeight(...)},
+         * qui wrappe sur le tore du monde de taille {@code dxCA = dxView-1}. Les normales
+         * doivent donc être calculées sur cette MÊME grille de cellules (dxView-1) à
+         * partir de {@code getCellHeight}, et indexées au rendu avec le MÊME modulo
+         * {@code % (dxView-1)}. Avant correction, les normales étaient bâties sur la
+         * grille de SOMMETS Perlin {@code landscape[dxView][dyView]} (période dxView,
+         * car le bruit de Perlin est tileable de période dxView) et indexées
+         * {@code % dxView}, alors que les hauteurs wrappent à {@code dxView-1} : ce
+         * décalage d'une cellule entre les deux périodes (51 vs 50) faisait battre les
+         * deux grilles et produisait une « fissure » d'éclairage diagonale qui balayait
+         * le sol dès qu'on panne le terrain (flèches / ZQSD / drag clic droit, tout ce
+         * qui modifie movingX/movingY).
          */
         private void precomputeNormals() {
-            normals = new float[dxView][dyView][3];
+            final int nx = dxView - 1, ny = dyView - 1;   // taille du tore (= dxCA, dyCA)
+            normals = new float[nx][ny][3];
             final double zScale = heightFactor * heightBooster;
             final double dxScale = 2.0 * Math.abs(stepX);
             final double dyScale = 2.0 * Math.abs(stepY);
-            for (int x = 0; x < dxView; x++) {
-                int xp = (x + 1) % dxView;
-                int xm = (x - 1 + dxView) % dxView;
-                for (int y = 0; y < dyView; y++) {
-                    int yp = (y + 1) % dyView;
-                    int ym = (y - 1 + dyView) % dyView;
-                    double dzdx = (landscape[xp][y] - landscape[xm][y]) * zScale / dxScale;
-                    double dzdy = (landscape[x][yp] - landscape[x][ym]) * zScale / dyScale;
-                    float nx = (float) -dzdx;
-                    float ny = (float) -dzdy;
-                    float nz = 1f;
-                    float invLen = 1f / (float) Math.sqrt(nx*nx + ny*ny + nz*nz);
-                    normals[x][y][0] = nx * invLen;
-                    normals[x][y][1] = ny * invLen;
-                    normals[x][y][2] = nz * invLen;
+            for (int x = 0; x < nx; x++) {
+                int xp = (x + 1) % nx;
+                int xm = (x - 1 + nx) % nx;
+                for (int y = 0; y < ny; y++) {
+                    int yp = (y + 1) % ny;
+                    int ym = (y - 1 + ny) % ny;
+                    double dzdx = (_myWorld.getCellHeight(xp, y) - _myWorld.getCellHeight(xm, y)) * zScale / dxScale;
+                    double dzdy = (_myWorld.getCellHeight(x, yp) - _myWorld.getCellHeight(x, ym)) * zScale / dyScale;
+                    float vnx = (float) -dzdx;
+                    float vny = (float) -dzdy;
+                    float vnz = 1f;
+                    float invLen = 1f / (float) Math.sqrt(vnx*vnx + vny*vny + vnz*vnz);
+                    normals[x][y][0] = vnx * invLen;
+                    normals[x][y][1] = vny * invLen;
+                    normals[x][y][2] = vnz * invLen;
                 }
             }
         }
@@ -1048,6 +1634,30 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             gl.glCallList(starListId);
             gl.glPopMatrix();
 
+            // V1 — la LUNE : disque pâle dans le ciel, à l'OPPOSÉ du soleil (donc
+            // au-dessus de l'horizon la nuit, quand le soleil est sous l'horizon).
+            // Rendu en points lissés (round) additifs hors de la rotation des
+            // étoiles. Un halo plus large et plus doux entoure le coeur. Sa
+            // lumière douce au sol est déjà fournie par applyMoonLights (LIGHT2-7).
+            float mx = -sunDirGL[0] * STAR_RADIUS * 0.92f;
+            float my = -sunDirGL[1] * STAR_RADIUS * 0.92f;
+            float mz = -sunDirGL[2] * STAR_RADIUS * 0.92f;
+            if (mz > 0f) {   // lune au-dessus de l'horizon seulement
+                boolean smoothWas = gl.glIsEnabled(GL2.GL_POINT_SMOOTH);
+                gl.glEnable(GL2.GL_POINT_SMOOTH);
+                float nf = currentNightFactor;
+                // Halo diffus.
+                gl.glPointSize(46f);
+                gl.glColor3f(0.30f * nf, 0.33f * nf, 0.40f * nf);
+                gl.glBegin(GL.GL_POINTS); gl.glVertex3f(mx, my, mz); gl.glEnd();
+                // Coeur de la lune (blanc-bleuté pâle).
+                gl.glPointSize(26f);
+                gl.glColor3f(0.92f * nf, 0.94f * nf, 0.88f * nf);
+                gl.glBegin(GL.GL_POINTS); gl.glVertex3f(mx, my, mz); gl.glEnd();
+                if (!smoothWas) gl.glDisable(GL2.GL_POINT_SMOOTH);
+            }
+            gl.glPointSize(2f);
+
             // Restore exact previous state
             gl.glDepthMask(true);
             gl.glDisable(GL.GL_BLEND);
@@ -1142,19 +1752,223 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
          *
          */
         //@Override
+        /**
+         * Scénario de captures non interactif (mode {@code -Dautoshot}). Déroule
+         * jour → éruption(jour) → nuit(lune) → nuit+éruption, une PNG par étape
+         * dans {@code screenshots/}, puis {@code halt(0)}. Chaque étape franchie
+         * une seule fois via {@link #autoshotStep}. Tolérant au FPS (piloté au
+         * temps réel, pas au numéro de frame).
+         */
+        private void runAutoshot() {
+            long now = System.currentTimeMillis();
+            if (autoshotStartMs == 0L) {
+                autoshotStartMs = now;
+                if (config != null) config.awaitingStart = false; // démarre la sim
+                System.out.println("[autoshot] démarrage du scénario de captures");
+                return;
+            }
+            long t = now - autoshotStartMs;
+            if (AUTOSHOT_3D)     { runAutoshot3D(t); return; }
+            if (AUTOSHOT_SELECT) { runAutoshotSelect(t); return; }
+            if (AUTOSHOT_MOON)   { runAutoshotMoon(t); return; }
+            if (AUTOSHOT_RAIN)   { runAutoshotRain(t); return; }
+            if (AUTOSHOT_SCENT)  { runAutoshotScent(t); return; }
+            if (AUTOSHOT_ODORAT) { runAutoshotOdorat(t); return; }
+            switch (autoshotStep) {
+                case 0: if (t >= 3000) { shoot("01-jour");                 autoshotStep = 1; } break;
+                case 1: if (t >= 4000) { LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 2; } break;
+                case 2: if (t >= 8000) { shoot("02-eruption-jour");        autoshotStep = 3; } break;
+                case 3: if (t >= 9000) { it += _myWorld.getDureeJour();    autoshotStep = 4; } break; // → nuit
+                case 4: if (t >= 11500){ shoot("03-nuit-lune");            autoshotStep = 5; } break;
+                case 5: if (t >= 12000){ LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 6; } break;
+                case 6: if (t >= 16000){ shoot("04-nuit-eruption");        autoshotStep = 7; } break;
+                case 7: if (t >= 17500){ System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /** Variante vue 3D perspective centrée sur le volcan (lune, panaches, relief, arbres). */
+        private void runAutoshot3D(long t) {
+            // Recentre en continu la caméra sur le cratère (l'épicentre est figé en init).
+            int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+            movingX = ((LavaCA.sourceX - dxView / 2) % w + w) % w;
+            movingY = ((LavaCA.sourceY - dyView / 2) % h + h) % h;
+            switch (autoshotStep) {
+                case 0: VIEW_FROM_ABOVE = false; cameraDistance3D = -110; cameraPitch = 32; autoshotStep = 1; break; // bascule 3D, regard plongeant
+                case 1: if (t >= 3500) { shoot("3d-01-jour");                  autoshotStep = 2; } break;
+                case 2: if (t >= 4200) { LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 3; } break;
+                case 3: if (t >= 8500) { shoot("3d-02-eruption-jour");         autoshotStep = 4; } break;
+                case 4: if (t >= 9200) { it += _myWorld.getDureeJour();        autoshotStep = 5; } break; // → nuit
+                case 5: if (t >= 12000){ shoot("3d-03-nuit-lune");             autoshotStep = 6; } break;
+                case 6: if (t >= 12500){ LavaCA.setbErupt(1); triggerShake(1.6f); autoshotStep = 7; } break;
+                case 7: if (t >= 16500){ shoot("3d-04-nuit-eruption");         autoshotStep = 8; } break;
+                case 8: if (t >= 18000){ System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /**
+         * Vérifie le réglage eau/pluie (L7) : force la pluie pour voir le tint
+         * d'eau adouci sur le sol, puis la coupe pour confirmer le séchage rapide.
+         */
+        private void runAutoshotRain(long t) {
+            switch (autoshotStep) {
+                case 0: _myWorld.setRaining(true);  autoshotStep = 1; break;   // averse continue
+                case 1: if (t >= 8000)  { shoot("rain-01-mouille"); autoshotStep = 2; } break; // sol détrempé (tint doux)
+                case 2: if (t >= 9000)  { _myWorld.setRaining(false); autoshotStep = 3; } break; // l'orage cesse
+                case 3: if (t >= 26000) { shoot("rain-02-seche"); autoshotStep = 4; } break;     // ~17 s plus tard → sec
+                case 4: if (t >= 27500) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /**
+         * Vérifie l'overlay du champ d'odeur (sous-projet A). Force l'overlay,
+         * densifie les dépôts (période 1, longue durée de vie) pour des traînées
+         * visibles, centre la caméra sur un agent, puis capture une vue de dessus
+         * (test décisif : y a-t-il des puffs dessinés ?) et une vue 3D plongeante.
+         */
+        private void runAutoshotScent(long t) {
+            // Centre la grille sur le 1er agent vivant (traînées au cadre).
+            agents.Agent focus = null;
+            if (!_myWorld.loups.isEmpty())        focus = _myWorld.loups.get(0);
+            else if (!_myWorld.moutons.isEmpty()) focus = _myWorld.moutons.get(0);
+            if (focus != null) {
+                int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+                movingX = ((focus.x - dxView / 2) % w + w) % w;
+                movingY = ((focus.y - dyView / 2) % h + h) % h;
+            }
+            switch (autoshotStep) {
+                case 0:
+                    config.scentDebugOverlay = true;       // overlay ON
+                    config.scentEmitPeriod   = 1;          // un dépôt par tick → traînée dense
+                    config.scentLifetimeSec  = 120.0;      // persistance moyenne → dégradé d'alpha visible
+                    config.scentBaseScale    = 1.2;        // intensité modérée → paliers de transparence lisibles
+                    VIEW_FROM_ABOVE = true;                // vue de dessus = test décisif
+                    autoshotStep = 1;
+                    break;
+                case 1: if (t >= 12000) { shoot("scent-01-topdown"); autoshotStep = 2; } break;  // ~12 s de marche → traînées
+                case 2: if (t >= 13000) { VIEW_FROM_ABOVE = false; cameraDistance3D = -90; cameraPitch = 55; autoshotStep = 3; } break; // 3D plongeant
+                case 3: if (t >= 16000) { shoot("scent-02-3d"); autoshotStep = 4; } break;
+                case 4: if (t >= 17500) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /**
+         * Cadre la LUNE (V1). Cale une nuit modérée (lune à mi-hauteur, pas au
+         * zénith comme à minuit), vise le ciel (pitch négatif) et balaie les 4
+         * azimuts cardinaux — l'un des clichés cadre forcément le disque lunaire.
+         */
+        private void runAutoshotMoon(long t) {
+            switch (autoshotStep) {
+                case 0:
+                    VIEW_FROM_ABOVE = false;
+                    cameraDistance3D = -120;
+                    cameraPitch = -22;                              // regard vers le ciel
+                    it = (int)(_myWorld.getDureeJour() * 1.28);     // nuit modérée (lune à l'est, mi-hauteur)
+                    autoshotStep = 1;
+                    break;
+                case 1: if (t >= 2500) { rotateX = 0;   shoot("moon-yaw000"); autoshotStep = 2; } break;
+                case 2: if (t >= 4000) { rotateX = 90;  shoot("moon-yaw090"); autoshotStep = 3; } break;
+                case 3: if (t >= 5500) { rotateX = 180; shoot("moon-yaw180"); autoshotStep = 4; } break;
+                case 4: if (t >= 7000) { rotateX = 270; shoot("moon-yaw270"); autoshotStep = 5; } break;
+                case 5: if (t >= 8500) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /** Sélectionne un mouton et le suit en 3D pour exposer le halo de sélection (V3). */
+        private void runAutoshotSelect(long t) {
+            switch (autoshotStep) {
+                case 0:
+                    if (!_myWorld.moutons.isEmpty()) {
+                        setSelectedAgent(_myWorld.moutons.get(0), 0);
+                        cameraFollow = true;
+                        VIEW_FROM_ABOVE = false;
+                        orbitRadius = 14;   // gros plan 3e personne
+                    }
+                    autoshotStep = 1;
+                    break;
+                case 1: if (t >= 3500) { shoot("select-01-halo-jour"); autoshotStep = 2; } break;
+                case 2: if (t >= 4200) { it += _myWorld.getDureeJour(); autoshotStep = 3; } break; // nuit
+                case 3: if (t >= 7000) { shoot("select-02-halo-nuit"); autoshotStep = 4; } break;
+                case 4: if (t >= 8500) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /**
+         * Validation visuelle de la ligne « Odorat » (sous-projet B). Sélectionne
+         * un loup (odorat fort) après avoir saturé sa zone d'odeurs proie/danger
+         * pour que ses canaux s'affichent peuplés, capture sa fiche, puis
+         * sélectionne un humain (sous le gate → « anosmique ») et capture la sienne.
+         */
+        private void runAutoshotOdorat(long t) {
+            switch (autoshotStep) {
+                case 0:
+                    VIEW_FROM_ABOVE = false;
+                    orbitRadius = 16;
+                    autoshotStep = 1;
+                    break;
+                case 1:
+                    // Chauffe : laisse la simulation produire des odeurs NATURELLES
+                    // (moutons/humains qui se déplacent et déposent leur trace).
+                    if (t >= 9000) autoshotStep = 2;
+                    break;
+                case 2:
+                    // Poll chaque frame : dès qu'un loup sent réellement quelque chose,
+                    // on le sélectionne et on capture — fiche peuplée SANS rien injecter.
+                    if (selectStrongestSmellingLoup()) {
+                        shoot("odorat-01-loup-naturel"); odoratMark = t; autoshotStep = 3;
+                    } else if (t >= 30000) {   // garde-fou : capture quand même
+                        if (!_myWorld.loups.isEmpty()) setSelectedAgent(_myWorld.loups.get(0), 0);
+                        cameraFollow = true;
+                        shoot("odorat-01-loup-naturel"); odoratMark = t; autoshotStep = 3;
+                    }
+                    break;
+                case 3:
+                    if (t >= odoratMark + 800 && !_myWorld.humains.isEmpty()) {
+                        setSelectedAgent(_myWorld.humains.get(0), 0); cameraFollow = true; autoshotStep = 4;
+                    } else if (t >= odoratMark + 800) { autoshotStep = 4; }
+                    break;
+                case 4: if (t >= odoratMark + 1100) { shoot("odorat-02-humain-anosmique"); autoshotStep = 5; } break;
+                case 5: if (t >= odoratMark + 2000) { System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
+        /** Sélectionne le loup dont l'odeur perçue (proie ou danger) est la plus forte,
+         *  d'après les odeurs naturelles du moment. Renvoie true si ce loup sent
+         *  réellement quelque chose (intensité &gt; 0) — validation visuelle de la fiche. */
+        private boolean selectStrongestSmellingLoup() {
+            agents.Loup best = null; double bestI = 0;
+            for (agents.Loup l : _myWorld.loups) {
+                agents.ai.Percept p = agents.ai.Perception.sense(l, _myWorld, _myWorld.humains, _myWorld.moutons);
+                double i = Math.max(p.scentPreyIntensity, p.scentDangerIntensity);
+                if (i > bestI) { bestI = i; best = l; }
+            }
+            if (best == null) return false;
+            setSelectedAgent(best, _myWorld.loups.indexOf(best)); cameraFollow = true;
+            return true;
+        }
+
+        /** Programme une capture étiquetée (lue par le bloc screenshot de display()). */
+        private void shoot(String label) {
+            screenshotLabel = label;
+            screenshotRequested = true;
+            System.out.println("[autoshot] capture " + label + " (t=" + (System.currentTimeMillis() - autoshotStartMs) + "ms)");
+        }
+
         public void display(GLAutoDrawable gLDrawable) {
-           
+
         		// ** compute FPS
         		
+        		renderFrames++;
         		if ( System.currentTimeMillis() - lastTimeStamp >= 1000 )
         		{
-    				int fps = ( it - lastItStamp ) / 1;   // FPS pour le HUD (log console retiré)
-        			lastItStamp = it;
+    				int fps = ( renderFrames - lastItStamp ) / 1;   // frames de rendu / s
+        			lastItStamp = renderFrames;
         			lastTimeStamp = System.currentTimeMillis();
 
         			lastFpsValue = fps;
         		}
-        		
+
+        		if (AUTOSHOT) runAutoshot();
+
         		// ** clean screen
 
         		final GL2 gl = gLDrawable.getGL().getGL2();
@@ -1167,6 +1981,13 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         		// Masque le modèle de l'agent piloté en 1ère personne (sinon il
         		// occulte la caméra placée à son œil).
         		if (selectedAgent != null) selectedAgent.hiddenFP = firstPersonControl();
+
+        		// Draine ICI (thread de rendu) les déplacements de pan accumulés par le
+        		// thread d'événements NEWT, et applique-les à movingX/movingY UNE fois
+        		// pour toute la frame. Garantit que toute la passe terrain lit le même
+        		// movingX → plus de déchirure d'une cellule en déplacement rapide /
+        		// drag clic droit. (cf. champs pendingMoveX/Y.)
+        		applyPendingPan();
 
         		// Caméra-follow (Phase 8) : recentre movingX/movingY sur l'agent
         		// sélectionné si la touche `f` a basculé le mode.
@@ -1207,6 +2028,26 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                     topDownOrthoPushed = true;
                 }
                 gl.glLoadIdentity();
+
+                // V8 — secousse sur FRONT MONTANT d'éruption (manuelle ou AUTO via
+                // pErruption) : déclenche le shake une seule fois au démarrage.
+                if (_myWorld instanceof WorldOfCells) {
+                	boolean erupt = ((WorldOfCells) _myWorld).lavaCA != null
+                			&& ((WorldOfCells) _myWorld).lavaCA.getbErupt() == 1;
+                	if (erupt && !wasErupting) triggerShake(1.6f);
+                	wasErupting = erupt;
+                }
+
+                // V8 — secousse caméra (screen shake) : petit décalage aléatoire
+                // décroissant en eye-space, appliqué avant les transforms de vue
+                // pour faire trembler toute la scène pendant une éruption.
+                if (shakeTicks > 0) {
+                	float decay = shakeTicks / (float) SHAKE_DURATION;
+                	float amp = shakeMag * decay;
+                	gl.glTranslatef((float)(Math.random()*2-1) * amp,
+                	                (float)(Math.random()*2-1) * amp, 0f);
+                	shakeTicks--;
+                }
 
                 // L'ancien bloc d'affichage FPS / heure était dessiné ici via
                 // glWindowPos2d. Il est remplacé par le HUD overlay 2D, dessiné en
@@ -1342,9 +2183,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 // getJour()/setJour() est maintenant synchronisé par updateSunAndSky()
                 // selon l'altitude du soleil. Plus de toggle à it%dureeJour ici —
                 // le clic droit shift directement 'it' pour basculer.
+                // NB : 'it' (horloge jour/nuit) n'est PLUS incrémenté par frame de
+                // rendu ici — il avance dans le step loop, au rythme de la simulation
+                // (cf. « it += stepsThisFrame »), donc figé en pause et accéléré en xN.
 
-                it++;
-                
                 /*
                 if ( it % 30 == 0 )//&& it != 0)
                 	movingIt++;
@@ -1358,13 +2200,25 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         		// steps selon le temps réel écoulé (fixed-timestep accumulator).
             	if (config == null || !config.awaitingStart) {
             		int hz = (config != null) ? config.simulationHz : 20;
-            		int stepsThisFrame = timeKeeper.stepsToRun(hz);
-            		for (int s = 0; s < stepsThisFrame; s++) {
-            			_myWorld.step();
-            			// Échantillonnage pour le graphe de populations (Phase 9).
-            			if (_myWorld instanceof WorldOfCells) {
-            				populationGraph.sample((WorldOfCells) _myWorld);
+            		int speed = playback.multiplier();
+            		// On consomme l'accumulator chaque frame (clock à jour, pas de
+            		// rafale au sortir de pause) ; l'accélération relève le cap de
+            		// steps/frame d'autant. Les steps ne sont exécutés que si la
+            		// lecture tourne (en pause : world figé, caméra libre).
+            		int stepsThisFrame = timeKeeper.stepsToRun(hz * speed,
+            				TimeKeeper.MAX_STEPS_PER_FRAME * speed);
+            		if (playback.isRunning()) {
+            			for (int s = 0; s < stepsThisFrame; s++) {
+            				_myWorld.step();
+            				// Échantillonnage pour le graphe de populations (Phase 9).
+            				if (_myWorld instanceof WorldOfCells) {
+            					populationGraph.sample((WorldOfCells) _myWorld);
+            				}
             			}
+            			// L'horloge jour/nuit avance au rythme de la SIMULATION (1 tick
+            			// par step) : figée en pause, ×N en accéléré, et la durée du jour
+            			// respecte enfin cycleTotalSec au lieu du FPS de rendu.
+            			it += stepsThisFrame;
             		}
             	}
 
@@ -1444,13 +2298,21 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 	                        // Normale précalculée du sommet — donne du relief sous
 	                        // la lumière directionnelle (face éclairée / face ombragée).
-	                        float[] n = normals[(x+xIt+movingX) % dxView][(y+yIt+movingY) % dyView];
+	                        // Même grille/wrap que l'altitude lue ci-dessus (getCellHeight,
+	                        // tore de taille dxView-1) — cf. note dans precomputeNormals().
+	                        float[] n = normals[(x+xIt+movingX) % (dxView-1)][(y+yIt+movingY) % (dyView-1)];
 	                        gl.glNormal3f(n[0], n[1], n[2]);
 	                        gl.glTexCoord2f(u, v);
 	                        float[] vcol = ((worlds.WorldOfCells)_myWorld).getVertexTerrainColor(x+xIt+movingX, y+yIt+movingY);
 	                        // Marqueur de forêt : on TEINTE le sol directement (suit le
 	                        // relief, toujours visible) au lieu d'un disque flottant.
 	                        ((worlds.WorldOfCells)_myWorld).applyForestTint(x+xIt+movingX, y+yIt+movingY, vcol);
+	                        // V4 — herbe broutée : brunit le sol tondu (sous la neige).
+	                        ((worlds.WorldOfCells)_myWorld).applyGrazedTint(x+xIt+movingX, y+yIt+movingY, vcol);
+	                        // L7 — eau de ruissellement : bleuit les ruisseaux/flaques.
+	                        ((worlds.WorldOfCells)_myWorld).applyWaterTint(x+xIt+movingX, y+yIt+movingY, vcol);
+	                        // L7 — neige : blanchit les sommets enneigés (par-dessus la forêt).
+	                        ((worlds.WorldOfCells)_myWorld).applySnowTint(x+xIt+movingX, y+yIt+movingY, vcol);
 	                        gl.glColor3f(vcol[0], vcol[1], vcol[2]);
 	                        gl.glVertex3f( offset+x*stepX+xSign*lenX, offset+y*stepY+ySign*lenY, zValue);
                         }
@@ -1670,13 +2532,35 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            			movingX, movingY, offset, stepX, stepY,
 	            			lenX, lenY, normalizeHeightMoutons, dayFactor);
 	            	}
+
+	            	// Passe 2e : carcasses (dépouilles couchées, rétrécissantes).
+	            	// Toujours affichées (pas de toggle `o`) — comme les agents.
+	            	_myWorld.displayCarcasses(_myWorld, gl,
+	            			movingX, movingY, offset, stepX, stepY,
+	            			lenX, lenY, normalizeHeightMoutons);
+	            }
+
+	            // V3 — halo de sélection au sol sous l'agent suivi (cercle pulsant).
+	            if (selectedAgent != null && isAgentStillAlive(selectedAgent)) {
+	            	drawSelectionHalo(gl, selectedAgent, offset, stepX, stepY, lenX, lenY, movingX, movingY);
+	            }
+
+	            // V2 — fumée / plume au-dessus de la lave fraîche (et vapeur si eau).
+	            if (DISPLAY_OBJECTS) {
+	            	displayLavaSmoke(gl, offset, stepX, stepY, lenX, movingX, movingY, xWin, yWin);
+	            	// V2 — lueur orangée pulsante au cratère pendant l'éruption.
+	            	if (_myWorld instanceof WorldOfCells
+	            			&& ((WorldOfCells) _myWorld).lavaCA != null
+	            			&& ((WorldOfCells) _myWorld).lavaCA.getbErupt() == 1) {
+	            		displayCraterGlow(gl, offset, stepX, stepY, lenX, movingX, movingY);
+	            	}
 	            }
                 // Appui long SPACE/SHIFT : translateZ est modifié à chaque frame
             // pour une montée/descente symétriques (AWT n'auto-repeat pas
             // SHIFT, donc le simple key-press ne donnait pas un mouvement
             // continu équivalent à SPACE).
-            if (keySpaceHeld) translateZ -= CAMERA_Z_SPEED;
-            if (keyShiftHeld) translateZ += CAMERA_Z_SPEED;
+            if (inputHandler.isHeld(input.GameAction.CAM_DOWN)) translateZ -= CAMERA_Z_SPEED;
+            if (inputHandler.isHeld(input.GameAction.CAM_UP))   translateZ += CAMERA_Z_SPEED;
 
 	            // === Overlays 2D : menu de lancement (Phase 6) puis HUD (Phase 5) ====
 	            // Dessinés en fin de frame, par-dessus la scène 3D, en mode ortho
@@ -1693,7 +2577,25 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            if (pickRequested) {
 	            	doPicking(gl);
 	            	pickRequested = false;
+	            	// Task 4.2 — simple clic (sans double-clic carcasse) deselectionne la fiche.
+	            	if (!pickCarcassRequested) selectedCarcass = null;
 	            }
+	            // Task 4.2 — picking carcasse sur double-clic.
+	            if (pickCarcassRequested) {
+	            	doPickingCarcass(gl);
+	            	pickCarcassRequested = false;
+	            }
+
+	            // V3 — agent sous le curseur (bulle d'info au survol). Calculé ici,
+	            // tant que MODELVIEW porte encore la caméra (comme le picking).
+	            computeHoverAgent(gl);
+	            // Task 4.1 — carcasse sous le curseur (tooltip espece + poids).
+	            updateHoveredCarcass(gl);
+
+	            // Overlay debug du champ d'odeur : dessine en espace MONDE, donc AVANT
+	            // de restaurer la projection (sinon, en vue de dessus, l'overlay
+	            // serait rendu en perspective alors que la scene est en ortho).
+	            displayScentOverlay(gl);
 
 	            // Restaurer la projection perspective si on était passé en ortho
 	            // pour la vue de dessus. Doit être fait AVANT begin2D car
@@ -1705,6 +2607,12 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            }
 
 	            ui.begin2D(gl, viewportWidth, viewportHeight);
+	            // V8 — flash blanc de foudre (bref, plein écran, fondu rapide).
+	            if (_myWorld.lightningFlash > 0) {
+	            	float a = Math.min(0.6f, _myWorld.lightningFlash / 6f * 0.6f);
+	            	ui.drawQuad(gl, 0, 0, viewportWidth, viewportHeight, 1f, 1f, 1f, a);
+	            	_myWorld.lightningFlash--;
+	            }
 	            if (config != null && config.awaitingStart && launchMenu != null) {
 	            	// Menu de lancement opaque : couvre la scène 3D derrière.
 	            	launchMenu.draw(gl, ui, viewportWidth, viewportHeight);
@@ -1717,18 +2625,49 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            		String gameTime = String.format("%02d:%02d", hr, mn);
 
 	            		hud.draw(gl, ui, viewportWidth, viewportHeight,
-	            		         _myWorld, dayLabel, gameTime, lastFpsValue);
+	            		         _myWorld, dayLabel, gameTime, lastFpsValue,
+	            		         playback.statusLabel(), playback.isPaused(),
+	            		         config != null && config.showDamageHud);
 	            	}
 	            	// Fiche détaillée de l'agent suivi (Phase 8), si présent.
 	            	if (selectedAgent != null) {
 	            		agentInfoPanel.draw(gl, ui, viewportWidth, viewportHeight,
 	            		                    selectedAgent, selectedAgentIndex, cameraFollow);
 	            	}
+	            	// Task 4.2 — fiche carcasse selectionnee (double-clic).
+	            	// Affichee uniquement quand aucun agent n'est selectionne (pas de
+	            	// chevauchement en bas-gauche : les deux panels ont la meme position).
+	            	if (selectedCarcass != null) {
+	            		if (selectedCarcass.isGone()) {
+	            			// Auto-fermeture : la carcasse a ete mangee ou est pourrie.
+	            			selectedCarcass = null;
+	            		} else if (selectedAgent == null) {
+	            			carcassInfoPanel.draw(gl, ui, viewportWidth, viewportHeight,
+	            			                      selectedCarcass);
+	            		}
+	            	}
+	            	// V3 — bulle d'info au survol (nom + énergie) sans cliquer.
+	            	boolean agentTooltipShown = hoverAgent != null && hoverAgent != selectedAgent
+	            			&& isAgentStillAlive(hoverAgent);
+	            	if (agentTooltipShown) {
+	            		drawHoverTooltip(gl, hoverAgent, hoverX, hoverY);
+	            	}
+	            	// Task 4.1 — tooltip carcasse au survol (espece + poids). Supprimé si une
+	            	// bulle d'agent est déjà affichée (un prédateur sur sa carcasse) pour éviter
+	            	// le chevauchement des deux bulles au même ancrage.
+	            	if (hoveredCarcass != null && !agentTooltipShown) {
+	            		drawCarcassTooltip(gl, hoveredCarcass, hoverX, hoverY);
+	            	}
 	            	// Graphe populations (Phase 9) — coin haut-GAUCHE, donc il ne
 	            	// chevauche plus le menu in-game (panneau droit) : on l'affiche
 	            	// même menu ouvert. Seule la touche `g` le masque.
 	            	if (showPopulationGraph) {
 	            		populationGraph.draw(gl, ui, viewportWidth, viewportHeight);
+	            	}
+	            	// V7 — minimap (toggle F6), coin haut-droite sous le HUD.
+	            	if (showMinimap && _myWorld instanceof WorldOfCells) {
+	            		minimap.draw(gl, ui, (WorldOfCells) _myWorld,
+	            		             viewportWidth, viewportHeight, hud.getHeight());
 	            	}
 	            	// Menu in-game (Phase 7) : panneau latéral semi-transparent
 	            	// au-dessus du HUD. L'alpha varie selon `menuFocused` —
@@ -1744,6 +2683,20 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            		ui.drawLine(gl, ccx - rr, ccy, ccx + rr, ccy, 1f, 1f, 1f, 0.9f);
 	            		ui.drawLine(gl, ccx, ccy - rr, ccx, ccy + rr, 1f, 1f, 1f, 0.9f);
 	            	}
+	            	// Hotbar MMO (pilotage) : 9 slots bas-centre, grisage just-in-time,
+	            	// balayage radial de cooldown, flash de refus/confirmation, halo "actif".
+	            	if (controllingAgent() && controlledAgent != null) {
+	            		hotbarPanel.draw(gl, ui, viewportWidth, viewportHeight,
+	            		                 settings.hotbar(), speciesOf(controlledAgent), controlledAgent,
+	            		                 hotbarFlashSlot, hotbarFlashUntilMs,
+	            		                 hotbarSuccessSlot, hotbarSuccessUntilMs);
+	            		// Message bref "<action> !" centre juste au-dessus de la barre.
+	            		if (hotbarToast != null && System.currentTimeMillis() < hotbarToastUntilMs) {
+	            			int tw = ui.textWidth(hotbarToast);
+	            			int ty = viewportHeight - 40 - 14 - 20;   // au-dessus des slots (SLOT_H + MARGIN_BOTTOM)
+	            			ui.drawText(gl, (viewportWidth - tw) / 2, ty, viewportHeight, hotbarToast, 0.55f, 1f, 0.6f);
+	            		}
+	            	}
 	            }
 	            ui.end2D(gl);
 	            // ==================================================================
@@ -1753,12 +2706,14 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
                 if (screenshotRequested) {
                     screenshotRequested = false;
+                    String label = screenshotLabel; screenshotLabel = null;
                     try {
                         File dir = new File("screenshots");
                         if (!dir.exists()) dir.mkdirs();
-                        String name = "screenshot-"
-                            + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date())
-                            + ".png";
+                        String stamp = new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date());
+                        String name = (label != null)
+                            ? "autoshot-" + label + "-" + stamp + ".png"
+                            : "screenshot-" + stamp + ".png";
                         File file = new File(dir, name);
                         Screenshot.writeToFile(file, gLDrawable.getWidth(), gLDrawable.getHeight());
                         System.out.println("Screenshot saved: " + file.getAbsolutePath());
@@ -1853,12 +2808,19 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 						menuFocused = true;
 						return;
 					}
-					// 2. Double-clic sur une ligne agent → suivre + défocaliser.
-					if (mouse.getClickCount() == 2) {
-						int agentIdx = inGameMenu.agentRowAt(
-								viewportWidth, viewportHeight, mouse.getX(), mouse.getY());
-						if (agentIdx >= 0) {
-							if (inGameMenu.selectAgentByGlobalIndex(agentIdx)) {
+					// 2. Clic sur une ligne du panneau AGENTS :
+					//    - entete d'espece  -> simple clic deplie/replie ;
+					//    - ligne agent      -> double-clic suit + defocalise.
+					int rowIdx = inGameMenu.rowAt(
+							viewportWidth, viewportHeight, mouse.getX(), mouse.getY());
+					if (rowIdx >= 0) {
+						if (inGameMenu.isHeaderRow(rowIdx)) {
+							inGameMenu.toggleHeader(rowIdx);
+							menuFocused = true;
+							return;
+						}
+						if (mouse.getClickCount() == 2) {
+							if (inGameMenu.followAgentRow(rowIdx)) {
 								cameraFollow = true;
 								menuFocused = false;
 							}
@@ -1929,8 +2891,6 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				int rdy = mouse.getY() - lastDragY;
 				lastDragX = mouse.getX();
 				lastDragY = mouse.getY();
-				int modX = dxView - 1;
-				int modY = dyView - 1;
 
 				// Déplacement caméra désiré (en cellules, fractionnaire) façon
 				// « agrippe le sol » (Google Maps) :
@@ -1958,8 +2918,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				panAccumY += moveY;
 				int idx = (int) panAccumX;  panAccumX -= idx;
 				int idy = (int) panAccumY;  panAccumY -= idy;
-				if (modX > 0 && idx != 0) movingX = ((movingX + idx) % modX + modX) % modX;
-				if (modY > 0 && idy != 0) movingY = ((movingY + idy) % modY + modY) % modY;
+				// Accumule le delta ; appliqué à movingX/Y par applyPendingPan (thread
+				// de rendu) → pas de modification en plein milieu d'une frame.
+				if (idx != 0) pendingMoveX.addAndGet(idx);
+				if (idy != 0) pendingMoveY.addAndGet(idy);
 				return;
 			}
 
@@ -2015,14 +2977,14 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				// (movingX/Y sont des cellules entières ; sans accumulateur, un drag
 				// lent arrondirait à 0 et ne bougerait pas). Souris gauche → +X
 				// (droite), souris bas → +Y (avance).
-				int modX = dxView - 1;
-				int modY = dyView - 1;
 				panAccumX += -dx * PAN_SENSITIVITY;
 				panAccumY +=  dy * PAN_SENSITIVITY;
 				int idx = (int) panAccumX;  panAccumX -= idx;
 				int idy = (int) panAccumY;  panAccumY -= idy;
-				if (modX > 0 && idx != 0) movingX = ((movingX + idx) % modX + modX) % modX;
-				if (modY > 0 && idy != 0) movingY = ((movingY + idy) % modY + modY) % modY;
+				// Accumule le delta ; appliqué à movingX/Y par applyPendingPan (thread
+				// de rendu) → pas de modification en plein milieu d'une frame.
+				if (idx != 0) pendingMoveX.addAndGet(idx);
+				if (idy != 0) pendingMoveY.addAndGet(idy);
 			} else {
 				// 3D libre : rotation FPS yaw + pitch.
 				rotateX    += dx * ROT_SENSITIVITY;
@@ -2032,6 +2994,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 		@Override
 		public void mouseMoved(MouseEvent mouse) {
+			// V3 — position du curseur toujours mémorisée (même hors capture FPS),
+			// pour la bulle d'info de survol d'agent.
+			hoverX = mouse.getX(); hoverY = mouse.getY();
 			// Mouse-look 1ère personne (NEWT). Le pointeur est masqué + confiné dans
 			// la fenêtre. On utilise le delta RELATIF au dernier point (correct quel
 			// que soit le timing du warp), et on recentre seulement PRÈS DES BORDS
@@ -2066,18 +3031,29 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		 *  yaw (rotateX) tant qu'une touche est tenue. */
 		private void applyKeyboardTurn() {
 			if (!firstPersonControl()) return;
-			int dir = (ctrlTurnRight ? 1 : 0) - (ctrlTurnLeft ? 1 : 0);
+			int dir = (inputHandler.isHeld(input.GameAction.TURN_CAM_RIGHT) ? 1 : 0)
+					- (inputHandler.isHeld(input.GameAction.TURN_CAM_LEFT) ? 1 : 0);
 			if (dir != 0) rotateX += dir * KEY_TURN_DEG_PER_FRAME;
 		}
 
 		private void updateManualControlHeading() {
 			if (!controllingAgent()) return;
 			agents.Agent a = selectedAgent;
-			int fwd    = (ctrlFwd ? 1 : 0)   - (ctrlBack ? 1 : 0);
-			int strafe = (ctrlRight ? 1 : 0) - (ctrlLeft ? 1 : 0);
+			// Allure : Maj=SPRINT, W=WALK, sinon TROT (par defaut). Poussee chaque frame.
+			if (controlledAgent != null) {
+				controlledAgent.controlGait =
+					inputHandler.isHeld(input.GameAction.SPRINT) ? agents.Agent.ControlGait.SPRINT
+					: inputHandler.isHeld(input.GameAction.WALK) ? agents.Agent.ControlGait.WALK
+					: agents.Agent.ControlGait.TROT;
+			}
+			int fwd    = (inputHandler.isHeld(input.GameAction.AGENT_FWD) ? 1 : 0)
+					- (inputHandler.isHeld(input.GameAction.AGENT_BACK) ? 1 : 0);
+			int strafe = (inputHandler.isHeld(input.GameAction.AGENT_RIGHT) ? 1 : 0)
+					- (inputHandler.isHeld(input.GameAction.AGENT_LEFT) ? 1 : 0);
 
-			// Vecteur monde désiré (x = Est+, y = Sud+). Vue de dessus : avancer = +Y,
-			// droite = +X. Vue 3D : relatif au regard (rotateX, formule caméra libre).
+			// Vecteur monde désiré. Au rendu : +X = Est (droite écran), +Y = Nord (HAUT
+			// écran — vue de dessus sans rotation). Vue de dessus : avancer = +Y (monte
+			// vers le Nord), droite = +X. Vue 3D : relatif au regard (rotateX).
 			double wx, wy;
 			if (VIEW_FROM_ABOVE) {
 				wx = strafe;
@@ -2115,8 +3091,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 			return r < -1 ? -1 : (r > 1 ? 1 : r);
 		}
 
-		/** Yaw (deg) d'une orientation cardinale, cohérent avec cardinalFromDelta(sinθ,cosθ) :
-		 *  Sud(2)→0, Est(1)→90, Nord(0)→180, Ouest(3)→270. */
+		/** Yaw (deg) d'un entier d'orientation, cohérent avec cardinalFromDelta(sinθ,cosθ).
+		 *  Entiers ↔ libellés écran (cf. Agent.getOrientLabel) : 2=Nord(+Y)→0,
+		 *  1=Est(+X)→90, 0=Sud(−Y)→180, 3=Ouest(−X)→270. */
 		private static float orientYaw(int o) {
 			switch (o) { case 2: return 0f; case 1: return 90f; case 0: return 180f; default: return 270f; }
 		}
@@ -2131,8 +3108,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		 *  rattraper le regard (sinon le joueur regarde librement sans tourner l'agent). */
 		private static final float BODY_TURN_THRESHOLD_DEG = 100f;
 
-		/** Vecteur monde → orientation cardinale dominante (0=N/1=E/2=S/3=O), -1 si nul.
-		 *  Convention : +X = Est, +Y = Sud. */
+		/** Vecteur monde → entier d'orientation interne (cf. Agent.orientDx/orientDy) :
+		 *  0 = grille −Y, 1 = +X, 2 = grille +Y, 3 = −X ; -1 si nul. Au rendu, +X = Est
+		 *  (droite) et +Y = Nord (HAUT écran), donc l'entier 2 (+Y) s'affiche « Nord »
+		 *  et l'entier 0 (−Y) « Sud » via Agent.getOrientLabel. */
 		private static int cardinalFromDelta(double wx, double wy) {
 			int rx = (int) Math.round(wx);
 			int ry = (int) Math.round(wy);
@@ -2208,14 +3187,27 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		 * forwardSign : +1 = avant, -1 = arrière, 0 = pas de translation longitudinale.
 		 * strafeSign  : +1 = droite, -1 = gauche, 0 = pas de strafe.
 		 */
+		/**
+		 * Applique (thread de rendu, début de frame) les deltas de pan accumulés par
+		 * les handlers d'événements. movingX/movingY ne sont donc jamais modifiés en
+		 * cours de frame par le thread d'événements → pas de déchirure du terrain.
+		 */
+		private void applyPendingPan() {
+			int dmx = pendingMoveX.getAndSet(0);
+			int dmy = pendingMoveY.getAndSet(0);
+			if (dmx == 0 && dmy == 0) return;
+			int modX = dxView - 1, modY = dyView - 1;
+			if (modX > 0 && dmx != 0) movingX = ((movingX + dmx) % modX + modX) % modX;
+			if (modY > 0 && dmy != 0) movingY = ((movingY + dmy) % modY + modY) % modY;
+		}
+
 		private void cameraRelativeMove(int forwardSign, int strafeSign) {
 			if (dxView <= 1 || dyView <= 1) return;
-			int modX = dxView - 1;
-			int modY = dyView - 1;
 
 			if (VIEW_FROM_ABOVE) {
-				movingX = ((movingX + strafeSign)  % modX + modX) % modX;
-				movingY = ((movingY + forwardSign) % modY + modY) % modY;
+				// Accumule le delta (drainé par applyPendingPan sur le thread de rendu).
+				pendingMoveX.addAndGet(strafeSign);
+				pendingMoveY.addAndGet(forwardSign);
 				return;
 			}
 			if (cameraFollow && selectedAgent != null) {
@@ -2231,8 +3223,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 			double dy = forwardSign * c - strafeSign * s;
 			int idx = (int) Math.round(dx);
 			int idy = (int) Math.round(dy);
-			if (idx != 0) movingX = ((movingX + idx) % modX + modX) % modX;
-			if (idy != 0) movingY = ((movingY + idy) % modY + modY) % modY;
+			if (idx != 0) pendingMoveX.addAndGet(idx);
+			if (idy != 0) pendingMoveY.addAndGet(idy);
 		}
 
 		@Override
@@ -2255,6 +3247,13 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				pickRequested = true;
 				pickClickX = mouse.getX();
 				pickClickY = mouse.getY();
+				// Task 4.2 — double-clic : tente aussi un picking de carcasse.
+				// Resolu dans display() en priorite sur le picking d'agent.
+				if (mouse.getClickCount() == 2) {
+					pickCarcassRequested = true;
+					pickCarcassX = mouse.getX();
+					pickCarcassY = mouse.getY();
+				}
 			}
 		}
 
@@ -2272,6 +3271,57 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		 * crust qui ne descend pas, etc.). Ne dépend d'aucun thread GL — peut
 		 * être appelée directement depuis l'EDT keyPressed.
 		 */
+		/** V7 — exporte l'historique du graphe de populations en CSV dans exports/. */
+		private void exportPopulationsCsv() {
+			String ts = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(LocalDateTime.now());
+			Path out = Paths.get("exports", "populations-" + ts + ".csv");
+			try {
+				Files.createDirectories(out.getParent());
+				Files.writeString(out, populationGraph.exportCsv());
+				System.out.println("[V7] populations exportees -> " + out);
+			} catch (Exception e) {
+				System.out.println("[V7] echec export CSV: " + e.getMessage());
+			}
+		}
+
+		/** V7 — exporte le graphe de populations en PNG dans exports/. */
+		private void exportPopulationsPng() {
+			String ts = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(LocalDateTime.now());
+			Path out = Paths.get("exports", "populations-" + ts + ".png");
+			try {
+				populationGraph.exportPng(out);
+				System.out.println("[V7] graphe PNG exporte -> " + out);
+			} catch (Exception e) {
+				System.out.println("[V7] echec export PNG: " + e.getMessage());
+			}
+		}
+
+		/** V7 — sauvegarde la config courante en preset JSON (presets/preset.json). */
+		private void saveConfigPreset() {
+			if (config == null) return;
+			Path out = Paths.get("presets", "preset.json");
+			try {
+				Files.createDirectories(out.getParent());
+				ConfigPresets.save(config, out);
+				System.out.println("[V7] preset sauvegarde -> " + out);
+			} catch (Exception e) {
+				System.out.println("[V7] echec sauvegarde preset: " + e.getMessage());
+			}
+		}
+
+		/** V7 — recharge le preset JSON et applique à chaud (presets/preset.json). */
+		private void loadConfigPreset() {
+			if (config == null) return;
+			Path in = Paths.get("presets", "preset.json");
+			try {
+				ConfigPresets.load(in, config);
+				if (_myWorld instanceof WorldOfCells) ((WorldOfCells) _myWorld).applyLiveConfig();
+				System.out.println("[V7] preset recharge <- " + in);
+			} catch (Exception e) {
+				System.out.println("[V7] echec rechargement preset: " + e.getMessage());
+			}
+		}
+
 		private void dumpStacksAroundCrater() {
 			int sx = cellularautomata.ecosystem.LavaCA.sourceX;
 			int sy = cellularautomata.ecosystem.LavaCA.sourceY;
@@ -2331,16 +3381,16 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 		@Override
 		public void keyPressed(KeyEvent key) {
-			// Menu de lancement actif : on lui passe la touche et on s'arrête là.
-			// VK_ESCAPE n'est pas consommé par le menu → bascule le plein écran (switch).
+			// 1) Menu de lancement actif : on lui passe la touche et on s'arrête là.
+			// VK_ESCAPE n'est pas consommé par le menu → bascule le plein écran.
 			if (config != null && config.awaitingStart && launchMenu != null
 					&& key.getKeyCode() != KeyEvent.VK_ESCAPE) {
 				boolean menuClosed = launchMenu.handleKey(key.getKeyCode());
 				if (menuClosed && _myWorld instanceof WorldOfCells) {
 					// Re-spawn des agents avec les nouvelles valeurs du config.
 					((WorldOfCells) _myWorld).respawnAgents();
-					// Ouvre le menu in-game sur l'onglet RACCOURCIS pour présenter
-					// les commandes au joueur dès le début de la simulation.
+					// Ouvre le menu in-game pour présenter les commandes au joueur
+					// dès le début de la simulation.
 					if (inGameMenu != null) {
 						inGameMenu.openOnTab(InGameMenu.Tab.AIDE);
 						menuFocused = true;
@@ -2349,37 +3399,71 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				return;
 			}
 
-			// Menu in-game ouvert ET focalisé : intercepte ses touches de
+			// 2) ESC : plein écran, réservée, hors bindings.
+			// Échap bascule plein écran ⇄ fenêtré (ne quitte plus).
+			// Quitter : croix de la fenêtre, visible en mode fenêtré.
+			if (key.getKeyCode() == KeyEvent.VK_ESCAPE) {
+				// Pendant une capture de touche (rebind), ESC annule la capture
+				// au lieu de basculer le plein écran.
+				if (inGameMenu != null && inGameMenu.isCapturing() && menuFocused) inGameMenu.handleKey(KeyEvent.VK_ESCAPE);
+				else toggleFullscreen();
+				return;
+			}
+
+			// 2bis) Capture de touche en cours : le menu mange TOUTE frappe (y
+			// compris `m` et les touches de jeu) pour la rebinder. Doit passer
+			// AVANT le hoist TOGGLE_MENU, sinon `m` ne serait jamais bindable.
+			if (inGameMenu != null && inGameMenu.isCapturing() && menuFocused) {
+				inGameMenu.handleKey(key.getKeyCode());
+				return;
+			}
+
+			// 3) TOGGLE_MENU passe AVANT l'interception menu (logique 3 états de `m`),
+			// pour que `m` fonctionne quelle que soit la focalisation du panneau et
+			// ne soit pas consommée par inGameMenu.handleKey.
+			input.GameAction direct = settings.bindings().actionFor(key.getKeyCode(), controllingAgent());
+			if (direct == input.GameAction.TOGGLE_MENU) { dispatchTap(direct); return; }
+
+			// 4) Menu in-game ouvert ET focalisé : intercepte ses touches de
 			// navigation/édition. Si défocalisé (clic en dehors), le clavier
 			// est rendu au jeu — le menu reste visible mais inerte.
-			// `m` reste toujours géré pour fermer/ouvrir.
-			if (inGameMenu != null && inGameMenu.isOpen() && menuFocused
-					&& key.getKeyCode() != KeyEvent.VK_ESCAPE) {
+			if (inGameMenu != null && inGameMenu.isOpen() && menuFocused) {
 				if (inGameMenu.handleKey(key.getKeyCode())) return;
 			}
 
-			switch (key.getKeyCode()) {
-			case KeyEvent.VK_ESCAPE:
-				// Échap bascule plein écran ⇄ fenêtré (ne quitte plus).
-				// Quitter : croix de la fenêtre, visible en mode fenêtré.
-				toggleFullscreen();
-				break;
-			case KeyEvent.VK_V:
+			// 4b) Hotbar par CARACTÈRE en pilotage : la rangée de chiffres (AZERTY non-shiftée
+			// &é"'(-è_ç, ou chiffres 1-9 QWERTY/Maj/pavé num) déclenche les slots sans Maj.
+			// Robuste aux dispositions clavier (NEWT remonte le caractère, pas la touche physique).
+			if (controllingAgent()) {
+				int slot = hotbarSlotForChar(key.getKeyChar());
+				if (slot < 0) slot = hotbarSlotForKeyCode(key.getKeyCode());   // touches accentuees (keyChar=0)
+				if (slot >= 0) { triggerHotbarSlot(slot); return; }
+			}
+
+			// 5) Dispatch normal (TAP immédiat, HELD ajouté au held-set).
+			inputHandler.onKeyPressed(key.getKeyCode());
+		}
+
+		/** Impulsions clavier (TAP). Corps repris 1:1 du switch historique sur les VK_. */
+		private void dispatchTap(input.GameAction a) {
+			switch (a) {
+			case VIEW_ABOVE:
 				VIEW_FROM_ABOVE = !VIEW_FROM_ABOVE ;
 				break;
-			case KeyEvent.VK_R:
+			case ERUPTION:
 				LavaCA.setbErupt(1);
+				triggerShake(1.6f);   // V8 — secousse à l'éruption
 				break;
-			case KeyEvent.VK_L:
+			case LIGHTING:
 				MY_LIGHT_RENDERING = !MY_LIGHT_RENDERING;
 				break;
-			case KeyEvent.VK_P:
+			case HQ_LIGHTING:
 				MY_LIGHT_RENDERING_HIGHT = !MY_LIGHT_RENDERING_HIGHT;
 				break;
-			case KeyEvent.VK_O:
+			case TOGGLE_OBJECTS:
 				DISPLAY_OBJECTS = !DISPLAY_OBJECTS;
 				break;
-			case KeyEvent.VK_M:
+			case TOGGLE_MENU:
 				// Logique « m » à 3 états :
 				//  - menu fermé                → ouvre + focus
 				//  - menu ouvert + pas focus   → re-focalise (ne ferme pas)
@@ -2395,21 +3479,30 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 					}
 				}
 				break;
-			case KeyEvent.VK_N:
+			case DAY_NIGHT:
 				// Bascule jour/nuit instantanée — shift l'itération d'un demi-cycle.
 				// Anciennement déclenchée par le clic souris (réservé au picking P8).
 				it += _myWorld.getDureeJour();
 				break;
-			case KeyEvent.VK_F:
+			case PAUSE_SIM:
+				// Pause/lecture de la simulation. En pause, le monde est figé mais
+				// la caméra reste libre.
+				playback.togglePause();
+				break;
+			case SPEED_UP:
+				// Avance rapide : x1 -> x2 -> x4 -> x8 -> x1 (relance si en pause).
+				playback.faster();
+				break;
+			case CAMERA_FOLLOW:
 				// Bascule la caméra-follow sur l'agent sélectionné (Phase 8).
 				cameraFollow = !cameraFollow;
 				break;
-			case KeyEvent.VK_C:
+			case TOGGLE_CONTROL:
 				// Bascule le PILOTAGE MANUEL de l'agent sélectionné. En contrôle,
 				// les flèches/ZQSD dirigent l'agent (cap maintenu) ; la caméra-follow
 				// est forcée et le clavier est rendu à la scène (menu défocalisé).
 				if (selectedAgent != null && isAgentStillAlive(selectedAgent)) {
-					ctrlFwd = ctrlBack = ctrlLeft = ctrlRight = false;
+					inputHandler.clearHeld();
 					if (selectedAgent.playerControlled) {
 						releaseControl(selectedAgent);          // contrôle OFF
 					} else {
@@ -2425,56 +3518,51 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 					updateCursorCapture();             // (dé)masque le curseur en 3D
 				}
 				break;
-			case KeyEvent.VK_G:
+			case TOGGLE_GRAPH:
 				// Affiche / masque le graphe de populations.
 				showPopulationGraph = !showPopulationGraph;
 				break;
-			case KeyEvent.VK_SHIFT:
-				keyShiftHeld = true;
-				break;
-			case KeyEvent.VK_SPACE:
-				keySpaceHeld = true;
-				break;
-			case KeyEvent.VK_2:
+			case HEIGHT_UP:
 				heightBooster++;
 				break;
-			case KeyEvent.VK_1:
+			case HEIGHT_DOWN:
 				if ( heightBooster > 0 )
 					heightBooster--;
 				break;
-			case KeyEvent.VK_UP:
-			case KeyEvent.VK_Z:
-				if (controllingAgent()) ctrlFwd = true;     // avancer (selon la vue)
-				else cameraRelativeMove(+1, 0);
+			case CAM_FWD:
+				cameraRelativeMove(+1, 0);
 				break;
-			case KeyEvent.VK_DOWN:
-			case KeyEvent.VK_S:
-				if (controllingAgent()) ctrlBack = true;    // reculer
-				else cameraRelativeMove(-1, 0);
+			case CAM_BACK:
+				cameraRelativeMove(-1, 0);
 				break;
-			case KeyEvent.VK_RIGHT:
-			case KeyEvent.VK_D:
-				if (controllingAgent()) ctrlRight = true;   // droite
-				else cameraRelativeMove(0, +1);
+			case CAM_RIGHT:
+				cameraRelativeMove(0, +1);
 				break;
-			case KeyEvent.VK_LEFT:
-			case KeyEvent.VK_Q:
-				if (controllingAgent()) ctrlLeft = true;    // strafe gauche
-				else cameraRelativeMove(0, -1);
+			case CAM_LEFT:
+				cameraRelativeMove(0, -1);
 				break;
-			case KeyEvent.VK_A:
-				if (controllingAgent()) ctrlTurnLeft = true;   // pilotage 3D : tourner la caméra à gauche
-				break;
-			case KeyEvent.VK_E:
-				if (controllingAgent()) ctrlTurnRight = true;  // pilotage 3D : tourner la caméra à droite
-				break;
-			case KeyEvent.VK_F12:
+			case SCREENSHOT:
 				screenshotRequested = true;
 				break;
-			case KeyEvent.VK_F11:
+			case DUMP_STACKS:
 				dumpStacksAroundCrater();
 				break;
-			case KeyEvent.VK_H:
+			case EXPORT_GRAPH_CSV:
+				exportPopulationsCsv();   // V7 — export CSV du graphe
+				break;
+			case EXPORT_GRAPH_PNG:
+				exportPopulationsPng();   // V7 — export PNG du graphe
+				break;
+			case TOGGLE_MINIMAP:
+				showMinimap = !showMinimap;   // V7 — minimap
+				break;
+			case SAVE_PRESET:
+				saveConfigPreset();       // V7 — sauvegarde du preset config
+				break;
+			case LOAD_PRESET:
+				loadConfigPreset();       // V7 — rechargement du preset
+				break;
+			case HELP_CONSOLE:
 				System.out.println(
 						"Help:\n" +
 						"           [v] change view\n" +
@@ -2486,12 +3574,19 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 						"       [shift] navigate in the landscape\n" +
 						"         [q/d] rotation wrt landscape\n" +
 						"           [r] volcanic eruption\n"+
+						"        [Home] pause / resume the simulation\n"+
+						"    [+ / PgUp] fast-forward (x1->x2->x4->x8)\n"+
 						"           [f] toggle camera-follow on selected agent\n"+
 						"           [c] toggle manual control of selected agent\n"+
 						"           [l] light\n"+
 						"         [F11] dump stacks around crater to dumps/\n"+
 						"         [F12] save screenshot to screenshots/\n"
 						);
+				break;
+			case JUMP: break;   // reserve : mecanique de saut a venir
+			case HOTBAR_1: case HOTBAR_2: case HOTBAR_3: case HOTBAR_4: case HOTBAR_5:
+			case HOTBAR_6: case HOTBAR_7: case HOTBAR_8: case HOTBAR_9:
+				triggerHotbarSlot(a.ordinal() - input.GameAction.HOTBAR_1.ordinal());
 				break;
 			default:
 				break;
@@ -2501,19 +3596,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 		@Override
 		public void keyReleased(KeyEvent key) {
-			// SHIFT et SPACE en appui long : reset des flags au relâchement.
-			switch (key.getKeyCode()) {
-				case KeyEvent.VK_SHIFT: keyShiftHeld = false; break;
-				case KeyEvent.VK_SPACE: keySpaceHeld = false; break;
-				// Pilotage manuel : relâcher une direction lève son flag maintenu.
-				case KeyEvent.VK_UP:    case KeyEvent.VK_Z:    ctrlFwd = false;   break;
-				case KeyEvent.VK_DOWN:  case KeyEvent.VK_S:    ctrlBack = false;  break;
-				case KeyEvent.VK_RIGHT: case KeyEvent.VK_D:    ctrlRight = false; break;
-				case KeyEvent.VK_LEFT:  case KeyEvent.VK_Q:    ctrlLeft = false;  break;
-				case KeyEvent.VK_A:     ctrlTurnLeft = false;  break;
-				case KeyEvent.VK_E:     ctrlTurnRight = false; break;
-				default: break;
-			}
+			// Le held-set de inputHandler retire les actions HELD liées à la touche.
+			inputHandler.onKeyReleased(key.getKeyCode());
 		}
 
 

@@ -365,17 +365,26 @@ ou JavaFX — un seul contexte graphique, pas de fenêtres flottantes.
 
 --- Court terme ---
 
-    * Sauvegarde / chargement de configurations (presets). Aujourd'hui
-      l'utilisateur doit re-saisir ses valeurs à chaque lancement. Un
-      bouton « Save preset » qui dump la config en JSON sur disque + un
-      menu « Load preset » améliorerait beaucoup l'usage répété.
-    * Export du graphe Lotka-Volterra en PNG ou CSV pour l'analyse a
-      posteriori (rapport scientifique, présentation). Format CSV
-      facile : un fichier texte avec colonnes itération, loups,
-      moutons, humains.
-    * Tooltips sur les paramètres du PARAMS : passer la souris sur une
-      ligne devrait afficher une bulle d'aide expliquant l'effet du
-      paramètre.
+    * [RÉALISÉ 2026-06-06, V7] Sauvegarde / chargement de configurations
+      (presets JSON). `ui.ConfigPresets` sérialise par RÉFLEXION tous les champs
+      primitifs publics de `SimulationConfig` en JSON (parse via `loader.MiniJson`,
+      déjà embarqué). Touches : `F10` = sauver `presets/preset.json`, `F8` =
+      recharger + `applyLiveConfig()` à chaud. Round-trip testé
+      (`ConfigPresetsTest` ×3).
+    * [RÉALISÉ 2026-06-06, V7] Export CSV du graphe de populations.
+      `PopulationGraph.exportCsv()` produit `sample,ours,loups,moutons,humains`
+      (ordre chronologique), touche `F9` → `exports/populations-<ts>.csv`. Test
+      `PopulationGraphExportTest`. RESTE : export PNG du graphe.
+    * [RÉALISÉ 2026-06-06, V7] Export PNG du graphe : `PopulationGraph.exportPng`
+      (BufferedImage/ImageIO, JDK pur) trace les 4 séries ; touche `F7` →
+      `exports/populations-<ts>.png`. Test `exportPngEcritUnFichierNonVide`.
+    * [RÉALISÉ 2026-06-06, V7] Minimap (`ui.Minimap`, toggle `F6`) : vue top-down
+      compacte en haut-droite (terre/eau échantillonnées + agents en points
+      colorés par espèce).
+    * [RÉALISÉ 2026-06-06, V7] Tooltips PARAMS : la ligne `Row` porte un champ
+      `help` (fluent `withHelp`) ; `InGameMenu.drawParams` affiche une bulle d'aide
+      en bas du panneau pour la ligne sélectionnée (renseignée sur plusieurs
+      paramètres clés).
 
 --- Moyen terme ---
 

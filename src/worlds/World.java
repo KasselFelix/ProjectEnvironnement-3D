@@ -3,6 +3,7 @@ package worlds;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import javax.media.opengl.GL2;
 
@@ -10,6 +11,7 @@ import agents.Agent;
 import agents.Loup;
 import agents.Mouton;
 import agents.Humain;
+import agents.Ours;
 
 import cellularautomata.*;
 import cellularautomata.ecosystem.LavaSource;
@@ -22,11 +24,83 @@ public abstract class World {
 
 	protected ArrayList<UniqueObject> uniqueObjects = new ArrayList<UniqueObject>();
 	public ArrayList<UniqueDynamicObject> uniqueDynamicObjects = new ArrayList<UniqueDynamicObject>();
+
+	/** Liste vivante des carcasses présentes dans le monde. */
+	public List<Carcass> carcasses = new ArrayList<Carcass>();
+
+	/** Crée une carcasse à (x,y) avec une masse (kg) et l'espèce source. */
+	public void spawnCarcass(int x, int y, double mass, Species source) {
+		if (mass <= 0.0) return;
+		carcasses.add(new Carcass(x, y, this, mass, source));
+	}
+
+	/** Renvoie la carcasse non-vide à la cellule (x,y), ou null si aucune. */
+	public Carcass carcassAt(int x, int y) {
+		for (Carcass c : carcasses)
+			if (!c.isGone() && c.getX() == x && c.getY() == y) return c;
+		return null;
+	}
+
+	/** Vieillit les carcasses (axe pourriture) ; retire celles entièrement pourries.
+	 *  La MASSE n'est PLUS touchée ici (elle ne baisse qu'en mangeant). dt en secondes réelles. */
+	public void rotCarcasses(double dtSeconds) {
+		Iterator<Carcass> it = carcasses.iterator();
+		while (it.hasNext()) {
+			Carcass c = it.next();
+			c.ageSeconds += dtSeconds;
+			if (c.isGone()) it.remove();
+		}
+	}
 	
+	// ── Odeur (sous-projet A) ────────────────────────────────────────────
+	private final scent.ScentField scentField = new scent.ScentField(this);
+	private static final int   CARCASS_EMITTER_ID      = -2;
+	private static final float CARCASS_SCENT_INTENSITY = 1.5f;
+
+	public scent.ScentField getScentField() { return scentField; }
+
+	/** Depose l'odeur des carcasses (stationnaire, forte), gere par la cadence.
+	 *  NOTE: toutes les carcasses partagent la phase de tick globale (iteration % period) ;
+	 *  a tres grand nombre de carcasses cela cree des bouffees groupees plutot qu'un
+	 *  egouttement etale. Un lastScentEmit par carcasse est reporte a un sous-projet ulterieur. */
+	protected void emitCarcassScents() {
+		int period = ui.SimulationConfig.getInstance().scentEmitPeriod;
+		if (period < 1) period = 1;
+		if (iteration % period != 0) return;
+		for (Carcass c : carcasses) {
+			if (c.isGone()) continue;
+			scentField.emit(CARCASS_EMITTER_ID, scent.ScentKind.CARCASS, -1,
+					c.getX(), c.getY(), iteration, CARCASS_SCENT_INTENSITY);
+		}
+	}
+
 	public ArrayList<Agent> agents = new ArrayList<Agent>();
 	public ArrayList<Humain> humains = new ArrayList<Humain>();
 	public ArrayList<Loup> loups = new ArrayList<Loup>();
 	public ArrayList<Mouton> moutons = new ArrayList<Mouton>();
+	/** Super-prédateurs (L4) : chassent les loups. */
+	public ArrayList<Ours> ours = new ArrayList<Ours>();
+
+	/** Journal d'événements (V6) : compteurs de dommages + notifications. */
+	public final EventLog events = new EventLog();
+
+	/** Ticks restants de FLASH de foudre (V8) ; lu par le rendu pour un éclair
+	 *  blanc bref. Posé par un impact de foudre, décrémenté côté rendu. */
+	public int lightningFlash = 0;
+
+	/**
+	 * La case ({@code x}, {@code y}) est-elle bloquée pour {@code mover} par un
+	 * autre agent ? Les agents sont des obstacles les uns pour les autres (pas de
+	 * superposition) ; la proie laisse toutefois passer son prédateur
+	 * ({@link Agent#blocksMovementOf}). Les cadavres et soi-même ne bloquent pas.
+	 */
+	public boolean cellBlockedByAgent(int x, int y, UniqueDynamicObject mover) {
+		for (Agent a : agents) {
+			if (a == mover || !a._alive) continue;
+			if (a.x == x && a.y == y && a.blocksMovementOf(mover)) return true;
+		}
+		return false;
+	}
 	
 	public ArrayList<Integer> list=new ArrayList<Integer>();
 	int jour=0;// 0:nuit / 1:jour
@@ -98,6 +172,11 @@ public abstract class World {
     		this.cellStacks.add(new ArrayList<Layer>(0));
     	}
 
+    	// Grille de neige (L7) : surface-state des sommets, vide au départ.
+    	this.snowDepth = new double[__dxCA][__dyCA];
+    	// Grille d'eau de ruissellement (L7) : vide au départ, alimentée par la pluie.
+    	this.waterDepth = new double[__dxCA][__dyCA];
+
     	int cpt=0;
     	
     	// init altitude and color related information
@@ -143,16 +222,28 @@ public abstract class World {
     
     public void step()
     {
+    	double hz = ui.SimulationConfig.getInstance().simulationHz;
+    	if (hz <= 0) hz = 20.0;
+    	updateWeather();        // L6 — météo du jour (pluie selon la saison)
+    	updateWind();           // vent du tick (dérive + rafales, modulé saison/météo)
+    	scentField.step(1.0 / hz);   // advection/purge des odeurs (apres le vent)
     	stepCellularAutomata();
     	stepAgents();
+    	emitCarcassScents();    // depot des odeurs de carcasses
     	before=jour;
     	iteration++;
+    	rotCarcasses(1.0 / hz);
     }
     
     public int getIteration()
     {
     	return this.iteration;
     }
+
+    /** TEST-only : fixe le compteur d'iterations pour piloter la cadence des
+     *  agents (isMyTurn) sans dérouler tout {@code step()} (qui ferait aussi
+     *  évoluer le vent/les CAs). */
+    public void setIteration(int it) { this.iteration = it; }
     
     public int getJour() {
 		return jour;
@@ -176,6 +267,339 @@ public abstract class World {
 
 	public void setTransitionJour(int transitionJour) {
 		this.transitionJour = transitionJour;
+	}
+
+	// ===== Saisons (L5) =====
+	/** Durée d'une saison en jours-jeu ; ≤ 0 = saisons désactivées (été perpétuel). */
+	int seasonLengthDays = 3;
+
+	public int getSeasonLengthDays() { return seasonLengthDays; }
+	public void setSeasonLengthDays(int d) { this.seasonLengthDays = d; }
+
+	/** Indice du jour-jeu courant (0-based). Un jour = un cycle jour+nuit complet
+	 *  = {@code 2 * dureeJour} itérations. */
+	public int getCurrentDay() {
+		int fullDay = 2 * dureeJour;
+		return fullDay <= 0 ? 0 : iteration / fullDay;
+	}
+
+	/** Saison courante (L5). Avance d'un cran tous les {@code seasonLengthDays}
+	 *  jours-jeu, en boucle PRINTEMPS→ÉTÉ→AUTOMNE→HIVER. Été perpétuel si la durée
+	 *  de saison est ≤ 0. */
+	public Season currentSeason() {
+		if (seasonLengthDays <= 0) return Season.SUMMER;
+		int idx = (getCurrentDay() / seasonLengthDays) % Season.values().length;
+		return Season.values()[idx];
+	}
+
+	/** Multiplicateur de fertilité saisonnier lu par les CA de végétation (L5). */
+	public double seasonalFertility() {
+		return currentSeason().fertilityFactor;
+	}
+
+	// ===== Météo & température (L6) =====
+	/** Amortissement de la propagation du feu sous la pluie (0.2 = 5× plus lent). */
+	private static final double RAIN_FIRE_DAMP = 0.2;
+	/** Écart de température jour↔nuit en °C (±). */
+	private static final double DAY_NIGHT_TEMP_SWING = 4.0;
+	/** Refroidissement supplémentaire quand il pleut, en °C. */
+	private static final double RAIN_TEMP_DROP = 3.0;
+
+	private boolean raining = false;
+	private int lastWeatherDay = -1;
+	private final java.util.Random weatherRng = new java.util.Random();
+
+	public boolean isRaining() { return raining; }
+	public void setRaining(boolean r) { this.raining = r; }
+
+	/** Tire la météo du jour (une fois par jour-jeu) selon la probabilité de
+	 *  pluie de la saison. Appelé au début de {@link #step()}. */
+	void updateWeather() {
+		int day = getCurrentDay();
+		if (day != lastWeatherDay) {
+			lastWeatherDay = day;
+			raining = weatherRng.nextDouble() < currentSeason().rainProbability;
+		}
+	}
+
+	/** Température approximative du monde en °C (L6) : base saisonnière modulée
+	 *  par le jour/nuit (jour plus chaud) et la pluie (plus frais). */
+	public double getTemperature() {
+		double t = currentSeason().baseTemperatureC;
+		t += (jour == 1) ? DAY_NIGHT_TEMP_SWING : -DAY_NIGHT_TEMP_SWING;
+		if (raining) t -= RAIN_TEMP_DROP;
+		return t;
+	}
+
+	/** Facteur multiplicatif de propagation/ignition du feu (L6) : 1.0 par temps
+	 *  sec, {@link #RAIN_FIRE_DAMP} sous la pluie. Lu par ForestCA. */
+	public double fireSpreadFactor() {
+		return raining ? RAIN_FIRE_DAMP : 1.0;
+	}
+
+	/** Facteur de refroidissement de la lave lié à la température ambiante (L6) :
+	 *  référence 1.0 à 20°C ; par grand froid la lave fige plus vite (jusqu'à 1.6
+	 *  vers -10°C), par forte chaleur elle reste fondue plus longtemps (jusqu'à
+	 *  0.6 vers 40°C). Borné [0.6, 1.6]. Multiplie le coolingRate de LavaCA. */
+	public double lavaCoolingFactor() {
+		double f = 1.0 + (20.0 - getTemperature()) * 0.02;
+		return Math.max(0.6, Math.min(1.6, f));
+	}
+
+	/** Facteur de vitesse lié au froid (L6) : 1.0 au-dessus de 5°C, descend
+	 *  linéairement jusqu'à 0.7 à -10°C (les agents s'engourdissent par grand
+	 *  froid). Borné [0.7, 1.0]. */
+	public double coldSpeedFactor() {
+		double t = getTemperature();
+		if (t >= 5.0) return 1.0;
+		double f = 1.0 - (5.0 - t) / 15.0 * 0.3;   // -10°C → 0.7
+		return Math.max(0.7, Math.min(1.0, f));
+	}
+
+	// ===== Vent (2026-06-07) — vecteur vitesse d'air horizontal uniforme =====
+	/** Force max du vent en m/s (garde-fou). */
+	public static final double WIND_FORCE_MAX = 25.0;
+	private static final double DIR_DRIFT_STD  = 0.01;   // rad/tick @20Hz (dérive douce)
+	private static final double FORCE_LERP     = 0.05;   // relaxation/tick @20Hz vers la cible
+	private static final double GUST_STD       = 0.6;    // amplitude rafale (m/s/tick @20Hz, × variabilité)
+	private static final double RAIN_WIND_BONUS = 0.4;   // +40% de force sous la pluie
+
+	private boolean windEnabled   = true;
+	private double  baseWindForce  = 5.0;    // m/s
+	private double  windVariability = 1.0;   // multiplie l'amplitude des rafales
+	private double  windDirRad = 0.0;        // direction VERS laquelle souffle le vent
+	private double  windForce  = 5.0;        // m/s courant
+	private final java.util.Random windRng = new java.util.Random();
+
+	public void setWindEnabled(boolean b)   { this.windEnabled = b; }
+	public void setBaseWindForce(double f)   { this.baseWindForce = f; }
+	public void setWindVariability(double v) { this.windVariability = v; }
+	public void setWindSeed(long s)          { this.windRng.setSeed(s); }
+	/** TEST-only : fixe direction + force du vent directement (utilisé par les tests
+	 *  worlds ET cellularautomata, d'où la visibilité publique). */
+	public void setWindVector(double dirRad, double force) {
+		this.windDirRad = dirRad; this.windForce = Math.max(0, Math.min(WIND_FORCE_MAX, force));
+	}
+	public double getWindDirRad() { return windDirRad; }
+	public double getWindForce()  { return windEnabled ? windForce : 0.0; }
+	public double getWindX() { return Math.cos(windDirRad) * getWindForce(); }
+	public double getWindY() { return Math.sin(windDirRad) * getWindForce(); }
+
+	/** Force « cible » (moyenne) selon saison × météo. Pure → testable. */
+	public double targetWindForce(Season season, boolean raining) {
+		return baseWindForce * season.windFactor * (raining ? 1.0 + RAIN_WIND_BONUS : 1.0);
+	}
+
+	/** Fait évoluer le vent d'un tick (dérive continue + rafales), modulé saison/météo.
+	 *  Hz-invariant via dtScale = 20/hz. La relaxation (déterministe) est linéaire en
+	 *  dtScale ; les termes stochastiques (dérive de direction, rafale) sont des marches
+	 *  aléatoires dont la variance s'accumule linéairement avec le nb de pas → leur
+	 *  écart-type par pas se calibre en sqrt(dtScale) pour une variance/seconde constante.
+	 *  Appelé en tête de step(). */
+	public void updateWind() {
+		if (!windEnabled) { windForce = 0.0; return; }
+		double dtScale = 20.0 / Math.max(1, ui.SimulationConfig.getInstance().simulationHz);
+		double sqrtDt = Math.sqrt(dtScale);
+		windDirRad += windRng.nextGaussian() * DIR_DRIFT_STD * sqrtDt;
+		if (windDirRad < 0) windDirRad += 2 * Math.PI;
+		if (windDirRad >= 2 * Math.PI) windDirRad -= 2 * Math.PI;
+		double target = targetWindForce(currentSeason(), raining);
+		windForce += (target - windForce) * FORCE_LERP * dtScale;
+		windForce += windRng.nextGaussian() * GUST_STD * windVariability * sqrtDt;
+		if (windForce < 0) windForce = 0;
+		if (windForce > WIND_FORCE_MAX) windForce = WIND_FORCE_MAX;
+	}
+
+	// ===== Vent — helpers physiques agents et feu =====
+	/** Bornes (multiplicateurs sans dimension) du facteur de vitesse agent dû au vent. */
+	public static final double WIND_SPEED_FACTOR_MIN = 0.6, WIND_SPEED_FACTOR_MAX = 1.4;
+	private static final double WIND_DRAG_K = 0.004;   // calibré ; structure : force² × (1/résistance)
+	private static final double WIND_RESISTANCE_MIN = 0.3;
+
+	/**
+	 * Facteur multiplicatif de vitesse dû au vent (traînée aérodynamique) pour un
+	 * agent se déplaçant dans (mdx, mdy). Effet QUADRATIQUE (traînée), DIRECTIONNEL
+	 * (produit scalaire), atténué par la {@code windResistance} de l'agent. Cette
+	 * résistance est sa MASSE rapportée à sa SURFACE FRONTALE (normalisée, cf.
+	 * {@code Agent.windResistance()}) : un corps lourd / peu exposé résiste mieux au
+	 * vent qu'un corps léger à grande voilure. Borné, neutre si vent off ou dépl. nul.
+	 */
+	public double windSpeedFactor(int mdx, int mdy, double windResistance) {
+		if (!windEnabled || windForce <= 0.0) return 1.0;
+		double len = Math.sqrt((double) mdx * mdx + (double) mdy * mdy);
+		if (len == 0.0) return 1.0;
+		double ux = mdx / len, uy = mdy / len;
+		double windAlong = getWindX() * ux + getWindY() * uy;
+		double mult = 1.0 + WIND_DRAG_K * windAlong * Math.abs(windAlong) / Math.max(WIND_RESISTANCE_MIN, windResistance);
+		return Math.max(WIND_SPEED_FACTOR_MIN, Math.min(WIND_SPEED_FACTOR_MAX, mult));
+	}
+
+	public static final double WIND_FIRE_MIN = 0.15, WIND_FIRE_MAX = 4.0;
+	private static final double WIND_FIRE_K  = 0.12;   // accélération downwind par m/s
+	private static final double WIND_FIRE_UP = 0.06;   // suppression upwind par m/s
+
+	/**
+	 * Facteur multiplicatif de propagation du feu dans la direction (dx, dy)
+	 * (facteur-vent type Rothermel → front elliptique) : accéléré sous le vent,
+	 * supprimé contre. Multiplie le dirSpreadWeight des CAs. Neutre si vent off.
+	 */
+	public double fireWindFactor(int dx, int dy) {
+		if (!windEnabled || windForce <= 0.0) return 1.0;
+		double len = Math.sqrt((double) dx * dx + (double) dy * dy);
+		if (len == 0.0) return 1.0;
+		double sx = dx / len, sy = dy / len;
+		double wx = Math.cos(windDirRad), wy = Math.sin(windDirRad);
+		double cos = wx * sx + wy * sy;
+		double fv = 1.0 + WIND_FIRE_K * windForce * Math.max(0.0, cos);
+		fv *= 1.0 - WIND_FIRE_UP * windForce * Math.max(0.0, -cos);
+		return Math.max(WIND_FIRE_MIN, Math.min(WIND_FIRE_MAX, fv));
+	}
+
+	// ===== Neige sur les sommets (L7) =====
+	/** Épaisseur de neige par cellule (0 = sol nu). Surface-state distinct du
+	 *  système Layer (la neige ne s'empile pas avec la pierre/lave) ; lu par le
+	 *  rendu pour blanchir les sommets enneigés. */
+	protected double[][] snowDepth;
+
+	/** Fraction de {@code maxEverHeight} au-dessus de laquelle la neige peut tenir. */
+	private static final double SNOW_LINE_FRAC = 0.55;
+	/** Température (°C) sous laquelle la neige s'accumule. */
+	private static final double SNOW_FREEZE_C = 0.0;
+	/** Température (°C) au-dessus de laquelle la neige fond. */
+	private static final double SNOW_MELT_C = 2.0;
+	/** Épaisseur de neige max (unités arbitraires de rendu). */
+	public static final double SNOW_MAX = 1.0;
+	private static final double SNOW_ACCUM_RATE = 0.05;
+	private static final double SNOW_MELT_RATE = 0.04;
+
+	public double getSnowDepth(int x, int y) {
+		return snowDepth == null ? 0.0 : snowDepth[x % dxCA][y % dyCA];
+	}
+	public void setSnowDepth(int x, int y, double d) {
+		if (snowDepth != null) snowDepth[x % dxCA][y % dyCA] = Math.max(0.0, Math.min(SNOW_MAX, d));
+	}
+
+	/**
+	 * Loi d'évolution PURE de la neige d'une cellule (L7), testable sans état.
+	 * La neige s'accumule sur les hauts sommets quand il gèle, fond quand il fait
+	 * doux, et ne tient jamais sous la ligne de neige (altitude normalisée &lt;
+	 * {@code snowLineFrac}).
+	 *
+	 * @param current     épaisseur actuelle
+	 * @param tempC       température du monde en °C
+	 * @param altitudeNorm altitude normalisée de la cellule ∈ [0,1] (h / maxH)
+	 */
+	public static double nextSnowDepth(double current, double tempC,
+			double altitudeNorm, double snowLineFrac) {
+		if (altitudeNorm < snowLineFrac) {
+			return Math.max(0.0, current - SNOW_MELT_RATE);   // trop bas : fond/pas de neige
+		}
+		if (tempC <= SNOW_FREEZE_C) return Math.min(SNOW_MAX, current + SNOW_ACCUM_RATE);
+		if (tempC >= SNOW_MELT_C)   return Math.max(0.0, current - SNOW_MELT_RATE);
+		return current;   // zone tampon [0, 2]°C : stable
+	}
+
+	/** Met à jour toute la grille de neige selon la température et l'altitude (L7).
+	 *  Appelée à cadence réduite par {@link worlds.WorldOfCells} (la neige varie
+	 *  lentement). No-op si la grille n'est pas allouée. */
+	public void stepSnow() {
+		if (snowDepth == null) return;
+		double maxH = getMaxEverHeight();
+		if (maxH <= 0) return;
+		double t = getTemperature();
+		for (int x = 0; x < dxCA; x++)
+			for (int y = 0; y < dyCA; y++) {
+				double hN = getCellHeight(x, y) / maxH;
+				snowDepth[x][y] = nextSnowDepth(snowDepth[x][y], t, hN, SNOW_LINE_FRAC);
+			}
+	}
+
+	// ===== Eau qui s'écoule (L7) : ruissellement / rivières =====
+	/** Hauteur d'eau de surface par cellule (en UNITÉS DE HAUTEUR de cellule,
+	 *  comme getCellHeight) qui ruisselle vers les voisins plus bas. Distincte de
+	 *  l'océan (cellHeight < 0) : c'est l'eau MOBILE posée sur la terre. */
+	protected double[][] waterDepth;
+	private double[][] waterScratch;
+
+	/** Fraction de la dénivelée transférée par tick vers le voisin le plus bas. */
+	private static final double WATER_FLOW_RATE = 0.5;
+	/** Évaporation de l'eau de surface sur terre par tick. Dimensionnée pour qu'une
+	 *  flaque piégée (sans exutoire) sèche en ~15 s (≈300 ticks à 20 Hz) après la
+	 *  pluie — et non en ~1500 ticks (~96 min) comme avec l'ancienne valeur 0.0008,
+	 *  qui laissait le sol bleu en permanence. Reste < débit de pluie (0.02) pour
+	 *  qu'une lame se forme bien pendant l'averse. */
+	private static final double WATER_EVAP = 0.004;
+	/** Eau ajoutée par tick de pluie sur chaque cellule de terre (source L6→L7). */
+	private static final double RAIN_WATER_PER_TICK = 0.02;
+
+	public double getWaterDepth(int x, int y) {
+		return waterDepth == null ? 0.0 : waterDepth[x % dxCA][y % dyCA];
+	}
+	public void setWaterDepth(int x, int y, double d) {
+		if (waterDepth != null) waterDepth[x % dxCA][y % dyCA] = Math.max(0.0, d);
+	}
+	public void addWater(int x, int y, double d) {
+		if (waterDepth != null) {
+			int i = x % dxCA, j = y % dyCA;
+			waterDepth[i][j] = Math.max(0.0, waterDepth[i][j] + d);
+		}
+	}
+
+	/**
+	 * Un pas d'écoulement de l'eau de surface (L7). Pour chaque cellule portant de
+	 * l'eau, on transfère une fraction du surplus d'altitude (terrain + eau) vers
+	 * le voisin cardinal le plus BAS — l'eau coule donc des crêtes vers les
+	 * cuvettes, formant ruisseaux et flaques. Calcul en deux temps (deltas dans un
+	 * scratch, puis application) pour être indépendant de l'ordre de balayage.
+	 * L'eau qui atteint l'océan (cellHeight &lt; 0) est absorbée ; l'eau sur terre
+	 * s'évapore lentement. Couplé à la pluie (L6) comme source quand il pleut.
+	 */
+	public void stepWater() {
+		if (waterDepth == null) return;
+		if (waterScratch == null) waterScratch = new double[dxCA][dyCA];
+
+		// Source : la pluie alimente le ruissellement sur la terre ferme.
+		if (isRaining()) {
+			for (int x = 0; x < dxCA; x++)
+				for (int y = 0; y < dyCA; y++)
+					if (getCellHeight(x, y) >= 0) waterDepth[x][y] += RAIN_WATER_PER_TICK;
+		}
+
+		for (int x = 0; x < dxCA; x++)
+			for (int y = 0; y < dyCA; y++) waterScratch[x][y] = 0.0;
+
+		final int[] dxs = { 0, 0, 1, -1 };
+		final int[] dys = { -1, 1, 0, 0 };
+		for (int x = 0; x < dxCA; x++)
+			for (int y = 0; y < dyCA; y++) {
+				double water = waterDepth[x][y];
+				if (water <= 0.0) continue;
+				double totalHere = getCellHeight(x, y) + water;
+				// voisin cardinal le plus bas (terrain + eau), tore-aware.
+				int bestNx = -1, bestNy = -1;
+				double bestTotal = totalHere;
+				for (int k = 0; k < 4; k++) {
+					int nx = ((x + dxs[k]) % dxCA + dxCA) % dxCA;
+					int ny = ((y + dys[k]) % dyCA + dyCA) % dyCA;
+					double tn = getCellHeight(nx, ny) + waterDepth[nx][ny];
+					if (tn < bestTotal) { bestTotal = tn; bestNx = nx; bestNy = ny; }
+				}
+				if (bestNx < 0) continue;   // cuvette locale : l'eau reste (flaque)
+				// Transfert : moitié de la dénivelée, borné à l'eau disponible.
+				double move = Math.min(water, (totalHere - bestTotal) * 0.5) * WATER_FLOW_RATE;
+				if (move <= 0) continue;
+				waterScratch[x][y]       -= move;
+				waterScratch[bestNx][bestNy] += move;
+			}
+
+		// Application + drainage océan + évaporation terre.
+		for (int x = 0; x < dxCA; x++)
+			for (int y = 0; y < dyCA; y++) {
+				double d = waterDepth[x][y] + waterScratch[x][y];
+				if (getCellHeight(x, y) < 0) d = 0.0;          // absorbé par l'océan
+				else d = Math.max(0.0, d - WATER_EVAP);        // évaporation lente
+				waterDepth[x][y] = d;
+			}
 	}
 
 	public int getBefore() {
@@ -211,6 +635,8 @@ public abstract class World {
 	abstract public void setNbloups(int nbloups);
 	abstract public int getNbmoutons();
 	abstract public void setNbmoutons(int nbmoutons);
+	abstract public int getNbours();
+	abstract public void setNbours(int nbours);
 	abstract public int getBergerie();
 	abstract public void setBergerie(int bergerie);
 	abstract public int getWolfHome();
@@ -300,6 +726,17 @@ public abstract class World {
 	{
 		for ( int i = 0 ; i < uniqueDynamicObjects.size(); i++ )
 			uniqueDynamicObjects.get(i).displayUniqueObject(_myWorld,gl,offsetCA_x,offsetCA_y,offset,stepX,stepY,lenX,lenY,normalizeHeight);
+	}
+
+	/**
+	 * Carcasses : toujours affichées (comme les agents). À appeler HORS d'un
+	 * glBegin — les display lists GLB ouvrent leur propre glBegin.
+	 */
+	public void displayCarcasses(World _myWorld, GL2 gl, int offsetCA_x, int offsetCA_y,
+			float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight)
+	{
+		for (int i = 0; i < carcasses.size(); i++)
+			carcasses.get(i).displayUniqueObject(_myWorld, gl, offsetCA_x, offsetCA_y, offset, stepX, stepY, lenX, lenY, normalizeHeight);
 	}
     
 	public int getWidth() { return dxCA; }

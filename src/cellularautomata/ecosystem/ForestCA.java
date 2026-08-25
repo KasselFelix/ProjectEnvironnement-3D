@@ -20,7 +20,7 @@ public class ForestCA extends CellularAutomataInteger {
 	public double darbre = 0.1;// densite arbre// 0.6 test fire
 	public double pF=0.00003;//probabilite de prendre feu pour les arbres
 	public double pA=0.000006;// 0.00006// probabilite d'apparition des arbres
-	int tDispertion=60;// temps avant dispertion des cendres — augmenté pour que la combustion soit visible plus longtemps (3 sec à 20 Hz)
+	int tDispertion;// temps (ticks) avant dispersion des cendres — calculé hz-scalé au constructeur (3 s)
 
 	// ── Système de states (refonte 2026-05-28) ──────────────────────────────
 	// 0       = vide
@@ -41,6 +41,22 @@ public class ForestCA extends CellularAutomataInteger {
 	private static double stateAdvanceProbability() {
 		int hz = SimulationConfig.getInstance().simulationHz;
 		return 1.0 / (TREE_STATE_DURATION_SEC * hz);
+	}
+
+	/** Hz de référence pour lequel les probabilités/débits PAR TICK ont été
+	 *  calibrés (= la cadence historique, 20 Hz). */
+	private static final int REF_HZ = 20;
+
+	/** Échelle à appliquer aux taux PAR TICK (germination, ignition) pour les
+	 *  rendre indépendants de simulationHz : vaut 1 à hz=REF_HZ (comportement
+	 *  inchangé), 20/hz sinon → mêmes taux PAR SECONDE quel que soit le Hz. */
+	private static double tickRateScale() {
+		return (double) REF_HZ / SimulationConfig.getInstance().simulationHz;
+	}
+
+	/** Convertit une durée en secondes-jeu en ticks via simulationHz (≥ 1). */
+	private static int secToTicks(double sec) {
+		return Math.max(1, (int) Math.round(sec * SimulationConfig.getInstance().simulationHz));
 	}
 
 	/** True si le state correspond à un arbre en feu (n'importe quel sub-state). */
@@ -110,7 +126,33 @@ public class ForestCA extends CellularAutomataInteger {
 			}
 		double fComp = 1.0 - COMP_K * (n / 8.0);
 		if (fComp < 0) fComp = 0;
-		return fAlt * fSoil * fComp;
+		// L5 — modulation saisonnière : la forêt pousse vite au printemps, à
+		// l'arrêt l'hiver. Multiplie germination ET croissance (fertility est
+		// lue par les deux).
+		return fAlt * fSoil * fComp * waterProximityFactor(x, y) * world.seasonalFertility();
+	}
+
+	/**
+	 * Facteur d'humidité ∈ [WATER_DRY_MIN, 1] : modélise la sécheresse loin de
+	 * l'eau (berges plus fertiles). 1.0 au contact de l'eau, décroît avec la
+	 * distance, plancher WATER_DRY_MIN au-delà de WATER_REACH cases. Reste dans
+	 * [0,1] → préserve l'invariant fertilité ∈ [0,1] (taux de croissance, seed,
+	 * taille de rendu). Scan en anneaux avec sortie anticipée à la 1re eau
+	 * trouvée : bon marché là où il y a de l'eau proche (cas courant), coûteux
+	 * seulement au cœur des terres sèches.
+	 */
+	private double waterProximityFactor(int x, int y) {
+		for (int r = 1; r <= WATER_REACH; r++) {
+			for (int dx = -r; dx <= r; dx++)
+				for (int dy = -r; dy <= r; dy++) {
+					if (Math.max(Math.abs(dx), Math.abs(dy)) != r) continue; // anneau
+					if (world.getCellHeight((x + dx + _dx) % _dx, (y + dy + _dy) % _dy) < 0) {
+						double prox = 1.0 - (double) (r - 1) / WATER_REACH; // r=1→1, r=REACH→1/REACH
+						return WATER_DRY_MIN + (1.0 - WATER_DRY_MIN) * prox;
+					}
+				}
+		}
+		return WATER_DRY_MIN;
 	}
 
 	/** Nombre de ticks pour atteindre g=1 en fertilité maximale (≥ 1). */
@@ -118,6 +160,38 @@ public class ForestCA extends CellularAutomataInteger {
 		SimulationConfig c = SimulationConfig.getInstance();
 		double ticksPerGameDay = (double) c.cycleTotalSec * c.simulationHz;
 		return Math.max(1.0, treeGrowthDays * ticksPerGameDay);
+	}
+
+	/**
+	 * Probabilité qu'un arbre germe sur la case vide (x,y) ce tick. Combine :
+	 *  - la proba de base `pA` ;
+	 *  - la pénalité de sol minéral (× STONE_GROWTH_FACTOR sur pierre) ;
+	 *  - la DISPERSION DE GRAINES : les arbres ADULTES voisins (8-connexe,
+	 *    pondérés par leur maturité `growth ∈ [0,1]`) augmentent la proba via
+	 *    `× (1 + SEED_DISPERSAL_K × pression)`. La forêt se propage donc depuis
+	 *    les peuplements existants plutôt que par germination uniforme.
+	 * Fonction pure (lecture seule). Bornée par construction à pA × (1 + K).
+	 */
+	public double germinationProb(int x, int y) {
+		double p = pA;
+		if (world.getStoneCAValue(x, y) > 0) p *= STONE_GROWTH_FACTOR;
+		if (ashBoost[x][y] > 0) p *= ASH_BOOST_FACTOR;   // sol cendré récent → reforestation accélérée
+		double seed = 0.0;
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++) {
+				if (dx == 0 && dy == 0) continue;
+				int nx = (x + dx + _dx) % _dx, ny = (y + dy + _dy) % _dy;
+				if (this.getCellState(nx, ny) == 1) seed += growth[nx][ny]; // maturité ∈ [0,1]
+			}
+		seed /= 8.0;                                    // pression de graines ∈ [0,1]
+		return p * (1.0 + SEED_DISPERSAL_K * seed);
+	}
+
+	/** Marque la cellule comme enrichie par la cendre (post-incendie) : le sol
+	 *  fertile booste la germination pendant ASH_BOOST_DURATION ticks. Appelé à
+	 *  la dispersion des cendres d'un arbre brûlé. */
+	public void markAsh(int x, int y) {
+		ashBoost[x][y] = secToTicks(ASH_SEC);
 	}
 
 	/** Valeur de croissance de la cellule après un tick, bornée à 1. Fonction pure. */
@@ -150,18 +224,54 @@ public class ForestCA extends CellularAutomataInteger {
 	private static final double STONE_FERTILITY = 0.3;
 	/** Pénalité de compétition : 8 voisins-arbres ⇒ fertilité × (1 - COMP_K). */
 	private static final double COMP_K = 0.6;
+	/** Portée (en cases) de l'effet fertilisant de l'eau au-delà duquel le sol est « sec ». */
+	private static final int WATER_REACH = 4;
+	/** Plancher de fertilité en sol sec (loin de l'eau) ; 1.0 au contact de l'eau. */
+	private static final double WATER_DRY_MIN = 0.55;
+	/** Dispersion de graines : 8 voisins adultes (maturité 1) ⇒ proba germination × (1 + K). */
+	private static final double SEED_DISPERSAL_K = 4.0;
 
 	/** Progression de croissance par cellule, g ∈ [0,1] (0 = pousse, 1 = adulte). */
 	private final double[][] growth;
 
+	/** Tours restants d'enrichissement du sol par la cendre (post-incendie) par
+	 *  cellule ; 0 = sol normal. Booste la germination (succession écologique). */
+	private final int[][] ashBoost;
+	/** Facteur multiplicatif de germination sur sol cendré récent. */
+	private static final double ASH_BOOST_FACTOR = 3.0;
+	/** Durée (secondes-jeu) de l'effet fertilisant de la cendre (→ ticks via hz). */
+	private static final double ASH_SEC = 10.0;
+
+	/** Cellules ayant pris feu CE tick : exclues du voisinage enflammé pour borner
+	 *  la propagation à ~1 case/tick (Option 2, 2026-06-07). Reset en début de step().
+	 *  Le reste du CA reste asynchrone in-place — seul le feu est « borné ». */
+	private final boolean[][] ignitedThisTick;
+	/** Proba de base d'ignition par voisin CARDINAL en feu (par tick, à sec / 20 Hz). */
+	private static final double FIRE_P_CARD = 0.55;
+	/** Idem voisin DIAGONAL (plus faible : distance √2 → front rond, pas carré). */
+	private static final double FIRE_P_DIAG = 0.22;
+
+	/** Poids de propagation du feu par direction (Option 2) : cardinal > diagonal →
+	 *  vitesse ~isotrope (front rond). POINT D'ACCROCHE VENT : multiplier ce poids
+	 *  par un facteur directionnel selon l'orientation/force du vent. */
+	private static double dirSpreadWeight(int dx, int dy) {
+		return (dx == 0 || dy == 0) ? FIRE_P_CARD : FIRE_P_DIAG;
+	}
+
 	public ForestCA ( World __world, int __dx , int __dy, CellularAutomataDouble cellsHeightValuesCA )
 	{
-		super(__dx,__dy,false ); // buffering must be true.
+		// Asynchrone in-place (mono-buffer) DÉLIBÉRÉ : germination/croissance n'ont
+		// pas de problème de chaînage. Le SEUL mécanisme sensible (le feu) est borné
+		// à ~1 case/tick via `ignitedThisTick` (Option 2), pas via un double-buffer.
+		super(__dx,__dy,false );
 		
 		_cellsHeightValuesCA = cellsHeightValuesCA;// reference to height CA
 
 		this.world = __world;
 		this.growth = new double[_dx][_dy];
+		this.ashBoost = new int[_dx][_dy];
+		this.ignitedThisTick = new boolean[_dx][_dy];
+		this.tDispertion = secToTicks(3.0);   // 3 s de cycle cendre
 	}
 	
 	public void init()
@@ -202,9 +312,12 @@ public class ForestCA extends CellularAutomataInteger {
 	{
 		//MISE a jour asynchrone randomiser
     	Collections.shuffle(world.list);
+    	for (boolean[] row : ignitedThisTick) java.util.Arrays.fill(row, false);  // Option 2 : borne le feu à 1 case/tick
     	for(int d=0;d<world.list.size();d++){
-    		int i=world.list.get(d)%_dx;
-			int j=world.list.get(d)/_dy;
+    		int c=world.list.get(d);                 // encodage World : c = x*_dy + y
+			int i=c/_dy;                             // x
+			int j=c%_dy;                             // y
+			if (ashBoost[i][j] > 0) ashBoost[i][j]--;   // l'enrichissement cendre s'épuise (1×/cellule/tick)
     			if (this.getCellState(i, j)>=0 &&  this.getCellState(i,j)<= BURNT+tDispertion)
     			{	
     				// Pour une case sans arbre. Conditions de germination :
@@ -216,11 +329,7 @@ public class ForestCA extends CellularAutomataInteger {
     				//   - sol au-dessus du niveau de la mer (height >= 0).
     				if ( this.getCellState(i,j) == 0
     						&& world.getLavaCAValue(i, j)==0){
-    					double effectivePA = pA;
-    					if (world.getStoneCAValue(i, j) > 0) {
-    						effectivePA *= STONE_GROWTH_FACTOR;
-    					}
-    					if(Math.random() < effectivePA && world.getCellHeight(i,j) >= 0){
+    					if(Math.random() < germinationProb(i, j) * tickRateScale() && world.getCellHeight(i,j) >= 0){
     						this.setCellState(i,j,1);
     						NbArbreSaint+=1;
     					}
@@ -228,6 +337,7 @@ public class ForestCA extends CellularAutomataInteger {
     				//pour un arbre en cendre
     				else if ( this.getCellState(i,j) == BURNT + tDispertion){
 	    				this.setCellState(i,j,0); //dispertion
+	    				markAsh(i, j);            // la cendre dispersée enrichit le sol
 	    			}
     				// Pour une case avec arbre
 	    			else if ( this.getCellState(i,j) == 1 ) // tree?
@@ -242,29 +352,51 @@ public class ForestCA extends CellularAutomataInteger {
 	    						NbArbreSaint-=1;
 	    					} else {
 	    						this.setCellState(i,j, FIRE_FIRST);
+	    						ignitedThisTick[i][j] = true;
 	    						NbArbreSaint-=1;
+	    						world.events.treesBurned++;   // V6
 	    					}
 						}else{
-		    				// check if neighbors are burning (any fire sub-state)
-		    				if (
-		    						isTreeOnFire(this.getCellState( (i+_dx-1)%(_dx) , j )) ||
-		    						isTreeOnFire(this.getCellState( (i+_dx+1)%(_dx) , j )) ||
-		    						isTreeOnFire(this.getCellState( i , (j+_dy+1)%(_dy) )) ||
-		    						isTreeOnFire(this.getCellState( i , (j+_dy-1)%(_dy) )) ||
+		    				// Propagation du feu — Option 2 (2026-06-07) : 8-connexe
+		    				// PROBABILISTE, bornée par tick.
+		    				//  - 8 voisins ; les diagonaux (√2) moins probables que les
+		    				//    cardinaux (dirSpreadWeight) → vitesse ~isotrope → front ROND.
+		    				//  - ignitedThisTick : un arbre allumé CE tick ne propage pas
+		    				//    avant le suivant → front borné ~1 case/tick (équivalent
+		    				//    synchrone sans double-buffer ; le CA reste async ailleurs).
+		    				//  - lave adjacente = chaleur directe → embrase toujours.
+		    				//  - pluie (fireSpreadFactor) et hz (tickRateScale) modulent.
+		    				boolean lavaAdj =
 		    						world.getLavaCAValue( (i+_dx-1)%(_dx) , j ) != 0 ||
 		    						world.getLavaCAValue( (i+_dx+1)%(_dx) , j ) != 0 ||
 		    						world.getLavaCAValue( i , (j+_dy+1)%(_dy) ) != 0 ||
-		    						world.getLavaCAValue( i , (j+_dy-1)%(_dy) ) != 0
-		    					)
+		    						world.getLavaCAValue( i , (j+_dy-1)%(_dy) ) != 0;
+		    				double envFactor = world.fireSpreadFactor() * tickRateScale();
+		    				double qNoCatch = 1.0;   // proba de NE PAS s'enflammer ce tick
+		    				for (int wx = -1; wx <= 1; wx++)
+		    					for (int wy = -1; wy <= 1; wy++) {
+		    						if (wx == 0 && wy == 0) continue;
+		    						int nx = (i+wx+_dx)%_dx, ny = (j+wy+_dy)%_dy;
+		    						if (isTreeOnFire(this.getCellState(nx, ny)) && !ignitedThisTick[nx][ny])
+		    							// -wx,-wy = direction fire travels (from nx,ny toward i,j). Math.max(0,..) :
+		    							// le facteur-vent (≤4) peut faire dépasser 1 le terme dirSpread×wind×env ; on
+		    							// borne chaque terme à [0,1] pour garder un produit de probabilités monotone.
+		    							qNoCatch *= Math.max(0.0, 1.0 - dirSpreadWeight(wx, wy) * world.fireWindFactor(-wx, -wy) * envFactor);
+		    					}
+		    				if ( lavaAdj || Math.random() < 1.0 - qNoCatch )
 		    				{
 		    					this.setCellState(i,j, FIRE_FIRST);
+		    					ignitedThisTick[i][j] = true;
 		    					NbArbreSaint-=1;
+		    					world.events.treesBurned++;   // V6 — compteur de dommages
 		    				}
 		    				else
-		    					if ( Math.random() < pF ) // spontaneously take fire ?
+		    					if ( Math.random() < pF * envFactor ) // feu spontané
 		    					{
 		    						this.setCellState(i,j, FIRE_FIRST);
+		    						ignitedThisTick[i][j] = true;
 		    						NbArbreSaint-=1;
+		    						world.events.treesBurned++;   // V6
 		    					}
 		    					else
 		    					{

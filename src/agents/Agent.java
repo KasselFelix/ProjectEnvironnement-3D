@@ -17,6 +17,288 @@ public class Agent extends UniqueDynamicObject{
 
 	World _world;
 
+	/** Vivant ? Déclaré sur la base commune pour que le monde puisse tester
+	 *  l'occupation des cases sans connaître le type concret de l'agent. */
+	public boolean _alive = true;
+
+	/**
+	 * Cet agent bloque-t-il le déplacement de {@code mover} vers sa case ? Par
+	 * défaut OUI : un agent est un obstacle pour tous les autres (pas de
+	 * superposition). Surchargé par la proie pour laisser entrer son prédateur.
+	 */
+	public boolean blocksMovementOf(UniqueDynamicObject mover) {
+		return true;
+	}
+
+	// ===== Évolution — socle commun (cf. docs/evolution.txt) =====
+	// Factorisé depuis Mouton/Loup (consolidation C3). Chaque espèce câble sa
+	// reproduction par-dessus ; les fondateurs ont un génome NEUTRE.
+
+	/** Durée de vie en jours-jeu ; ≤ 0 = immortel par vieillesse (§ 10.1). */
+	public double maxAgeDays = -1;
+	/** Génome : axes à 3 états héritables (§ 4). NEUTRE pour un fondateur. */
+	public agents.ai.Genome genome = new agents.ai.Genome();
+	/** true = spawné (adulte d'emblée) ; false = né (démarre BÉBÉ, § 10.1). */
+	public boolean isFounder = true;
+	/** Facteur de taille individuel héritable (§ 10.2), clampé [0.8, 1.2]. */
+	public double sizeFactor = 1.0;
+
+	// ===== Physique du corps (modèle de traînée du vent) =====
+	/** Masse de référence (kg) — adulte sain. Sert à la résistance au vent ET aux
+	 *  carcasses. Défaut = mouton (~70 kg) ; chaque espèce la fixe dans son constructeur.
+	 *  (ex-massKg, renommé pour distinguer de bodyMassKg() qui est dynamique.) */
+	public double baseMassKg = 70.0;
+	/** Surface frontale exposée au vent (m²). Grande voilure = plus poussé.
+	 *  Défaut = mouton (~0.35 m²) ; chaque espèce la fixe dans son constructeur. */
+	public double frontalAreaM2 = 0.35;
+	/** Référence de normalisation = masse/surface du mouton (kg/m²) → résistance 1.0,
+	 *  ce qui préserve le calibrage initial (WIND_DRAG_K) pour l'espèce de référence. */
+	private static final double WIND_RESISTANCE_REF = 70.0 / 0.35;
+
+	/** Stade de vie courant (§ 10.1) — un fondateur saute l'enfance. */
+	public agents.ai.LifeStage currentStage() {
+		agents.ai.LifeStage s = agents.ai.LifeStage.of(getAgeDays(), maxAgeDays);
+		if (isFounder && (s == agents.ai.LifeStage.BABY || s == agents.ai.LifeStage.JUVENILE)) {
+			return agents.ai.LifeStage.ADULT;
+		}
+		return s;
+	}
+
+	/** Échelle de croissance liée à l'âge (§ 10.2) : fondateur 1.0, né = Gompertz. */
+	public double growthScale() {
+		if (isFounder) return 1.0;
+		return agents.ai.LifeStage.gompertzGrowth(getAgeDays(), maxAgeDays);
+	}
+
+	/** Taille de rendu relative (§ 10.2) : trait × croissance × Force du génome. */
+	public double displaySize() {
+		return sizeFactor * growthScale() * genome.strengthSizeFactor();
+	}
+
+	// ----- Héritage à la naissance (constantes + utilitaires partagés) -----
+	/** Source d'aléa pour l'héritage du génome. */
+	protected static final java.util.Random EVO_RNG = new java.util.Random();
+	/** Mutation ±MUTATION_RATE des traits numériques hérités. */
+	protected static final double MUTATION_RATE = 0.1;
+	/** Proba de mutation d'un axe du génome à la naissance (§ 4.2). */
+	protected static final double TYPE_MUTATION_RATE = 0.05;
+	/** Proba d'hériter un axe d'un grand-parent (§ 4.4). */
+	protected static final double GRANDPARENT_PROB = 0.1;
+	/** Malus de longévité des enfants d'un parent INFERTILE (§ 4.3). */
+	protected static final double INFERTILE_CHILD_LONGEVITY_MALUS = 0.5;
+	private static final double SIZE_FACTOR_MIN = 0.8;
+	private static final double SIZE_FACTOR_MAX = 1.2;
+
+	protected static int mutateInt(int base) {
+		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
+		return Math.max(1, (int) Math.round(base * f));
+	}
+
+	protected static double mutateDouble(double base) {
+		double f = 1.0 + (Math.random() * 2 - 1) * MUTATION_RATE;
+		return Math.max(0.1, base * f);
+	}
+
+	protected static double clampSize(double s) {
+		return Math.max(SIZE_FACTOR_MIN, Math.min(SIZE_FACTOR_MAX, s));
+	}
+
+	/** true si l'agent porte l'axe Fertilité au pôle NÉGATIF (INFERTILE, § 4.3). */
+	protected static boolean isInfertile(Agent a) {
+		return a.genome.get(agents.ai.Axis.FERTILITY) == agents.ai.Pole.NEGATIVE;
+	}
+
+	// ===== Cognition commune (Mind / SemanticMemory / Character) — L1 =====
+	// Hissée de Mouton vers Agent pour que Loup et Humain disposent du même
+	// socle cognitif (cf. docs/evolution.txt § 5-7). Les espèces câblent
+	// l'entraînement dans leur postTick via trainMindAndCharacter() et
+	// surchargent isIsolated()/satisfaction() selon leur grégarité.
+
+	/** Mémoire sémantique (§ 5) : zones connues (eau, chasse, danger, lieu sûr).
+	 *  Capacité réglée par l'intelligence et l'âge via refreshMemoryCapacity(). */
+	public final agents.ai.SemanticMemory memory = new agents.ai.SemanticMemory();
+
+	/** Intelligence dynamique (§ 6) : score 0..1 démarrant depuis l'axe
+	 *  Intelligence, entraîné par l'activité, dégénérant avec l'âge. */
+	public agents.ai.Mind mind = new agents.ai.Mind(agents.ai.Mind.BASE_SCORE);
+
+	/** Caractère social ÉMERGENT (§ 7) : développé par session selon le vécu.
+	 *  Aucun à la naissance. */
+	public final agents.ai.Character character = new agents.ai.Character();
+
+	/** Durée d'une session de développement du caractère, en jours-jeu (§ 7.1). */
+	protected static final double CHARACTER_SESSION_DAYS = 2.0;
+
+	/** (Ré)initialise l'esprit depuis le génome courant (à appeler après avoir
+	 *  fixé le génome — fondateur au spawn, petit à la naissance). */
+	public void initMind() {
+		mind = agents.ai.Mind.fromGenome(genome);
+	}
+
+	// ----- Économie métabolique / faim variable (L8) -----
+	/** Reliquat fractionnaire de coût métabolique reporté d'un tick à l'autre
+	 *  (l'énergie est entière, le coût est continu). */
+	protected double metabolicDebt = 0.0;
+
+	/** Facteur de dépense énergétique selon l'ACTIVITÉ du tick (L8) : se reposer
+	 *  coûte moins (0.5), errer un peu moins (0.8), sprinter/fuir/chasser coûte
+	 *  plus (1.3). Sert à moduler le coût métabolique de base. NB : l'ÉQUILIBRE
+	 *  Lotka-Volterra qui en résulte se règle/observe EN SIMULATION (graphe), pas
+	 *  en test unitaire — cf. plan L8. */
+	public double activityEnergyFactor() {
+		switch (currentState) {
+			case REST:           return 0.5;
+			case WANDER:         return 0.8;
+			case HUNT:
+			case FLEE_PREDATOR:
+			case FLEE_LAVA:
+			case ON_FIRE:        return 1.3;
+			default:             return 1.0;
+		}
+	}
+
+	/** Coût métabolique ENTIER à retrancher ce tick pour une dépense de base
+	 *  {@code base}, modulé par l'activité (L8). Le reliquat fractionnaire est
+	 *  reporté via {@link #metabolicDebt} pour conserver la dépense moyenne. */
+	protected int metabolicCost(double base) {
+		metabolicDebt += base * activityEnergyFactor();
+		int whole = (int) Math.floor(metabolicDebt);
+		metabolicDebt -= whole;
+		return whole;
+	}
+
+	/** Niveau d'activité cognitive du tick (§ 6.2) : 1.0 pour les états de
+	 *  survie/décision (qui entraînent l'esprit), 0.0 pour le repos et l'errance. */
+	public double activityLevel() {
+		switch (currentState) {
+			case REST:
+			case WANDER:
+				return 0.0;
+			default:
+				return 1.0;
+		}
+	}
+
+	/** Recale la capacité de la mémoire sur le génome et l'âge courants (§ 5.1),
+	 *  modulée par l'aptitude mentale dynamique (§ 6 : un esprit vif gère plus de
+	 *  souvenirs, un esprit dégénéré en perd). */
+	public void refreshMemoryCapacity() {
+		int base = agents.ai.SemanticMemory.capacityFor(genome, getAgeDays(), maxAgeDays);
+		memory.setCapacity((int) Math.round(base * mind.learningRate()));
+	}
+
+	/** true si aucun congénère n'est à portée (§ 7.3). Défaut : jamais isolé —
+	 *  les espèces grégaires (Mouton, meute de Loups) surchargent. */
+	public boolean isIsolated() { return false; }
+
+	/** Sous-projet D : une décision de risque se présente-t-elle ce tick ? Défaut :
+	 *  jamais (l'agent n'a pas d'axe boldness exploité). Surchargé par espèce. */
+	protected boolean riskSituation(agents.ai.Percept p) { return false; }
+	/** Sous-projet D : l'agent a-t-il choisi l'option audacieuse ce tick ?
+	 *  observeRisk n'exploite ce résultat que si riskSituation est vrai, mais
+	 *  l'argument est TOUJOURS évalué (eager) au site d'appel : les surcharges
+	 *  doivent null-tester {@code p} (lastPercept est null avant le 1er isMyTurn).
+	 *  Surchargé par espèce. */
+	protected boolean tookRisk(agents.ai.Percept p) { return false; }
+
+	/** Satisfaction globale ∈ [0, 1] (§ 7.3). Défaut neutre fondé sur la survie
+	 *  immédiate (feu = 0) ; les espèces affinent (faim, social…). */
+	public double satisfaction() { return isOnFire() ? 0.0 : 1.0; }
+
+	/** Entraîne l'esprit (activité ↑, âge ↓) et fait émerger le caractère par
+	 *  session (§ 6-7). Appelé depuis le postTick des espèces qui ont activé la
+	 *  cognition. Centralisé ici pour éviter la duplication Mouton/Loup. */
+	protected void trainMindAndCharacter() {
+		double lifespan = maxAgeDays > 0 ? maxAgeDays : agents.ai.LifeStage.REFERENCE_LIFESPAN_DAYS;
+		// dt = 1 tick exprimé en jours-jeu (getAgeDays = age / (2*dureeJour)).
+		// On intègre les taux PAR JOUR de Mind sur ce dt → l'évolution de
+		// l'intelligence se mesure en jours, plus en ticks.
+		double dtDays = 1.0 / (2.0 * Math.max(1, world.getDureeJour()));
+		mind.train(activityLevel(), getAgeDays() / lifespan, genome.longevityFactor(), dtDays);
+		character.observe(isIsolated(), satisfaction());
+		agents.ai.Percept rp = lastPercept;
+		character.observeRisk(riskSituation(rp), tookRisk(rp));   // sous-projet D
+		int sessionTicks = Math.max(1, (int) (CHARACTER_SESSION_DAYS * 2 * world.getDureeJour()));
+		if (world.getIteration() > 0 && world.getIteration() % sessionTicks == 0) {
+			character.endSession();
+		}
+	}
+
+	/** Lignes ASCII résumant les traits évolutifs pour la fiche d'agent (§ 11) :
+	 *  stade & taille, traits génétiques, caractère, intelligence, mémoire.
+	 *  Commun à toutes les espèces (enrichit aussi la fiche Loup/Humain — L1). */
+	public java.util.List<String> evolutionSummary() {
+		java.util.List<String> l = new java.util.ArrayList<>();
+		l.add(String.format(java.util.Locale.US, "Stade    : %s (x%.2f)", stageLabel(), displaySize()));
+		l.add("Traits   : " + genome.asciiTraits());
+		l.add("Caractere: " + socialLabel() + " / " + boldnessLabel());
+		l.add(String.format(java.util.Locale.US, "Intel.   : %.2f", mind.score()));
+		l.add("Memoire  : " + memory.size() + " lieux");
+		addOlfactionLines(l);
+		return l;
+	}
+
+	/** Bloc « Odorat » de la fiche (sous-projet B). Multi-lignes pour ne PAS
+	 *  déborder de la largeur du panneau : un en-tête (acuité) puis une ligne
+	 *  courte par canal. Anosmique (sous le gate) → une seule ligne. */
+	private void addOlfactionLines(java.util.List<String> l) {
+		double acuity = agents.ai.Perception.olfactionAcuity(this);
+		if (acuity < ui.SimulationConfig.getInstance().olfactionGate) { l.add("Odorat   : anosmique"); return; }
+		agents.ai.Percept p = lastPercept;
+		if (p == null) { l.add(String.format(java.util.Locale.US, "Odorat   : (%.1f) rien", acuity)); return; }
+		l.add(String.format(java.util.Locale.US, "Odorat   : (%.1f)", acuity));
+		l.add(scentLine("proie",    p.scentPreyDir,    p.scentPreyIntensity));
+		l.add(scentLine("danger",   p.scentDangerDir,  p.scentDangerIntensity));
+		l.add(scentLine("charogne", p.scentCarcassDir, p.scentCarcassIntensity));
+		l.add(scentLine("partenaire", p.scentMateDir,  p.scentMateIntensity));   // sous-projet E
+	}
+
+	/** Ligne d'un canal d'odeur, indentée et alignée sous l'en-tête « Odorat ». */
+	private static String scentLine(String label, int dir, double inten) {
+		return String.format("  %-8s : %s", label, scentChannelLabel(dir, inten));
+	}
+
+	// Libellés ORIENTÉS ÉCRAN, cohérents avec getOrientLabel() : les dir 0..3 sont
+	// l'énumération interne (0 = grille −Y, 2 = grille +Y). Au rendu vue-de-dessus,
+	// grille +Y = HAUT = Nord et −Y = BAS = Sud → dir 0 s'affiche "S", dir 2 "N".
+	// (Avant : { "N","E","S","O" } en convention grille brute → N/S inversés sur la fiche.)
+	private static final String[] SCENT_DIR4 = { "S", "E", "N", "O" };
+	/** "-" si rien ; "<dir> <palier>" sinon ("ici" si senti sans direction). */
+	private static String scentChannelLabel(int dir, double inten) {
+		if (inten <= 0) return "-";
+		String d = (dir >= 0 && dir < 4) ? SCENT_DIR4[dir] : "ici";
+		String lvl = inten < 0.3 ? "faible" : inten < 0.7 ? "moyen" : "fort";
+		return d + " " + lvl;
+	}
+
+	/** Libellé ASCII du stade de vie courant (§ 10.1). */
+	protected String stageLabel() {
+		switch (currentStage()) {
+			case BABY:     return "BEBE";
+			case JUVENILE: return "JEUNE";
+			case OLD:      return "VIEUX";
+			default:       return "ADULTE";
+		}
+	}
+
+	/** Libellé ASCII du caractère social (§ 7). */
+	protected String socialLabel() {
+		switch (character.social()) {
+			case SOLITARY:   return "SOLITAIRE";
+			case GREGARIOUS: return "GREGAIRE";
+			default:         return "-";
+		}
+	}
+
+	/** Libellé ASCII du trait boldness (§ sous-projet D). */
+	protected String boldnessLabel() {
+		switch (character.boldness()) {
+			case BOLD:     return "TEMERAIRE";
+			case CAUTIOUS: return "PRUDENT";
+			default:       return "-";
+		}
+	}
+
 	int 	_x;
 	int 	_y;
 	int		_z;
@@ -46,6 +328,38 @@ public class Agent extends UniqueDynamicObject{
 	 */
 	protected boolean wantsToMove = true;
 
+	// ---- Mémoire spatiale (carte mentale anti-errance en boucle) ----
+	private static final int MEM_SIZE = 8;
+	private final int[] memVisitX = new int[MEM_SIZE];
+	private final int[] memVisitY = new int[MEM_SIZE];
+	private int memVisitCount = 0;
+	private int memVisitHead = 0;
+
+	/** Enregistre la cellule (vx,vy) dans la mémoire spatiale (buffer circulaire
+	 *  des MEM_SIZE dernières positions). Appelé à chaque tour effectif. */
+	protected void recordVisit(int vx, int vy) {
+		memVisitX[memVisitHead] = vx;
+		memVisitY[memVisitHead] = vy;
+		memVisitHead = (memVisitHead + 1) % MEM_SIZE;
+		if (memVisitCount < MEM_SIZE) memVisitCount++;
+	}
+
+	/** Vrai si (vx,vy) figure dans la mémoire spatiale récente. */
+	public boolean hasVisitedRecently(int vx, int vy) {
+		for (int k = 0; k < memVisitCount; k++) {
+			if (memVisitX[k] == vx && memVisitY[k] == vy) return true;
+		}
+		return false;
+	}
+
+	/** Vrai si la cellule droit devant (selon _orient) a été visitée récemment
+	 *  → sert à éviter de retourner sur ses pas pendant l'errance. */
+	protected boolean aheadVisitedRecently() {
+		int ax = (x + orientDx(_orient) + world.getWidth()) % world.getWidth();
+		int ay = (y + orientDy(_orient) + world.getHeight()) % world.getHeight();
+		return hasVisitedRecently(ax, ay);
+	}
+
 	/**
 	 * Contrôle manuel par le joueur. Quand {@code playerControlled} est vrai,
 	 * {@code step()} court-circuite decideState/applyState : l'agent prend pour
@@ -55,6 +369,12 @@ public class Agent extends UniqueDynamicObject{
 	 * (énergie, feu, manger, mort dans la lave) reste géré par postMove/postTick.
 	 */
 	public boolean playerControlled = false;
+	/** Intention joueur : manger a la prochaine etape (pose par la hotbar, consomme par step). */
+	public boolean playerWantsEat = false;
+	/** Intention joueur : brouter a la prochaine etape (pose par la hotbar, consomme par step). */
+	public boolean playerWantsGraze = false;
+	/** Phase 2 : par defaut un agent ne broute pas (surcharge par Mouton). */
+	public boolean canGrazeNow() { return false; }
 	/** Cap du corps à appliquer ce tour (0=N/1=E/2=S/3=O, -1 = ne pas tourner).
 	 *  Découplé du regard caméra : Landscape ne le change que quand l'agent avance
 	 *  ou quand l'angle regard/torse devient trop grand. */
@@ -62,6 +382,9 @@ public class Agent extends UniqueDynamicObject{
 	/** Pas de déplacement demandé ce tour (dx, dy ∈ {-1,0,1}), permettant les
 	 *  diagonales (0,0 = immobile). Calculé par Landscape selon la vue/regard. */
 	public int controlDx = 0, controlDy = 0;
+	/** Allure imposee par le joueur en pilotage (Maj=SPRINT, W=WALK, defaut TROT). */
+	public enum ControlGait { WALK, TROT, SPRINT }
+	public ControlGait controlGait = ControlGait.TROT;
 
 	/**
 	 * Masque le rendu de cet agent (modèle + flèche) — utilisé par Landscape en
@@ -74,6 +397,669 @@ public class Agent extends UniqueDynamicObject{
 	protected static int orientDx(int o) { return (o == 1) ? 1 : (o == 3) ? -1 : 0; }
 	/** Composante Y (N/S) du vecteur unitaire d'une orientation cardinale. */
 	protected static int orientDy(int o) { return (o == 0) ? -1 : (o == 2) ? 1 : 0; }
+
+	/** Facteur de traînée du vent pour CET agent, dans la direction où il se
+	 *  déplace ({@code _orient}) et selon sa taille. >1 dos au vent, <1 face au
+	 *  vent, 1 si vent nul/désactivé. Dans {@code postMove}, chaque espèce
+	 *  l'applique DEUX fois : {@code vitesse *= windDragFactor()} (le vent change la
+	 *  cadence/distance) ET {@code metabolicCost(1.0 / windF)} UNIQUEMENT si l'agent
+	 *  a bougé ce tour (le vent fournit la propulsion → l'énergie/temps reste
+	 *  invariante : dos au vent on va plus loin pour la même énergie, face au vent
+	 *  moins loin pour la même énergie ; à l'arrêt le vent ne change pas l'effort).
+	 *  NB : contrairement au vent, le froid ({@link World#coldSpeedFactor}) n'est PAS
+	 *  découplé de l'énergie — c'est voulu : le froid est un engourdissement
+	 *  INTRINSÈQUE (les muscles travaillent moins → moins d'énergie), alors que le
+	 *  vent est une force EXTERNE (l'agent fournit le même effort). */
+	protected double windDragFactor() {
+		return world.windSpeedFactor(orientDx(_orient), orientDy(_orient), windResistance());
+	}
+
+	/** Énergie max de référence (santé = energie/energieMax). Surchargé par espèce ;
+	 *  défaut = énergie courante → healthFactor 1.0 (pas de modulation pour les agents
+	 *  sans max défini, ex. Humain → masse/vent inchangés). */
+	public double energieMaxValue() { return Math.max(1.0, getEnergieForMass()); }
+	/** Énergie courante exposée pour le calcul de masse (les sous-classes ont des champs
+	 *  {@code energie} de types différents). Défaut 1.0. Surchargé. */
+	protected double getEnergieForMass() { return 1.0; }
+
+	/** Masse vivante (kg) : référence × taille/âge (displaySize) × santé. Sert au vent
+	 *  ET à la carcasse. Un adulte sain de taille 1.0 ≈ baseMassKg. */
+	public double bodyMassKg() {
+		double health = 0.7 + 0.3 * Math.min(1.0, getEnergieForMass() / energieMaxValue());
+		return baseMassKg * displaySize() * health;
+	}
+
+	/** Résistance de l'agent au vent (sans dimension, 1.0 = mouton de référence).
+	 *  Physique : masse / surface frontale (un corps lourd et peu exposé résiste
+	 *  mieux), normalisée par la réf mouton. La dépendance à {@code sizeFactor} est
+	 *  déjà incluse dans {@link #bodyMassKg()} via {@code displaySize()} : masse ∝
+	 *  taille ⇒ un gros individu résiste davantage (∝ sizeFactor, linéaire). */
+	protected double windResistance() {
+		return (bodyMassKg() / frontalAreaM2) / WIND_RESISTANCE_REF;
+	}
+
+	// ===== Pilotage anti-obstacle (partagé Loup/Ours, recherche & errance) =====
+	// Évite que l'agent s'entête à foncer dans un mur d'arbres, un congénère ou
+	// l'eau : un comportement (spirale, errance…) propose un cap dans `_orient`,
+	// ce pilotage le VALIDE et le détourne au besoin. Hissé ici pour être partagé.
+
+	/**
+	 * Avance l'état de la SPIRALE CARRÉE extensible (Loup / Ours) : bras de
+	 * longueurs {@code L, L, 2L, 2L, 3L, 3L…} avec {@code L = 2·vision+1} (deux
+	 * passes parallèles espacées du diamètre de vision → couverture sans trou ni
+	 * recouvrement). Ne touche QUE {@code mem.spiralHeading} (le CAP VOULU) et les
+	 * compteurs de bras — PAS {@code _orient}. Le pas réel (et les détours
+	 * d'obstacle) sont décidés par {@link #followSpiralHeading}, qui conserve ce
+	 * cap à travers les détours → l'agent ne dérive plus / ne tourne plus en rond.
+	 */
+	protected void spiralSearch(int vision) {
+		final int L = 2 * Math.max(1, vision) + 1;
+		if (mem.spiralHeading < 0) mem.spiralHeading = _orient;   // init = cap courant
+		if (mem.spiralStepsLeft <= 0) {                 // bras terminé → on tourne le CAP
+			mem.spiralHeading = (mem.spiralHeading + 1) % 4;
+			int n = mem.spiralLegCount / 2 + 1;         // 1,1,2,2,3,3… (longueur ×L)
+			mem.spiralStepsLeft = n * L;
+			mem.spiralLegCount++;
+		}
+		mem.spiralStepsLeft--;
+	}
+
+	/**
+	 * Biais mémoire de la recherche : si la spirale est FRAÎCHE (cap non initialisé,
+	 * {@code spiralHeading < 0} — typiquement au sortir d'une chasse, cf. Loup HUNT
+	 * qui marque {@code spiralHeading = -1}), oriente sa <b>première branche pleine</b>
+	 * vers la dernière position connue de la proie ({@link #lastPreyX}/{@link #lastPreyY}),
+	 * à défaut vers la zone de chasse mémorisée la plus proche. Le prédateur balaie
+	 * ainsi d'abord le secteur le plus prometteur au lieu de repartir sur un cap
+	 * périmé ; les branches suivantes grandissent normalement (ratissage systématique
+	 * préservé). Mesuré : −35 % (terrain ouvert) à −60 % (forêt) de pas avant détection.
+	 * No-op si la spirale est déjà en cours ou si aucune mémoire n'est disponible.
+	 */
+	protected void seedSpiralTowardMemory(int vision) {
+		if (mem.spiralHeading >= 0) return;            // spirale déjà en cours → ne pas perturber
+		int tx = lastPreyX, ty = lastPreyY;            // priorité : dernière proie aperçue
+		if (tx < 0) {                                  // sinon : zone de chasse mémorisée la plus proche
+			int[] zone = memory.nearest(agents.ai.MemoryKind.HUNTING, x, y,
+					(a, b, c, d) -> world.distance(a, b, c, d));
+			if (zone != null) { tx = zone[0]; ty = zone[1]; }
+		}
+		if (tx < 0) return;                            // aucune mémoire → spirale par défaut
+		int dir = agents.ai.Perception.dirToCell(this, world, tx, ty);
+		if (dir < 0) return;
+		mem.spiralHeading   = dir;
+		mem.spiralStepsLeft = 2 * Math.max(1, vision) + 1;   // 1re branche PLEINE vers la mémoire
+		mem.spiralLegCount  = 0;                              // branches suivantes : croissance normale
+	}
+
+	/**
+	 * Décide le pas de la recherche : on suit simplement le <b>CAP VOULU</b> de la
+	 * spirale ({@code mem.spiralHeading}, avancé par {@link #spiralSearch}). Le
+	 * contournement d'obstacle n'est PAS calculé ici : si la case devant est bloquée
+	 * (arbre, lave, eau, congénère), c'est {@link agents.ai.Locomotion#move} qui fait
+	 * un pas vers une case libre voisine (repli aléatoire borné). Cette approche —
+	 * héritée du code d'origine — est volontairement simple et surtout <b>robuste</b> :
+	 * l'agent ne se fige jamais (il bouge tant qu'une case voisine est libre) et ne
+	 * tourne pas en rond indéfiniment (l'aléa du repli casse les cycles), là où les
+	 * contournements « intelligents » (Pledge, plus-proche-cible) finissaient
+	 * toujours par créer des blocages ou des boucles dans certaines configurations.
+	 *
+	 * <p>L'eau est traitée comme un obstacle pendant la spirale ({@code allowSwim}
+	 * passé à {@code false} par l'appelant) : le loup longe les côtes au lieu d'y
+	 * entrer (pas d'oscillation côte/eau). S'il se retrouve tout de même dans l'eau,
+	 * {@code decideState} bascule en {@code SEEK_LAND}.</p>
+	 */
+	protected agents.ai.MoveConstraints followSpiralHeading(agents.ai.Percept p, int vision, boolean allowSwim) {
+		_orient = mem.spiralHeading;
+		return allowSwim ? agents.ai.MoveConstraints.amphibious()
+		                 : agents.ai.MoveConstraints.landBound();
+	}
+
+	/**
+	 * Valide / détourne {@code _orient} contre les obstacles et renvoie les
+	 * contraintes du déplacement. Stratégie anti-entêtement :
+	 * <ul>
+	 *   <li>cap dégagé (et qui ne ramène pas sur ses pas) → on le garde ;</li>
+	 *   <li>sinon on essaie, DANS L'ORDRE, tout droit → <b>décalage latéral</b>
+	 *       (droite/gauche) → demi-tour, en <b>préférant une case non visitée
+	 *       récemment</b> ; le demi-tour n'est choisi qu'en dernier recours ;</li>
+	 *   <li>l'eau n'est franchie que si {@code allowSwim} ET une côte est en vue le
+	 *       long du cap (sinon elle compte comme un obstacle).</li>
+	 * </ul>
+	 * Le décalage latéral + l'évitement des cases visitées suppriment les
+	 * allers-retours entre deux arbres. Sur une impasse (seule issue = demi-tour),
+	 * on rallonge le bras de spirale pour s'engager franchement dans la sortie
+	 * sans rétrécir la spirale ({@code spiralLegCount} conservé).
+	 *
+	 * @param allowSwim autoriser la traversée d'un bras d'eau si une côte est en vue
+	 *                  (true pour la chasse/recherche ; false pour l'errance repue).
+	 * @param vision    portée de vision de l'agent (champ par espèce).
+	 */
+	protected agents.ai.MoveConstraints steerAroundObstacles(agents.ai.Percept p, boolean allowSwim, int vision) {
+		final int desired = _orient;
+		final int right = (desired + 1) % 4, left = (desired + 3) % 4, back = (desired + 2) % 4;
+		// Ordre de préférence : tout droit, puis décalage latéral, puis demi-tour.
+		int[] order = { desired, right, left, back };
+
+		int chosen = -1, chosenKind = -1;
+		int firstPassable = -1, firstPassableKind = -1;
+		for (int d : order) {
+			int k = headingKind(d, p, allowSwim, vision);
+			if (k < 0) continue;                         // bloqué
+			if (firstPassable < 0) { firstPassable = d; firstPassableKind = k; }
+			if (!leadsToVisited(d)) { chosen = d; chosenKind = k; break; }  // 1re issue neuve
+		}
+		if (chosen < 0) { chosen = firstPassable; chosenKind = firstPassableKind; }  // tout visité
+		if (chosen < 0) return agents.ai.MoveConstraints.landBound();                // cerné → fallback Locomotion
+
+		if (chosen != desired) _orient = chosen;
+		return (chosenKind == 1) ? agents.ai.MoveConstraints.amphibious()
+		                         : agents.ai.MoveConstraints.landBound();
+	}
+
+	/**
+	 * Évitement d'obstacles pour les états DIRIGÉS (fuite, ralliement…) : garde au
+	 * mieux la direction voulue ({@code _orient}) mais la dévie autour des obstacles
+	 * SOLIDES — essaie voulu → latéral droit → latéral gauche → demi-tour, et prend
+	 * la première direction franchissable. L'eau est franchissable selon
+	 * {@code waterPassable} (true pour un amphibie ou une fuite VERS l'eau ; false
+	 * pour qui la craint, ex. mouton fuyant la lave). Empêche de rebondir
+	 * indéfiniment sur un arbre pendant une fuite.
+	 *
+	 * @return les contraintes cohérentes ({@code amphibious} si l'eau est permise,
+	 *         sinon {@code landBound}).
+	 */
+	protected agents.ai.MoveConstraints dodgeObstacles(boolean waterPassable) {
+		final int desired = _orient;
+		int[] order = { desired, (desired + 1) % 4, (desired + 3) % 4, (desired + 2) % 4 };
+		for (int d : order) {
+			if (passableForMove(d, waterPassable)) { _orient = d; break; }
+		}
+		return waterPassable ? agents.ai.MoveConstraints.amphibious()
+		                     : agents.ai.MoveConstraints.landBound();
+	}
+
+	/** Case adjacente franchissable pour un déplacement dirigé : jamais forêt/lave
+	 *  ni congénère ; l'eau dépend de {@code waterPassable}. */
+	private boolean passableForMove(int dir, boolean waterPassable) {
+		int w = world.getWidth(), h = world.getHeight();
+		int tx = ((x + orientDx(dir)) % w + w) % w;
+		int ty = ((y + orientDy(dir)) % h + h) % h;
+		if (world.getForestCAValue(tx, ty) != 0) return false;
+		if (world.getLavaCAValue(tx, ty)   != 0) return false;
+		if (world.cellBlockedByAgent(tx, ty, this)) return false;
+		if (!waterPassable && world.getCellHeight(tx, ty) < 0) return false;
+		return true;
+	}
+
+	/** Vrai si la case adjacente dans la direction {@code orient} a été visitée
+	 *  récemment (mémoire spatiale {@link #hasVisitedRecently}). */
+	private boolean leadsToVisited(int orient) {
+		int w = world.getWidth(), h = world.getHeight();
+		int tx = ((x + orientDx(orient)) % w + w) % w;
+		int ty = ((y + orientDy(orient)) % h + h) % h;
+		return hasVisitedRecently(tx, ty);
+	}
+
+	/**
+	 * Évalue le cap {@code orient} : {@code 0} = terre praticable (ni forêt/lave,
+	 * ni agent, ni eau) ; {@code 1} = eau franchissable (côte en vue, si
+	 * {@code allowSwim}) ; {@code -1} = bloqué.
+	 */
+	protected int headingKind(int orient, agents.ai.Percept p, boolean allowSwim, int vision) {
+		if (!p.cardinalFree[orient]) return -1;                  // forêt ou lave devant
+		int w = world.getWidth(), h = world.getHeight();
+		int tx = ((x + orientDx(orient)) % w + w) % w;
+		int ty = ((y + orientDy(orient)) % h + h) % h;
+		if (world.cellBlockedByAgent(tx, ty, this)) return -1;   // congénère devant
+		if (world.getCellHeight(tx, ty) >= 0) return 0;          // terre ferme
+		return (allowSwim && waterCrossable(orient, vision)) ? 1 : -1;
+	}
+
+	/**
+	 * Vrai si, tout droit selon {@code orient}, une terre ferme (côte) apparaît
+	 * dans la portée de {@code vision} après l'eau. Borne la nage à un bras d'eau,
+	 * jamais vers le large.
+	 */
+	protected boolean waterCrossable(int orient, int vision) {
+		int w = world.getWidth(), h = world.getHeight();
+		int dx = orientDx(orient), dy = orientDy(orient);
+		for (int r = 1; r <= vision; r++) {
+			int cx = ((x + dx * r) % w + w) % w;
+			int cy = ((y + dy * r) % h + h) % h;
+			if (world.getCellHeight(cx, cy) >= 0) return true;   // côte atteinte
+		}
+		return false;                                            // que de l'eau
+	}
+
+	// ===== Poursuite : persistance de piste + interception (partagé prédateurs) =====
+	// La proie VISIBLE reste toujours prioritaire (opportunisme, cf. design) ; ces
+	// outils ne servent que QUAND on l'a perdue de vue (persistance) ou pour
+	// anticiper sa trajectoire (interception, désactivée pour l'instant).
+
+	/** Interception (lead pursuit) : viser là où la proie VA, pas où elle est.
+	 *  DÉSACTIVÉE par défaut — quasi sans gain en mouvement cardinal (re-quantifié),
+	 *  gardée pour une future activation (diagonales) ou d'autres prédateurs.
+	 *  Non-{@code final} volontairement : interrupteur (re)activable à l'exécution. */
+	protected static boolean LEAD_PURSUIT = false;
+	/** Anticipation (cases) appliquée à la vitesse estimée de la proie si activée. */
+	protected static final int LEAD_FACTOR = 3;
+	/** Persistance : nb de pas où le prédateur continue de foncer vers la dernière
+	 *  position connue d'une proie sortie de vue, avant d'abandonner (→ recherche). */
+	protected static final int PURSUIT_TRACK_TTL = 10;
+
+	/** Dernière position connue de la proie poursuivie (-1 si aucune). */
+	protected int lastPreyX = -1, lastPreyY = -1;
+	/** Ticks de persistance restants (>0 ⇒ piste fraîche). */
+	protected int pursuitTrackTtl = 0;
+
+	/** Détection de blocage pour un déplacement DIRIGÉ vers une case (chasse vers une
+	 *  proie OU fuite ON_FIRE vers l'eau) : meilleure distance à la cible atteinte
+	 *  (record) et nb de ticks consécutifs sans battre ce record. Dans une poche en U
+	 *  dont l'issue sort de la vision, le record plafonne → on bascule en évasion. */
+	protected double huntBestDist = Double.MAX_VALUE;
+	protected int huntStuck = 0;
+	/** Dernière case visée (pour réinitialiser le record quand le BUT change : passer
+	 *  d'une proie à une case d'eau, ou changer de proie). Une proie MOBILE ne bouge
+	 *  que de ~1 case/tick (< seuil) → le suivi n'est pas réinitialisé à tort. */
+	protected int lastAimX = -1, lastAimY = -1;
+	// Sous-projet C : engagement de cap olfactif (anti-oscillation). Le timer
+	// scentCommitLeft est décrémenté UNE fois par tick de décision dans step().
+	protected int scentWpX = -1, scentWpY = -1;   // point de trace engagé (pistage loup)
+	protected int scentFleeDir = -1;              // cap de fuite/méfiance engagé (mouton)
+	protected int scentCommitLeft = 0;            // ticks d'engagement restants
+	// Sous-projet E : waypoint engagé DÉDIÉ au pistage du partenaire (isolé du
+	// pistage de proie SCENT_TRACK pour éviter toute interférence d'état).
+	protected int mateWpX = -1, mateWpY = -1;
+	protected int mateCommitLeft = 0;
+	// Détecteur de blocage BFS DÉDIÉ au pistage partenaire. pursuitStep utilise des
+	// champs PARTAGÉS (huntStuck/huntBestDist/lastAim) que resetPursuit() remet à zéro
+	// chaque tick hors-chasse (Loup/Ours) ; on isole donc l'état du partenaire ici et
+	// on l'échange le temps de l'appel à pursuitStep (cf. seekMateStep) pour que
+	// l'accumulation anti-blocage survive — comme pour le Mouton qui ne reset jamais.
+	protected double mateBestDist = Double.MAX_VALUE;
+	protected int mateStuck = 0;
+	protected int mateLastAimX = -1, mateLastAimY = -1;
+	/** Saut de cible (cases) au-delà duquel on considère un CHANGEMENT DE BUT → reset.
+	 *  NB : suppose LEAD_PURSUIT=false. Si l'interception est réactivée, la cible
+	 *  anticipée peut sauter de LEAD_FACTOR×2=6 cases quand la proie inverse sa
+	 *  direction → reset intempestif en pleine poursuite (acceptable mais sous-optimal). */
+	private static final double AIM_JUMP_RESET = 3.0;
+	/** Seuil de ticks sans rapprochement au-delà duquel l'agent se considère PIÉGÉ et
+	 *  replanifie sur un horizon élargi (sans lâcher sa cible). Calibré à 6 par
+	 *  expérience : le plateau naturel d'un détour LÉGITIME autour d'un petit obstacle
+	 *  mesure ~5 ticks, donc 6 est le plus court seuil qui réagit aux vrais pièges
+	 *  concaves SANS déclencher la replanification sur un contournement ordinaire.
+	 *  Sortie d'un U ≈ 96 ticks. Non-final : ajustable. */
+	protected static int HUNT_STUCK_LIMIT = 6;
+	/** Rayon de planification ÉLARGI pour s'extraire d'un piège (BFS de contournement
+	 *  quand bloqué) ET portée de recherche d'eau en ON_FIRE. Borné (garde-fou CPU). */
+	protected static final int HUNT_ESCAPE_VISION = 30;
+
+	// ===== Mémoire FOOD : renforcement edge-triggered (Task 2.2) =====
+
+	/** Distance tore-aware exposée à SemanticMemory (réutilisée par reinforce/bestFood). */
+	protected final agents.ai.SemanticMemory.Distance memDistance =
+		(x1, y1, x2, y2) -> world.distance(x1, y1, x2, y2);
+
+	/** Exposé pour les tests (mémoire) : la distance tore-aware. */
+	public agents.ai.SemanticMemory.Distance memDistanceForTest() { return memDistance; }
+
+	/** Rayon de fusion des souvenirs (cellules). */
+	protected static int MEMORY_MERGE_RADIUS = 3;
+
+	/** Tours de recherche infructueuse (en SEARCH, depuis une zone de chasse mémorisée, sans
+	 *  proie en vue) au-delà desquels le souvenir est oublié — décote des terrains de chasse
+	 *  durablement stériles. Une mise à mort (remember HUNTING) remet ce compteur à zéro.
+	 *  État global partagé (loup + ours), piloté par SimulationConfig.sterileHuntForgetVisits
+	 *  via WorldOfCells.applyConfigToCAs — comme Loup.HOWL_RADIUS. */
+	public static int STERILE_HUNT_FORGET_VISITS = 50;
+
+	/** Dernière cellule de carcasse renforcée par OBSERVATION (edge-trigger). */
+	private int lastFoodSeenX = -1, lastFoodSeenY = -1;
+
+	/** Renforce la mémoire FOOD au FRONT MONTANT de perception d'une carcasse
+	 *  (évite l'inflation d'usage par vue continue). Porte la masse (payoff) + la date. */
+	protected void reinforceFoodSighting(agents.ai.Percept p) {
+		if (!p.carcassVisible()) { lastFoodSeenX = -1; lastFoodSeenY = -1; return; }
+		if (p.carcassX == lastFoodSeenX && p.carcassY == lastFoodSeenY) return;   // déjà compté cette visite
+		objects.Carcass c = world.carcassAt(p.carcassX, p.carcassY);
+		double mass = (c != null) ? c.mass : 0.0;
+		memory.reinforce(agents.ai.MemoryKind.FOOD, p.carcassX, p.carcassY, mass,
+				world.getIteration(), MEMORY_MERGE_RADIUS, memDistance);
+		lastFoodSeenX = p.carcassX; lastFoodSeenY = p.carcassY;
+	}
+
+	// ===== Fourragement mémorisé (§ spec M4 — RECALL_FOOD) =====
+
+	/** Paramètres de fourragement mémorisé (§ spec M4 ; calibrables). */
+	protected static double FORAGE_W_DIST = 1.0;
+	protected static double FORAGE_DANGER_PENALTY = 0.1;
+	protected static int    FORAGE_DANGER_RADIUS = 5;
+	protected static double FORAGE_PAYOFF_REF = 70.0;
+	protected static double FORAGE_BASE_ACCEPT = 0.15;
+	protected static double FORAGE_MIN_ACCEPT = 0.0;
+
+	/** TTL d'un souvenir FOOD en ticks = durée de vie max d'une carcasse. */
+	protected int foodTtlTicks() {
+		return Math.max(1, (int) Math.round((objects.Carcass.FRESH_SEC + objects.Carcass.ROT_SEC) * simulationHz()));
+	}
+
+	/** Seuil d'acceptation du score, sensible au risque (param 1) ET au génome (param 5) :
+	 *  un loup à peine affamé exige un score élevé ; un loup mourant accepte tout (seuil→0).
+	 *  Un loup audacieux (ENDURANCE+) abaisse son seuil. {@code hungerMax} = seuil de faim de l'espèce. */
+	protected double acceptThreshold(double energie, double hungerMax) {
+		double frac = Math.max(0.0, Math.min(1.0, energie / Math.max(1.0, hungerMax)));
+		double base = FORAGE_MIN_ACCEPT + (FORAGE_BASE_ACCEPT - FORAGE_MIN_ACCEPT) * frac;
+		return base / Math.max(0.1, genome.foragingBoldnessFactor());
+	}
+
+	/** Meilleure carcasse mémorisée actionnable (score), ou null. wDist abaissé par l'audace. */
+	protected double[] bestRememberedFood() {
+		double wDist = FORAGE_W_DIST / Math.max(0.1, genome.foragingBoldnessFactor());
+		return memory.bestFood(x, y, world.getIteration(), wDist, FORAGE_DANGER_PENALTY,
+				FORAGE_DANGER_RADIUS, foodTtlTicks(), FORAGE_PAYOFF_REF, memDistance);
+	}
+
+	/** Va vers la carcasse mémorisée {@code target} ; à l'arrivée si aucune carcasse, oublie.
+	 *  {@code visionRange} passé par l'appelant (vision est un champ de la sous-classe). */
+	protected agents.ai.MoveConstraints recallFoodStep(agents.ai.Percept p, int[] target, int visionRange) {
+		if (target == null) return steerAroundObstacles(p, true, visionRange);
+		if (world.distance(x, y, target[0], target[1]) <= 1.0
+				&& world.carcassAt(target[0], target[1]) == null) {
+			memory.forget(agents.ai.MemoryKind.FOOD, target[0], target[1]);   // lose-shift
+			return steerAroundObstacles(p, true, visionRange);
+		}
+		return pursuitStep(p, target, visionRange);
+	}
+
+	/** Rayon d'évasion effectif : borné pour que la fenêtre BFS (2·r+1) ne dépasse pas
+	 *  la plus petite dimension du monde (sinon repli torique → double-comptage). */
+	protected int escapeRadius() {
+		return Math.min(HUNT_ESCAPE_VISION, (Math.min(world.getWidth(), world.getHeight()) - 1) / 2);
+	}
+
+	/** Bruite une POSITION (et non un cap) selon l'aptitude d'orientation : décalage
+	 *  de magnitude aléatoire dans [0, errProb·maxOffset] cases, direction aléatoire,
+	 *  tore-aware. errProb=0 (bon sens) → position EXACTE. Sert au hurlement de meute :
+	 *  un bon orientateur localise mieux la source du cri (avantage évolutif). */
+	protected int[] noisyLocation(int bx, int by, double errProb, double maxOffset, java.util.Random rng) {
+		if (errProb <= 0.0) return new int[]{bx, by};
+		double mag = rng.nextDouble() * errProb * maxOffset;
+		double ang = rng.nextDouble() * 2.0 * Math.PI;
+		int W = world.getWidth(), H = world.getHeight();
+		int nx = (((int) Math.round(bx + Math.cos(ang) * mag)) % W + W) % W;
+		int ny = (((int) Math.round(by + Math.sin(ang) * mag)) % H + H) % H;
+		return new int[]{nx, ny};
+	}
+
+	/** Case d'eau (altitude &lt; 0) la plus proche dans un disque de rayon {@code radius}
+	 *  autour de l'agent (tore), ou {@code {-1,-1}} si aucune. Sert de cible à la fuite
+	 *  ON_FIRE (rejoindre l'eau qui éteint le feu). Scrute SEULEMENT quand l'agent brûle. */
+	protected int[] nearestWaterCell(int radius) {
+		int W = world.getWidth(), H = world.getHeight();
+		int bx = -1, by = -1; double best = Double.MAX_VALUE;
+		for (int dx = -radius; dx <= radius; dx++)
+			for (int dy = -radius; dy <= radius; dy++) {
+				int wx = ((x + dx) % W + W) % W, wy = ((y + dy) % H + H) % H;
+				double d = world.distance(x, y, wx, wy);
+				if (d > radius || d >= best) continue;
+				if (world.getCellHeight(wx, wy) < 0) { best = d; bx = wx; by = wy; }
+			}
+		return new int[]{bx, by};
+	}
+
+	/** Proie EN VUE : met à jour la piste (dernière position + recharge la
+	 *  persistance) et renvoie la CASE VISÉE — la case de la proie, ou une case
+	 *  anticipée si {@link #LEAD_PURSUIT} (interception). */
+	protected int[] pursuitSeen(agents.ai.Percept p) {
+		int aimX = p.preyX, aimY = p.preyY;
+		if (LEAD_PURSUIT && lastPreyX >= 0 && pursuitTrackTtl > 0) {
+			int w = world.getWidth(), h = world.getHeight();
+			int vx = torusSignedDelta(lastPreyX, p.preyX, w);   // vitesse estimée de la proie
+			int vy = torusSignedDelta(lastPreyY, p.preyY, h);
+			aimX = ((p.preyX + vx * LEAD_FACTOR) % w + w) % w;
+			aimY = ((p.preyY + vy * LEAD_FACTOR) % h + h) % h;
+		}
+		lastPreyX = p.preyX; lastPreyY = p.preyY;
+		pursuitTrackTtl = PURSUIT_TRACK_TTL;
+		return new int[]{aimX, aimY};
+	}
+
+	/** Vrai si une proie a été vue assez récemment pour valoir la peine d'être
+	 *  poursuivie « à l'aveugle » vers sa dernière position connue. */
+	protected boolean hasFreshTrack() { return pursuitTrackTtl > 0 && lastPreyX >= 0; }
+
+	/** Proie HORS DE VUE : consomme un pas de persistance et renvoie la dernière
+	 *  position connue (case « fantôme » vers laquelle foncer). */
+	protected int[] pursuitGhost() {
+		if (pursuitTrackTtl > 0) pursuitTrackTtl--;
+		return new int[]{lastPreyX, lastPreyY};
+	}
+
+	/** Oublie la piste (à appeler quand le prédateur cesse de chasser). */
+	protected void resetPursuit() {
+		pursuitTrackTtl = 0; lastPreyX = -1; lastPreyY = -1;
+		huntBestDist = Double.MAX_VALUE; huntStuck = 0; lastAimX = -1; lastAimY = -1;
+		scentWpX = -1; scentWpY = -1; scentFleeDir = -1; scentCommitLeft = 0;   // sous-projet C
+		// Sous-projet E : l'état partenaire (mateWp*/mateCommitLeft/mateStuck) n'est
+		// VOLONTAIREMENT pas réinitialisé ici. resetPursuit() est un nettoyage de
+		// pistage de PROIE appelé chaque tick hors-chasse par Loup/Ours ; effacer le
+		// cap partenaire à ce moment défaisait son anti-oscillation (le mouton, qui
+		// n'appelle pas resetPursuit, ne souffrait pas du bug). Le cycle de vie du
+		// pistage partenaire est géré par seekMateStep + le décrément de step().
+	}
+
+	/** Sous-projet C : case projetée à {@code dist} cases dans la direction
+	 *  cardinale {@code dir} (0=N/1=E/2=S/3=O), tore-aware. Donne un « point de
+	 *  trace » devant l'agent pour le pistage (cible STABLE → pas d'oscillation). */
+	protected int[] projectScentWaypoint(int dir, int dist) {
+		int w = world.getWidth(), h = world.getHeight();
+		int nx = ((x + orientDx(dir) * dist) % w + w) % w;
+		int ny = ((y + orientDy(dir) * dist) % h + h) % h;
+		return new int[]{nx, ny};
+	}
+
+	/**
+	 * Un pas de déplacement DIRIGÉ vers la case {@code aim}, avec garantie de sortie
+	 * des pièges concaves. Utilisé pour la TRAQUE (Loup/Ours vers une proie) ET la
+	 * fuite ON_FIRE (tous les agents vers la case d'eau la plus proche). Trois niveaux :
+	 * <ol>
+	 *   <li>pas direct vers la cible si libre ;</li>
+	 *   <li>sinon BFS de contournement borné à la vision (petits obstacles) ;</li>
+	 *   <li>si la distance à la cible ne s'améliore pas depuis {@link #HUNT_STUCK_LIMIT}
+	 *       ticks (piège concave/U dont l'issue sort de la vision), ÉVASION : on longe
+	 *       l'obstacle ({@link #steerAroundObstacles}, anti-revisite) pour s'extraire de
+	 *       la poche sans abandonner la traque.</li>
+	 * </ol>
+	 * Met à jour {@code _orient} ; renvoie les contraintes de déplacement (amphibie).
+	 */
+	protected agents.ai.MoveConstraints pursuitStep(agents.ai.Percept p, int[] aim, int vision) {
+		// Changement de BUT (nouvelle proie, ou proie → case d'eau en ON_FIRE) : on
+		// repart d'un record neuf. Une cible MOBILE bouge de ~1 case/tick (< seuil) →
+		// pas de reset à tort sur une poursuite continue.
+		if (aim[0] >= 0 && (lastAimX < 0 || world.distance(aim[0], aim[1], lastAimX, lastAimY) > AIM_JUMP_RESET)) {
+			huntBestDist = Double.MAX_VALUE; huntStuck = 0;
+		}
+		if (aim[0] >= 0) { lastAimX = aim[0]; lastAimY = aim[1]; }
+
+		// Suivi du record de rapprochement (gate « meilleur que jamais », robuste à
+		// l'oscillation — cf. homingStepToward).
+		double dAim = (aim[0] >= 0) ? world.distance(x, y, aim[0], aim[1]) : Double.MAX_VALUE;
+		if (dAim < huntBestDist) { huntBestDist = dAim; huntStuck = 0; }
+		else huntStuck++;
+
+		// PIÉGÉ (poche concave dont l'issue sort de la vision) : le BFS borné à la
+		// vision vise le fond de la poche. On replanifie sur un horizon ÉLARGI pour
+		// trouver le VRAI chemin de contournement (le 1er pas peut s'éloigner de la
+		// proie — sortir par l'ouverture). Coûteux mais calculé SEULEMENT quand bloqué.
+		if (huntStuck >= HUNT_STUCK_LIMIT && aim[0] >= 0) {
+			// Replanif sur un horizon élargi (borné par escapeRadius() pour éviter le
+			// repli torique) → trouve le vrai chemin de contournement (1er pas pouvant
+			// s'éloigner de la cible pour sortir par l'ouverture).
+			int bfs = bfsStepToward(aim[0], aim[1], escapeRadius(), true);
+			if (bfs >= 0) { _orient = bfs; return agents.ai.MoveConstraints.amphibious(); }
+			// Cible vraiment inatteignable (murée) : longe-mur en dernier recours.
+			int d = agents.ai.Perception.dirToCell(this, world, aim[0], aim[1]);
+			if (d >= 0) _orient = d;
+			return steerAroundObstacles(p, true, vision);
+		}
+
+		// Traque normale : pas direct, sinon BFS de contournement borné à la vision.
+		int dir = agents.ai.Perception.dirToCell(this, world, aim[0], aim[1]);
+		if (dir < 0) dir = (p.preyDir >= 0) ? p.preyDir : _orient;   // déjà sur la case / cas limite
+		if (aim[0] >= 0 && headingKind(dir, p, true, vision) < 0) {
+			int bfs = bfsStepToward(aim[0], aim[1], vision, true);
+			if (bfs >= 0) dir = bfs;
+		}
+		_orient = dir;
+		return agents.ai.MoveConstraints.amphibious();
+	}
+
+	/** Delta torique signé minimal de a vers b sur un axe de taille n. */
+	private int torusSignedDelta(int a, int b, int n) {
+		int fwd = (b - a + n) % n, bwd = (a - b + n) % n;
+		return (fwd <= bwd) ? fwd : -bwd;
+	}
+
+	/**
+	 * Pas de RALLIEMENT À TERRE vers ({@code tx},{@code ty}) avec garde-fou
+	 * anti-oscillation — logique PARTAGÉE par {@code Loup.huntHoming} (zone de
+	 * chasse) et {@code Mouton} HOME (lieu sûr). Renvoie une direction (0-3)
+	 * UNIQUEMENT si le pas fait <b>strictement mieux</b> que la meilleure distance
+	 * déjà atteinte vers cette cible (suivi dans {@code mem}) ; <b>-1 sinon</b>.
+	 *
+	 * <p>C'est le cœur du correctif du gel en recherche (2026-06-07) et l'expression
+	 * du principe « une décision de navigation qui ne progresse pas doit CÉDER la
+	 * priorité, pas s'entêter » : au pied d'un obstacle qui mure la cible (eau OU
+	 * forêt), aucun pas ne bat le record → on renvoie -1, et l'appelant retombe sur
+	 * son comportement de repli (spirale pour le loup, errance pour le mouton) au
+	 * lieu d'osciller indéfiniment. Le « record » (et non « mieux que la case
+	 * courante ») est indispensable : sinon le repli repousse l'agent hors de la
+	 * rangée de distance minimale et le ralliement l'y ré-aspire → oscillation.</p>
+	 *
+	 * <p>L'eau est un obstacle ({@code allowSwim=false}) : on ne nage pas vers un
+	 * souvenir, ce qui évite aussi la bascule SEARCH↔SEEK_LAND au littoral.</p>
+	 */
+	protected int homingStepToward(int tx, int ty, int vision, agents.ai.Percept p) {
+		double dHere = world.distance(x, y, tx, ty);
+		// Nouvelle cible (ou première fois) → on initialise le record à la distance
+		// courante. resetHoming() (appelé hors état de ralliement) évite un record
+		// périmé qui interdirait tout ralliement futur.
+		if (tx != mem.homingZoneX || ty != mem.homingZoneY) {
+			mem.homingZoneX = tx;
+			mem.homingZoneY = ty;
+			mem.homingBestDist = dHere;
+		}
+		int dir = agents.ai.Perception.dirToCell(this, world, tx, ty);
+		// Pas direct bloqué (eau / arbre / congénère) → contournement BFS À TERRE.
+		if (dir < 0 || headingKind(dir, p, false, vision) < 0) {
+			dir = bfsStepToward(tx, ty, vision, false);
+		}
+		if (dir < 0) return -1;                       // aucun pas terrestre → repli
+		int w = world.getWidth(), h = world.getHeight();
+		int nx = ((x + orientDx(dir)) % w + w) % w;
+		int ny = ((y + orientDy(dir)) % h + h) % h;
+		double dNext = world.distance(nx, ny, tx, ty);
+		if (dNext >= mem.homingBestDist) return -1;   // pas de NOUVEAU progrès → repli
+		mem.homingBestDist = dNext;
+		return dir;
+	}
+
+	/**
+	 * Direction de RALLIEMENT vers la zone de chasse mémorisée la plus proche
+	 * ({@code MemoryKind.HUNTING}), avec le garde-fou de progrès de
+	 * {@link #homingStepToward} : renvoie un cap (0-3) tant que l'agent peut se
+	 * rapprocher d'une zone à terre, sinon -1 (aucune zone, déjà dessus, ou murée →
+	 * l'appelant retombe sur la spirale). Partagé Loup/Ours ; l'appelant fixe
+	 * l'orientation et la vitesse (trot). */
+	protected int huntHomingDir(agents.ai.Percept p, int vision) {
+		int[] zone = memory.nearest(agents.ai.MemoryKind.HUNTING, x, y,
+				(a, b, c, d) -> world.distance(a, b, c, d));
+		if (zone == null) return -1;
+		// Décote des terrains stériles : chaque tour passé à fouiller depuis cette zone
+		// mémorisée SANS proie en vue compte comme une « recherche infructueuse » (en SEARCH
+		// la proie n'est jamais visible — une observation ferait basculer en HUNT). Le
+		// prédateur rallie la zone UNE fois (garde-fou de progrès de homingStepToward) puis
+		// balaye les environs en spirale : on décote donc sur le TEMPS de recherche stérile,
+		// pas sur des arrivées répétées. Au-delà de STERILE_HUNT_FORGET_VISITS tours, la zone
+		// est oubliée ; une mise à mort (remember HUNTING) remet le compteur à zéro.
+		if (p != null && !p.preyVisible())
+			memory.recordSterileVisit(agents.ai.MemoryKind.HUNTING, zone[0], zone[1],
+					MEMORY_MERGE_RADIUS, memDistance, STERILE_HUNT_FORGET_VISITS);
+		if (zone[0] == x && zone[1] == y) return -1;   // pile sur la zone → balayer (spirale)
+		return homingStepToward(zone[0], zone[1], vision, p);
+	}
+
+	// ===== Pathfinding local (BFS borné à la vision) pour la TRAQUE =====
+	// Sert à HUNT et huntHoming : quand le pas direct vers la cible est bloqué par
+	// un obstacle, on contourne. BFS sur la fenêtre (2·vision+1)² centrée sur
+	// l'agent → ≤ ~441 cases, calculé SEULEMENT en cas de blocage → coût
+	// négligeable. La cible peut être hors fenêtre (zone mémorisée lointaine) : on
+	// vise alors la case ATTEIGNABLE la plus proche de la cible (frontière).
+
+	/** Case franchissable pour le BFS (statique : forêt/lave/eau). On ignore les
+	 *  autres agents (mobiles, transitoires) — la collision est gérée au pas. */
+	private boolean bfsPassable(int wx, int wy, boolean allowSwim) {
+		if (world.getForestCAValue(wx, wy) != 0) return false;
+		if (world.getLavaCAValue(wx, wy)   != 0) return false;
+		if (!allowSwim && world.getCellHeight(wx, wy) < 0) return false;
+		return true;
+	}
+
+	/**
+	 * Première direction (0=N/1=E/2=S/3=O) du plus court chemin (BFS, 4-connexe)
+	 * vers ({@code targetX},{@code targetY}), borné à la fenêtre de vision. Si la
+	 * cible est hors fenêtre ou inatteignable, vise la case atteignable la plus
+	 * proche de la cible. Renvoie -1 si l'agent est complètement cerné.
+	 *
+	 * @param allowSwim l'eau est-elle franchissable dans le calcul (true en chasse).
+	 */
+	protected int bfsStepToward(int targetX, int targetY, int vision, boolean allowSwim) {
+		final int v = Math.max(1, vision);
+		final int size = 2 * v + 1;
+		final int W = world.getWidth(), H = world.getHeight();
+		boolean[] visited = new boolean[size * size];
+		int[] firstDir = new int[size * size];
+		int[] queue = new int[size * size];
+		int qh = 0, qt = 0;
+
+		final int originIdx = v * size + v;          // l'agent est au centre
+		visited[originIdx] = true;
+		firstDir[originIdx] = -1;
+		queue[qt++] = originIdx;
+
+		int bestIdx = -1;
+		double bestDist = Double.MAX_VALUE;
+
+		while (qh < qt) {
+			int idx = queue[qh++];
+			int lx = idx % size, ly = idx / size;
+			int wx = ((x - v + lx) % W + W) % W;
+			int wy = ((y - v + ly) % H + H) % H;
+			if (idx != originIdx) {                  // candidat « le plus proche de la cible »
+				double d = world.distance(wx, wy, targetX, targetY);
+				if (d < bestDist) { bestDist = d; bestIdx = idx; }
+				if (d == 0) break;                   // cible atteinte → chemin optimal trouvé
+			}
+			for (int dir = 0; dir < 4; dir++) {
+				int nlx = lx + orientDx(dir), nly = ly + orientDy(dir);
+				if (nlx < 0 || nlx >= size || nly < 0 || nly >= size) continue;  // hors fenêtre
+				int nIdx = nly * size + nlx;
+				if (visited[nIdx]) continue;
+				int nwx = ((x - v + nlx) % W + W) % W;
+				int nwy = ((y - v + nly) % H + H) % H;
+				// Clip au DISQUE de vision (euclidien, comme Perception) : l'agent ne
+				// planifie que sur le terrain qu'il perçoit réellement — pas les coins
+				// du carré qui dépasseraient ~vision·√2.
+				if (world.distance(x, y, nwx, nwy) > v) continue;
+				if (!bfsPassable(nwx, nwy, allowSwim)) continue;
+				visited[nIdx] = true;
+				firstDir[nIdx] = (idx == originIdx) ? dir : firstDir[idx];
+				queue[qt++] = nIdx;
+			}
+		}
+		return bestIdx < 0 ? -1 : firstDir[bestIdx];
+	}
 
 	/**
 	 * Itération du monde au moment de la naissance. Sert à calculer l'âge à
@@ -125,12 +1111,16 @@ public class Agent extends UniqueDynamicObject{
 	}
 
 	/** Libellé cardinal de l'orientation courante. */
+	/** Libellé cardinal ORIENTÉ ÉCRAN. Les entiers _orient sont une énumération
+	 *  interne (cf. orientDx/orientDy) : orient 0 = grille −Y, orient 2 = grille +Y.
+	 *  Or au rendu (vue de dessus, sans rotation) grille +Y = HAUT = Nord et −Y =
+	 *  BAS = Sud. Donc orient 0 (−Y) s'affiche « Sud » et orient 2 (+Y) « Nord ». */
 	public String getOrientLabel() {
 		switch (_orient) {
-			case 0: return "Nord";
-			case 1: return "Est";
-			case 2: return "Sud";
-			case 3: return "Ouest";
+			case 0: return "Sud";    // grille −Y → bas de l'écran
+			case 1: return "Est";    // grille +X → droite
+			case 2: return "Nord";   // grille +Y → haut de l'écran
+			case 3: return "Ouest";  // grille −X → gauche
 			default: return "?";
 		}
 	}
@@ -188,6 +1178,114 @@ public class Agent extends UniqueDynamicObject{
 	public void setOnFire() { _fireState = 1; }
 
 	public boolean isOnFire() { return _fireState == 1; }
+
+	/** true si l'agent est en train de manger (tête baissée → vigilance réduite). Surchargé. */
+	public boolean isFeeding() { return false; }
+
+	/** Période (en ticks) équivalant à ~1 seconde-jeu, pour les drains « horaires »
+	 *  comme le feu. Suit simulationHz pour rester cohérente quel que soit le Hz de
+	 *  simulation (sinon un `% 20` codé en dur change la létalité du feu quand on
+	 *  règle le Hz). Fallback 20 si la config n'est pas disponible (tests). */
+	protected int ticksPerGameSecond() {
+		if (world instanceof worlds.WorldOfCells) {
+			ui.SimulationConfig c = ((worlds.WorldOfCells) world).config;
+			if (c != null) return Math.max(1, c.simulationHz);
+		}
+		return 20;
+	}
+
+	/** Hz de simulation (pour convertir sec → ticks). Délègue à ticksPerGameSecond()
+	 *  (même accès config.simulationHz, même fallback 20). */
+	protected double simulationHz() { return ticksPerGameSecond(); }
+
+	// ===== Festin (EAT) : bouchées cadencées sur une carcasse (Task 5) =====
+	/** Délai (sec réelles) entre deux bouchées. Hz-invariant via simulationHz(). */
+	protected static final double EAT_BITE_SEC = 0.5;
+	/** Masse (kg) d'une bouchée de base (0 = non-carnivore). Surchargé au ctor de l'espèce carnivore. */
+	public double biteBaseKg = 0.0;
+	/** Ticks restants avant la prochaine bouchée (0 = prêt). */
+	protected int eatBiteCooldown = 0;
+
+	/** Fraction [0,1] du cooldown de bouchée restant (1 = vient de mordre, 0 = prêt) — pour le balayage radial de la hotbar. */
+	public double eatBiteCooldownFraction() {
+		int max = Math.max(1, (int) Math.round(EAT_BITE_SEC * simulationHz()));
+		return Math.max(0.0, Math.min(1.0, eatBiteCooldown / (double) max));
+	}
+	/** Secondes réelles restantes avant la prochaine bouchée — pour le compte à rebours de la hotbar. */
+	public double eatBiteCooldownSeconds() { return eatBiteCooldown / simulationHz(); }
+
+	/** Hook d'écriture d'énergie depuis eatStep. Surchargé par les espèces carnivores
+	 *  (Loup, Ours) pour faire {@code energie += delta}. No-op par défaut (Mouton, etc.). */
+	protected void gainEnergie(int delta) {}
+
+	/** Fixe la vitesse à "pas" (vpas) avant de manger, pour stabiliser isMyTurn()
+	 *  pendant le festin (empêche vitesse de dériver sous les facteurs terrain).
+	 *  Surchargé par les espèces carnivores (Loup, Ours) pour faire {@code vitesse = vpas}. */
+	protected void applyEatSpeed() {}
+
+	/** Une étape de festin : si une carcasse est sur la cellule courante ou une
+	 *  case adjacente (9-voisinage) ET que le cooldown est écoulé, prend une bouchée.
+	 *  Reste sur place (wantsToMove=false). Renvoie les contraintes de déplacement. */
+	protected agents.ai.MoveConstraints eatStep(agents.ai.Percept p) {
+		applyEatSpeed();   // stabilise vitesse avant postMove (empêche la dérive vers 0)
+		wantsToMove = false;
+		if (!p.carcassVisible()) return agents.ai.MoveConstraints.landBound();
+		objects.Carcass c = world.carcassAt(p.carcassX, p.carcassY);
+		if (c == null) return agents.ai.MoveConstraints.landBound();
+		// S'orienter vers la carcasse si on n'y est pas déjà dessus.
+		int dir = agents.ai.Perception.dirToCell(this, world, c.getX(), c.getY());
+		if (dir >= 0 && _orient != dir) { _orient = dir; return agents.ai.MoveConstraints.landBound(); }
+		// Prend une bouchée quand le cooldown est écoulé.
+		if (eatBiteCooldown == 0) {
+			double bite = biteBaseKg * Math.max(0.2, displaySize()); // plancher 0.2 : garde une bouchée non nulle même si la taille devient minuscule
+			double taken = c.eat(bite);
+			gainEnergie((int) Math.round(taken * objects.Carcass.ENERGY_PER_KG));
+			eatBiteCooldown = Math.max(1, (int) Math.round(EAT_BITE_SEC * simulationHz()));
+			if (c.isGone()) world.carcasses.remove(c);
+		}
+		return agents.ai.MoveConstraints.landBound();
+	}
+
+	/** Se dirige vers la carcasse perçue la plus proche (pursuitStep, fiable contre les
+	 *  pièges concaves). Renvoie la contrainte de mouvement, ou null si aucune carcasse. */
+	protected agents.ai.MoveConstraints seekCarcassStep(agents.ai.Percept p, int visionRange) {
+		if (!p.carcassVisible()) return null;
+		return pursuitStep(p, new int[]{p.carcassX, p.carcassY}, visionRange);
+	}
+
+	/** Carcasse a portee de bouchee SANS Percept (pour l'UI hotbar, appelee chaque frame) :
+	 *  balaye les 9 cellules (courante + 8 voisines, tore). */
+	public objects.Carcass adjacentCarcass() {
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++) {
+				int cx = (x + dx + world.getWidth())  % world.getWidth();
+				int cy = (y + dy + world.getHeight()) % world.getHeight();
+				objects.Carcass c = world.carcassAt(cx, cy);
+				if (c != null) return c;
+			}
+		return null;
+	}
+
+	/** Peut prendre une bouchee MAINTENANT (carcasse adjacente + cooldown ecoule). */
+	public boolean canEatCarcassNow() { return adjacentCarcass() != null && eatBiteCooldown == 0; }
+
+	/** Carcasse à portée de bouchée : sur l'une des 9 cases (cellule + 8 voisines →
+	 *  distance euclidienne torique ≤ 1.5, diagonale = √2 ≈ 1.41). Partagé Loup/Ours. */
+	protected boolean carcassAdjacente(agents.ai.Percept p) {
+		return p.carcassVisible() && world.distance(x, y, p.carcassX, p.carcassY) <= 1.5;
+	}
+
+	/** Consomme les demandes d'action du joueur (hotbar) pour ce tour pilote.
+	 *  @return true si une action a remplace le deplacement. Les sous-classes etendent
+	 *  (hurlement du loup) en appelant super. */
+	protected boolean consumePlayerActions(agents.ai.Percept p) {
+		boolean acted = false;
+		if (playerWantsEat) {
+			playerWantsEat = false;                      // toujours consomme (pas de latch)
+			if (carcassAdjacente(p)) { eatStep(p); acted = true; }
+		}
+		return acted;
+	}
 
 	/**
 	 * Vecteur unitaire (udx, udy) de la dernière direction de déplacement.
@@ -248,6 +1346,7 @@ public class Agent extends UniqueDynamicObject{
 			resetTickFlags();           // reset flags + lastX/lastY
 			wantsToMove = true;         // défaut : on bouge (un comportement peut l'annuler)
 			agents.ai.Percept p = agents.ai.Perception.sense(this, world, predators(), prey());
+			lastPercept = p;
 			if (playerControlled) {
 				// Pilotage joueur : on remplace la décision ET le choix de
 				// déplacement par l'input clavier (cap calculé selon la vue par
@@ -256,18 +1355,22 @@ public class Agent extends UniqueDynamicObject{
 				currentState = agents.ai.AgentState.CONTROLLED;
 				applyControlSpeed();                 // cadence réactive (vcourse)
 				if (controlDir >= 0) _orient = controlDir;        // tourne le corps (visuel)
-				if ((controlDx != 0 || controlDy != 0) && canMove())  // déplacement (diagonales OK)
+				boolean acted = consumePlayerActions(p);     // hotbar : manger/hurler remplacent le pas
+				if (!acted && (controlDx != 0 || controlDy != 0) && canMove())  // déplacement (diagonales OK)
 					agents.ai.Locomotion.moveBy(this, world, controlDx, controlDy,
 							agents.ai.MoveConstraints.playerControlled());
 				// La flèche d'orientation suit le cap, même à l'arrêt.
 				_lastDx = orientDx(_orient);
 				_lastDy = orientDy(_orient);
 			} else {
+				if (scentCommitLeft > 0) scentCommitLeft--;   // sous-projet C : décroissance de l'engagement
+				if (mateCommitLeft > 0) mateCommitLeft--;     // sous-projet E : décroissance de l'engagement partenaire
 				currentState = decideState(p);
 				agents.ai.MoveConstraints c = applyState(currentState, p);
 				if (canMove() && wantsToMove) agents.ai.Locomotion.move(this, world, _orient, c);
 			}
 			postMove(p);                // blocs post-mouvement spécifiques (manger, feu, énergie, repro…)
+			recordVisit(x, y);          // mémoire spatiale : trace la cellule occupée ce tour
 		}
 		postTick();                     // tourne CHAQUE tick (ex: drain de feu)
 	}
@@ -345,5 +1448,139 @@ public class Agent extends UniqueDynamicObject{
                 offset + x2 * stepX, offset + y2 * stepY,
                 lenX, lenY,
                 altitude + 5.f);
+    }
+
+	// ── Odeur (sous-projet A) ────────────────────────────────────────────
+	private static int nextAgentId = 1;
+	/** Identite individuelle stable (porte l'odeur ; sert a E : mon petit / ce partenaire). */
+	public final int agentId = nextAgentId++;
+	private int lastScentEmit = Integer.MIN_VALUE;
+	private int wetTicks = 0;
+	/** Dernier Percept calculé (sous-projet B : alimente la ligne Odorat de la fiche). */
+	protected agents.ai.Percept lastPercept;
+
+	/** Classes d'odeur que cet agent considère comme PROIE (sous-projet B).
+	 *  Vide par défaut ; surchargé par les prédateurs/charognards. */
+	private static final scent.ScentKind[] NO_SCENT_KINDS = new scent.ScentKind[0];
+	public scent.ScentKind[] scentPreyKinds()   { return NO_SCENT_KINDS; }
+	/** Classes d'odeur que cet agent considère comme DANGER (prédateurs + humain). */
+	public scent.ScentKind[] scentDangerKinds() { return NO_SCENT_KINDS; }
+
+	/** Classe d'odeur de cet agent (resolue par type, comme Landscape.speciesOf). */
+	public scent.ScentKind scentKind() {
+		if (this instanceof Loup)   return scent.ScentKind.LOUP;
+		if (this instanceof Ours)   return scent.ScentKind.OURS;
+		if (this instanceof Mouton) return scent.ScentKind.MOUTON;
+		return scent.ScentKind.HUMAIN;
+	}
+
+	/** Intensite de base de l'odeur (proportionnelle a la taille du corps). Les
+	 *  rapports inter-especes sont conserves (anciennement 1.4 / 1.0 / 0.8) mais
+	 *  remontes ×1.25 pour que le mouton parte de 1.0 (trace plus persistante). */
+	protected float baseScentIntensity() {
+		float species;
+		if (this instanceof Ours)        species = 1.75f;
+		else if (this instanceof Mouton) species = 1.0f;
+		else                             species = 1.25f;   // Loup, Humain
+		return species * (float) ui.SimulationConfig.getInstance().scentBaseScale;
+	}
+
+	/** Famille (meute/troupeau/portee) — branche en B/E ; neutre en A. */
+	protected int familyId() { return -1; }
+
+	// ── Sous-projet E : saison des amours ────────────────────────────────────
+	private static final worlds.Season[] NO_SEASONS = new worlds.Season[0];
+	/** Saisons de reproduction de l'espèce (sous-projet E). Vide = NON saisonnier
+	 *  (se reproduit toute l'année, ex. Humain). Surchargé par espèce. */
+	protected worlds.Season[] matingSeasons() { return NO_SEASONS; }
+
+	/** True si l'agent peut se reproduire CETTE saison : espèce non saisonnière
+	 *  (liste vide) OU saison courante du monde dans sa liste. */
+	public boolean inMatingSeason() {
+		worlds.Season[] s = matingSeasons();
+		if (s.length == 0) return true;
+		worlds.Season now = world.currentSeason();
+		for (worlds.Season z : s) if (z == now) return true;
+		return false;
+	}
+
+	/** Bloc-saison GLOBAL courant (jour-jeu / longueur de saison, SANS modulo 4) :
+	 *  identifiant unique de la saison des amours en cours. Sert à plafonner la
+	 *  reproduction à UNE portée par saison des amours (réaliste : le loup/l'ours
+	 *  font une portée/an, pas une nichée continue). */
+	protected int currentMatingPeriod() {
+		int sl = world.getSeasonLengthDays();
+		return (sl > 0) ? world.getCurrentDay() / sl : world.getCurrentDay();
+	}
+	/** Dernier bloc-saison où l'agent s'est reproduit (-1 = jamais). Empêche plusieurs
+	 *  portées dans la même saison des amours (anti-boom prédateur). */
+	protected int lastBredPeriod = -1;
+
+	/** True si l'agent est PRÊT à se reproduire (fertile + assez nourri), saison
+	 *  IGNORÉE. Défaut : false (base/Humain ne se reproduisent pas). Surchargé. */
+	protected boolean matingReady() { return false; }
+
+	/** En rut (sous-projet E) : prêt à se reproduire ET en saison des amours.
+	 *  → émet l'odeur de séduction + candidat SEEK_MATE. */
+	public boolean inRut() { return matingReady() && inMatingSeason(); }
+
+	/** Sous-projet E : l'agent veut chercher un partenaire ce tick (en rut +
+	 *  odeur de séduction détectée au-dessus du seuil). */
+	protected boolean wantsToSeekMate(agents.ai.Percept p) {
+		return p != null && inRut() && p.scentMateDetected()
+				&& p.scentMateIntensity >= ui.SimulationConfig.getInstance().scentMateThreshold;
+	}
+
+	/** Sous-projet E : pas de déplacement vers le partenaire. Engage un waypoint
+	 *  STABLE vers l'odeur de séduction (anti-oscillation, comme SCENT_TRACK) et
+	 *  avance via pursuitStep. La vitesse est réglée par l'appelant AVANT l'appel. */
+	protected agents.ai.MoveConstraints seekMateStep(agents.ai.Percept p, int vision) {
+		boolean reached = (mateWpX >= 0 && world.distance(x, y, mateWpX, mateWpY) <= 1);
+		if (mateCommitLeft <= 0 || reached || mateWpX < 0) {
+			if (p.scentMateDir >= 0) {
+				int[] wp = projectScentWaypoint(p.scentMateDir, Math.max(3, vision / 2));
+				mateWpX = wp[0]; mateWpY = wp[1];
+				mateCommitLeft = ui.SimulationConfig.getInstance().scentCommitTicks;
+			} else {
+				mateWpX = -1; mateWpY = -1;
+			}
+		}
+		if (mateWpX >= 0) {
+			// pursuitStep lit/écrit les champs de blocage PARTAGÉS (huntStuck/
+			// huntBestDist/lastAim). On y bascule l'état DÉDIÉ au partenaire le temps
+			// de l'appel, puis on le récupère — ainsi l'accumulation anti-blocage
+			// survit au resetPursuit() per-tick de Loup/Ours sans perturber la chasse.
+			double savedBest = huntBestDist; int savedStuck = huntStuck;
+			int savedAimX = lastAimX, savedAimY = lastAimY;
+			huntBestDist = mateBestDist; huntStuck = mateStuck;
+			lastAimX = mateLastAimX; lastAimY = mateLastAimY;
+			agents.ai.MoveConstraints mc = pursuitStep(p, new int[]{mateWpX, mateWpY}, vision);
+			mateBestDist = huntBestDist; mateStuck = huntStuck;
+			mateLastAimX = lastAimX; mateLastAimY = lastAimY;
+			huntBestDist = savedBest; huntStuck = savedStuck;
+			lastAimX = savedAimX; lastAimY = savedAimY;
+			return mc;
+		}
+		return steerAroundObstacles(p, true, vision);   // pas de cap fiable → balaye
+	}
+
+    /**
+     * Depose l'odeur de l'agent dans le champ (appele chaque tick par stepAgents,
+     * uniquement si l'agent est vivant). Dans l'eau : aucune emission + fenetre
+     * mouillee armee. Sinon, un depot tous les {@code scentEmitPeriod} ticks,
+     * attenue tant que l'agent est mouille (recuperation comptee en pas sur terre).
+     */
+    public void emitScent(scent.ScentField field, int now) {
+        if (world.getCellHeight(x, y) < 0) {                 // dans l'eau
+            wetTicks = scent.ScentField.WET_SUPPRESSION_TICKS;
+            return;
+        }
+        if (wetTicks > 0) wetTicks--;                        // recuperation comptee SUR TERRE
+        int period = ui.SimulationConfig.getInstance().scentEmitPeriod;
+        if (period < 1) period = 1;
+        if (lastScentEmit != Integer.MIN_VALUE && now - lastScentEmit < period) return;
+        lastScentEmit = now;
+        float scale = (wetTicks > 0) ? scent.ScentField.WET_EMIT_FACTOR : 1f;
+        field.emit(agentId, scentKind(), familyId(), x, y, now, baseScentIntensity() * scale, inRut());
     }
 }

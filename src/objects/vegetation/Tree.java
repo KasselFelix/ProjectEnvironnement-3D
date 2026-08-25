@@ -134,6 +134,9 @@ public class Tree extends CommonObject {
     private static final float TREE_SCALE_FACTOR = 5.5f;
     /** Fraction de la taille adulte qu'a une jeune pousse (g=0). */
     private static final float SAPLING_FRAC = 0.25f;
+    /** Seuils de growth délimitant les stades visuels (V5) : pousse / arbuste / adulte. */
+    private static final float SAPLING_STAGE_MAX = 0.33f;
+    private static final float SHRUB_STAGE_MAX   = 0.66f;
     /** Multiplicateur de taille adulte selon la fertilité : sol pauvre → MULT_MIN, sol riche → MULT_MAX. */
     private static final float MULT_MIN = 0.6f;
     private static final float MULT_MAX = 1.0f;
@@ -157,8 +160,17 @@ public class Tree extends CommonObject {
         // Altitude unifiée : sommet de la stack (sol natif + couches empilées).
         float altitude = myWorld.getCellTopAltitude((int)x + movingX, (int)y + movingY);
 
-        float px = offset + x * stepX;
-        float py = offset + y * stepY;
+        // Position au sol : l'arbre est planté sur le SOMMET (coin de cellule) dont il
+        // lit la hauteur, pas au CENTRE du quad. Le terrain rend la hauteur de la
+        // cellule (x+movingX, y+movingY) au coin bas-gauche du quad, à l'écran
+        // (offset + x*stepX − lenX, offset + y*stepY − lenY). En plantant l'arbre là,
+        // son pied (modèle à Z=0) repose EXACTEMENT sur ce sommet de terrain → aucune
+        // erreur d'altitude, même en pente. Avant, l'arbre était au centre du quad
+        // (décalé d'une demi-cellule de sa référence de hauteur) : sur une pente, cela
+        // créait un décalage vertical FIXE qui enterrait surtout les jeunes pousses
+        // (courtes) tout en restant invisible sur les grands arbres.
+        float px = offset + x * stepX - lenX;
+        float py = offset + y * stepY - lenY;
 
         // Taille = croissance (jeune→adulte) × plafond dépendant de la fertilité.
         double g = 1.0, F = 1.0;
@@ -171,6 +183,15 @@ public class Tree extends CommonObject {
         float currentMult = (float) ((SAPLING_FRAC + (1.0 - SAPLING_FRAC) * g) * maxMult);
         float scale       = Math.abs(lenX) * TREE_SCALE_FACTOR * currentMult;
 
+        // V5 — STADES VISUELS distincts via la SILHOUETTE (sans nouveau mesh) :
+        // une jeune pousse est TRAPUE/arrondie (Z écrasé → buisson), l'arbre adulte
+        // est ÉLANCÉ (Z plein). zStretch passe par paliers de stade pour une
+        // lecture nette pousse → arbuste → adulte, en plus de l'échelle continue.
+        float zStretch;
+        if      (g < SAPLING_STAGE_MAX) zStretch = 0.65f;   // pousse : boule basse
+        else if (g < SHRUB_STAGE_MAX)   zStretch = 0.85f;   // arbuste : encore ramassé
+        else                            zStretch = 1.0f;    // adulte : pleine hauteur
+
         // Yaw aléatoire déterministe en coordonnées MONDE (x+movingX, y+movingY) :
         // stable entre frames ET quand le viewport panne — l'arbre ne tourne pas.
         float yawDeg = (float) (360.0 * stableHash(x + movingX, y + movingY, SALT_YAW));
@@ -178,7 +199,7 @@ public class Tree extends CommonObject {
         gl.glPushMatrix();
         gl.glTranslatef(px, py, altitude);
         gl.glRotatef(yawDeg, 0f, 0f, 1f);
-        gl.glScalef(scale, scale, scale);
+        gl.glScalef(scale, scale, scale * zStretch);
         treeModel.opengldraw(gl);
         gl.glPopMatrix();
     }

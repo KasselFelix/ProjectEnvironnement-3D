@@ -54,103 +54,19 @@ public class LaunchMenu {
     }
 
     private void buildRows() {
-        rows.add(new Section("POPULATIONS"));
-        rows.add(intRow("Loups",   () -> config.nbLoups,   v -> config.nbLoups   = v, 0, 200, 1));
-        rows.add(intRow("Moutons", () -> config.nbMoutons, v -> config.nbMoutons = v, 0, 500, 1));
-        rows.add(intRow("Humains", () -> config.nbHumains, v -> config.nbHumains = v, 0, 100, 1));
-
-        rows.add(new Section("PAYSAGE"));
-        rows.add(intRow("Largeur (dx)", () -> config.landscapeDx, v -> config.landscapeDx = v, 50, 500, 10));
-        rows.add(intRow("Hauteur (dy)", () -> config.landscapeDy, v -> config.landscapeDy = v, 50, 500, 10));
-        rows.add(doubleRow("Ratio eau",  () -> config.landscapeWaterRatio,
-                v -> config.landscapeWaterRatio = v, 0.0, 1.0, 0.05, "%.2f"));
-        rows.add(doubleRow("Echelle",    () -> config.landscapeScaling,
-                v -> config.landscapeScaling   = v, 0.1, 3.0, 0.1, "%.1f"));
-
-        rows.add(new Section("BIOLOGIE - Loup"));
-        rows.add(intRow("Vision",         () -> config.loupVision,     v -> config.loupVision     = v, 1, 50, 1));
-        rows.add(intRow("Energie max",    () -> config.loupEnergieMax, v -> config.loupEnergieMax = v, 50, 5000, 50));
-        rows.add(doubleRow("Reproduction", () -> config.loupPrepro,
-                v -> config.loupPrepro = v, 0.0, 0.05, 0.0005, "%.4f"));
-        rows.add(doubleRow("Esperance vie (j)", () -> config.loupMaxAgeDays,
-                v -> config.loupMaxAgeDays = v, 0.0, 200.0, 1.0, "%.1f"));
-
-        rows.add(new Section("BIOLOGIE - Mouton"));
-        rows.add(intRow("Vision",         () -> config.moutonVision,        v -> config.moutonVision        = v, 1, 50, 1));
-        rows.add(doubleRow("Energie max",  () -> config.moutonEnergieMax,
-                v -> config.moutonEnergieMax = v, 50.0, 5000.0, 50.0, "%.0f"));
-        rows.add(doubleRow("Reproduction", () -> config.moutonPrepro,
-                v -> config.moutonPrepro = v, 0.0, 0.2, 0.005, "%.3f"));
-        rows.add(doubleRow("Esperance vie (j)", () -> config.moutonMaxAgeDays,
-                v -> config.moutonMaxAgeDays = v, 0.0, 200.0, 1.0, "%.1f"));
-
-        rows.add(new Section("TEMPS"));
-        rows.add(intRow("Simulation Hz",   () -> config.simulationHz,   v -> config.simulationHz   = v, 10, 60, 5));
-        rows.add(intRow("Distance de vue", () -> config.viewDistanceCells, v -> config.viewDistanceCells = v, 10, 200, 5));
-        rows.add(doubleRow("Cycle complet (sec)", () -> (double) config.cycleTotalSec,
-                v -> config.cycleTotalSec = (float) v, 60.0, 1200.0, 30.0, "%.0f"));
-        rows.add(doubleRow("Ratio jour/cycle", () -> (double) config.dayFractionRatio,
-                v -> config.dayFractionRatio = (float) v, 0.30, 0.80, 0.05, "%.2f"));
-        rows.add(doubleRow("Transition jour (sec)", () -> (double) config.transitionJourSec,
-                v -> config.transitionJourSec = (float) v, 0.5, 30.0, 0.5, "%.1f"));
-
-        rows.add(new Section("FORET"));
-        rows.add(doubleRow("Densite initiale",   () -> config.forestDensite,
-                v -> config.forestDensite = v, 0.0, 1.0, 0.05, "%.2f"));
-        rows.add(doubleRow("Croissance / tick",  () -> config.forestProbApparition,
-                v -> config.forestProbApparition = v, 0.0, 0.001, 0.000002, "%.6f"));
-        rows.add(doubleRow("Combustion / tick",  () -> config.forestProbFeu,
-                v -> config.forestProbFeu = v, 0.0, 0.01, 0.00001, "%.5f"));
-        rows.add(doubleRow("Croissance arbre (j)", () -> config.treeGrowthDays,
-                v -> config.treeGrowthDays = v, 1.0, 100.0, 1.0, "%.0f"));
-
-        rows.add(new Section("HERBE"));
-        rows.add(doubleRow("Densite initiale",   () -> config.herbeDensite,
-                v -> config.herbeDensite = v, 0.0, 1.0, 0.05, "%.2f"));
-        rows.add(doubleRow("Croissance / tick",  () -> config.herbeProbApparition,
-                v -> config.herbeProbApparition = v, 0.0, 0.001, 0.000002, "%.6f"));
-        rows.add(doubleRow("Combustion / tick",  () -> config.herbeProbFeu,
-                v -> config.herbeProbFeu = v, 0.0, 0.001, 0.0000001, "%.7f"));
-
-        rows.add(new Section("LAVE"));
-        rows.add(doubleRow("Proba eruption",     () -> config.laveProbErruption,
-                v -> config.laveProbErruption = v, 0.0, 0.05, 0.0005, "%.4f"));
-        rows.add(doubleRow("Profondeur cratere", () -> (double) config.craterHoleDepth,
-                v -> config.craterHoleDepth = (float) v, 0.5, 8.0, 0.5, "%.1f"));
-        rows.add(doubleRow("Duree eruption (sec)", () -> (double) config.eruptionDurationSec,
-                v -> config.eruptionDurationSec = (float) v, 1.0, 30.0, 0.5, "%.1f"));
-        rows.add(doubleRow("Solidification (sec)", () -> (double) config.solidifyEndSec,
-                v -> config.solidifyEndSec = (float) v, 0.5, 30.0, 0.5, "%.1f"));
-        rows.add(doubleRow("Drainage (sec)",       () -> (double) config.subsidenceIntervalSec,
-                v -> config.subsidenceIntervalSec = (float) v, 0.05, 2.0, 0.05, "%.2f"));
-        rows.add(doubleRow("Viscosite lave",        () -> (double) config.lavaViscosity,
-                v -> config.lavaViscosity = (float) v, 1.0, 2.0, 0.1, "%.1f"));
-        rows.add(doubleRow("Puissance min eruption", () -> (double) config.erruptionPowerMin,
-                v -> config.erruptionPowerMin = (float) v, 0.1, 5.0, 0.1, "%.2f"));
-        rows.add(doubleRow("Puissance max eruption", () -> (double) config.erruptionPowerMax,
-                v -> config.erruptionPowerMax = (float) v, 0.5, 10.0, 0.1, "%.2f"));
-    }
-
-    private interface IntGet { int get(); }
-    private interface IntSet { void set(int v); }
-    private interface DblGet { double get(); }
-    private interface DblSet { void set(double v); }
-
-    private Row intRow(String label, IntGet get, IntSet set, int min, int max, int step) {
-        return new Row(label,
-                () -> Integer.toString(get.get()),
-                () -> set.set(Math.max(min, get.get() - step)),
-                () -> set.set(Math.min(max, get.get() + step)));
-    }
-    private Row doubleRow(String label, DblGet get, DblSet set, double min, double max, double step, String fmt) {
-        return new Row(label,
-                () -> String.format(fmt, get.get()),
-                () -> set.set(Math.max(min, round(get.get() - step))),
-                () -> set.set(Math.min(max, round(get.get() + step))));
-    }
-    private static double round(double v) {
-        // Arrondi à 6 décimales pour éviter les dérives flottantes lors des ±.
-        return Math.round(v * 1_000_000.0) / 1_000_000.0;
+        // Source UNIQUE : le registre déclaratif (ParamRegistry). On insère un
+        // séparateur de section à chaque changement de section, et on filtre les
+        // lignes purement in-game (INGAME_ONLY). L'ordre du registre EST l'ordre
+        // d'affichage historique du LaunchMenu.
+        String currentSection = null;
+        for (ParamRegistry.ParamDef d : ParamRegistry.build(config)) {
+            if (d.visibility == ParamRegistry.Visibility.INGAME_ONLY) continue;
+            if (!d.section.equals(currentSection)) {
+                rows.add(new Section(d.section));
+                currentSection = d.section;
+            }
+            rows.add(new Row(d.label, d.value, d.dec, d.inc));
+        }
     }
 
     private void moveToFirstSelectable() {

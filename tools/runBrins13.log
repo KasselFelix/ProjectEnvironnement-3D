@@ -1,0 +1,25 @@
+Map : 13-830-10419-645234-110673903, persistence : 1.0, octave : 3.0, fact : 0.1, periods : (8,8)
+# dim=80 saison=3j an=57600 ticks | loups=4 moutons=70 ours=0 humains=0
+# loupAge=30 moutonAge=30 loupE=1500 moutonE=1500
+day	season	loups	moutons	ours	humains
+0	SPRING	4	70	0	0	Em=1500	El=1500	herbe=44%	brinsMoy=4.00	moutonSurHerbe=36%	{Errance=70}
+1	SPRING	4	69	0	0	Em=1124	El=900	herbe=81%	brinsMoy=3.99	moutonSurHerbe=57%	{Broute=5, Cherche terre=2, Fuit loup=37, Méfiance=6, Regroupement=19}
+2	SPRING	4	63	0	0	Em=1134	El=897	herbe=81%	brinsMoy=3.99	moutonSurHerbe=86%	{Broute=3, Cherche herbe=1, Errance=1, Fuit loup=1, Méfiance=1, Regroupement=56}
+3	SUMMER	4	43	0	0	Em=1116	El=701	herbe=81%	brinsMoy=3.99	moutonSurHerbe=88%	{Cherche terre=1, Fuit loup=25, Regroupement=17}
+4	SUMMER	4	35	0	0	Em=1137	El=707	herbe=81%	brinsMoy=3.68	moutonSurHerbe=66%	{Broute=5, Errance=1, Fuit loup=14, Regroupement=15}
+5	SUMMER	4	31	0	0	Em=1145	El=762	herbe=81%	brinsMoy=3.68	moutonSurHerbe=97%	{Errance=1, Fuit loup=28, Regroupement=2}
+6	AUTUMN	4	25	0	0	Em=1153	El=870	herbe=81%	brinsMoy=3.69	moutonSurHerbe=96%	{Broute=1, Errance=2, Regroupement=22}
+7	AUTUMN	4	21	0	0	Em=1090	El=756	herbe=81%	brinsMoy=2.39	moutonSurHerbe=71%	{Broute=1, Cherche partenaire=10, Cherche terre=1, Fuit loup=7, Regroupement=2}
+8	AUTUMN	4	22	0	0	Em=838	El=740	herbe=81%	brinsMoy=2.39	moutonSurHerbe=91%	{Broute=1, Cherche partenaire=8, Cherche terre=1, Errance=2, Fuit loup=3, Méfiance=1, Regroupement=6}
+9	WINTER	4	23	0	0	Em=635	El=784	herbe=80%	brinsMoy=2.38	moutonSurHerbe=83%	{Broute=2, Cherche partenaire=8, Errance=7, Fuit loup=1, Méfiance=1, Regroupement=4}
+10	WINTER	12	14	0	0	Em=545	El=310	herbe=81%	brinsMoy=1.00	moutonSurHerbe=71%	{Errance=3, Fuit loup=5, Méfiance=1, Regroupement=5}
+11	WINTER	10	5	0	0	Em=600	El=209	herbe=81%	brinsMoy=1.00	moutonSurHerbe=0%	{Fuit loup=5}
+12	SPRING	9	0	0	0	Em=0	El=273	herbe=81%	brinsMoy=1.00	moutonSurHerbe=0%	{}
+13	SPRING	1	0	0	0	Em=0	El=97	herbe=81%	brinsMoy=4.01	moutonSurHerbe=0%	{}
+14	SPRING	0	0	0	0	Em=0	El=0	herbe=81%	brinsMoy=4.01	moutonSurHerbe=0%	{}
+# EXTINCTION TOTALE jour 14
+# --- BILAN ---
+# loups   min=0  EXTINCT à un moment
+# moutons min=0  EXTINCT à un moment
+  [rut MOUTON] j6 : 25 moutons
+  [rut LOUP]   j9 : 4 loups

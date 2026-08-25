@@ -443,28 +443,60 @@ Ce qui DIFFÉRENCIE notre système d'une « animation de lave » classique :
 
 Court terme (1-2h chacun) :
 
-    * **Fumée grise** au-dessus de la lave fraîche (particules ou cylindre
-      semi-transparent qui montent et s'estompent en altitude).
-    * **Lueur d'éruption** : GL_LIGHT2 placée au cratère pendant
-      l'éruption, qui éclaire dynamiquement le ciel et le terrain. Effet
-      spectaculaire surtout en cycle nuit.
-    * **Vapeur d'eau** quand la lave touche une cellule sous-marine
-      (cellH < 0) — nuage blanc qui monte. OBSIDIAN existe déjà comme
-      résultat physique, la vapeur ajouterait la signature visuelle.
-    * **Plume de fumée verticale** visible depuis loin pendant l'éruption
-      (cylindre vertical au-dessus du cratère).
-    * **Compteur de dommages dans le HUD** : arbres brûlés, agents
-      morts, volume de lave émis par éruption.
+    * [RÉALISÉ 2026-06-06, V2] **Fumée grise + vapeur + plume verticale** au-dessus
+      de la lave fraîche. `Landscape.displayLavaSmoke` balaie la fenêtre de rendu,
+      et pour chaque cellule LAVA visible émet un panache vertical de 5 bouffées
+      de points lissés additifs (blend SRC_ALPHA/ONE) montant et s'estompant en
+      altitude, jitter horizontal animé par l'itération. Lave émergée → fumée
+      GRISE ; lave sous le niveau de la mer (`cellH < 0`) → VAPEUR blanc-bleuté.
+      Le panache monte sur ~2.2 cellules → plume verticale visible de loin.
+      Plumes plafonnées à 90 (coût rendu logiciel), état GL sauvé/restauré.
+      Build + sanity launch OK.
+    * **Lueur d'éruption** : GL_LIGHT2 placée au cratère pendant l'éruption.
+      RESTE — note : LIGHT2-7 sont déjà les lampes lunaires (`applyMoonLights`) ;
+      une lueur de cratère passera plutôt par de l'émission (la lave est déjà
+      émissive via `LavaBlock`) ou une lampe dédiée à n'allumer que pendant
+      l'éruption. À traiter avec V8 (effets spectaculaires).
+    * [RÉALISÉ 2026-06-06, V6] **Compteur de dommages + notifications**.
+      `worlds.EventLog` (sur `World.events`) cumule `treesBurned` (incrémenté à
+      chaque ignition d'arbre dans `ForestCA`), `agentDeaths` (compté dans
+      `WorldOfCells.stepAgents`, par espèce) et `lavaEmitted` (volume injecté au
+      cratère dans `LavaCA.injectAtCrater`). Le HUD affiche une 2e ligne
+      « Degats | Arbres brules / Agents morts / Lave emise ». Les morts émettent
+      des NOTIFICATIONS transitoires groupées (« 12 moutons morts ! »),
+      horodatées à l'itération, affichées en fondu (TTL 120 ticks) puis purgées
+      via `EventLog.activeNotifications`. Tests `EventLogTest` (×3). 203 verts.
 
 Moyen terme :
 
-    * **Agents fuient activement la lave** (extension du firestate déjà
-      en place : détecter LAVA dans la vision et fuir en direction
-      opposée).
-    * **Tremblement précurseur** avant les éruptions auto (`pErruption`) :
-      screen shake léger 5-10 sec avant le trigger.
-    * **Reforestation accélérée sur cendres** : sol fertile (`pA` × 3
-      sur cellules ayant eu une couche cendre récemment dispersée).
+    * [RÉALISÉ 2026-06-06, L2] **Agents fuient activement la lave**. Le balayage
+      de perception (`Perception.sense`) traque désormais la coulée de LAVE la
+      plus proche en vue → champs `Percept.lavaDir/lavaDist` + `lavaVisible()`.
+      Un nouvel état `AgentState.FLEE_LAVA`, de priorité maximale après ON_FIRE,
+      est choisi par `decideState` du Loup, du Mouton ET de l'Humain quand de la
+      lave est en vue ; en `applyState`, l'agent s'oriente à l'opposé
+      (`AgentState.opposite(lavaDir)`) et sprinte (le mouton reste à terre, le
+      loup nage). Libellé HUD « Fuit lave ». Tests : `LoupTest.loupFuitLaLaveAVue`,
+      `AgentBehaviorTest.moutonFuitLaLave`. 180 tests verts.
+    * [RÉALISÉ 2026-06-06, V8, volet shake] **Secousse caméra (screen shake)** à
+      l'éruption. `Landscape.triggerShake(mag)` arme `shakeTicks=32` ; chaque
+      frame, tant que > 0, un décalage aléatoire décroissant (`amp = mag × ticks/32`)
+      est appliqué en eye-space juste après `glLoadIdentity` (avant les transforms
+      de vue) → toute la scène tremble ~0.5 s. Déclenché par la touche `r`
+      (éruption manuelle). [RÉALISÉ 2026-06-06] Le shake se déclenche aussi sur le
+      FRONT MONTANT de TOUTE éruption (manuelle ou AUTO via `pErruption`) :
+      `Landscape` surveille `lavaCA.getbErupt()` et appelle `triggerShake` une fois
+      au démarrage (champ `wasErupting`). RESTE : bombes de lave rebondissantes (les
+      `TephraProjectile` existent déjà mais ne rebondissent pas) ; lueur de cratère
+      (cf. V2).
+    * [RÉALISÉ 2026-06-05] **Reforestation accélérée sur cendres** : à la
+      dispersion des cendres d'un arbre brûlé (`step()` : BURNT+tDispertion → 0),
+      `ForestCA.markAsh(i,j)` enrichit le sol pour ASH_BOOST_DURATION=200 ticks.
+      `germinationProb` multiplie alors la proba par ASH_BOOST_FACTOR=3. L'effet
+      s'épuise (décrément 1×/cellule/tick). Succession écologique : la forêt
+      repousse plus vite là où elle a brûlé. Même bonus appliqué à l'herbe
+      (GrassCA.grassGerminationProb ; test cendreFertiliseLeSolPourLHerbe). Tests :
+      `ForestCATest.cendreFertiliseLeSol`, `GrassCATest.cendreFertiliseLeSolPourLHerbe`.
     * **Bombes de lave rebondissantes** : tephras LAVA qui rebondissent
       une fois avant de se poser.
 

@@ -48,8 +48,15 @@ public class PerlinNoiseLandscapeGenerator {
 	/** Persistence : décroissance d'amplitude entre octaves (1.0 = pas de décroissance). */
 	static double persistence = 1;
 
-	/** Nombre d'octaves utilisées (2 à 4, choisi aléatoirement à l'init). */
-	static double Number_Of_Octaves = (int)(Math.random()*3)+2;
+	/**
+	 * Nombre d'octaves utilisées. <b>Fixé à 3</b> (C6) : auparavant tiré au hasard
+	 * dans {2,3,4} à chaque lancement, ce qui faisait varier le niveau de détail
+	 * du relief d'une exécution à l'autre. Le figer rend la signature du terrain
+	 * (densité des collines, rugosité) reproductible — seules les constantes de
+	 * hash ci-dessous restent randomisées, donc la POSITION des reliefs change
+	 * encore d'un run à l'autre, mais plus leur GRANULARITÉ.
+	 */
+	static final double Number_Of_Octaves = 3;
 
 	/**
 	 * Facteur d'échelle de l'espace-bruit. Recalculé dans

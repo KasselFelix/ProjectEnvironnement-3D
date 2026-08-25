@@ -8,6 +8,7 @@ import java.util.Collections;
 import javax.media.opengl.GL2;
 
 import agents.*;
+import agents.ai.Genome;
 import cellularautomata.ecosystem.*;
 import objects.*;
 import objects.blocks.*;
@@ -28,6 +29,7 @@ public class WorldOfCells extends World {
 	public int nbloups = 10;//20
 	public int nbmoutons =20;//45//20
 	public int nbhumains=2;
+	public int nbours=1;   // L4 — super-prédateurs
 	int bergerie;
 	int wolfHome;
 	float nivPlage;
@@ -45,6 +47,7 @@ public class WorldOfCells extends World {
     		nbloups   = config.nbLoups;
     		nbmoutons = config.nbMoutons;
     		nbhumains = config.nbHumains;
+    		nbours    = config.nbOurs;
     		// Module 1 (refonte 2026-05) : conversion sec → ticks via simulationHz
     		setDureeJour(Math.max(1, Math.round(config.cycleTotalSec * config.simulationHz / 2f)));
     		setTransitionJour(Math.max(1, Math.round(config.transitionJourSec * config.simulationHz)));
@@ -68,8 +71,8 @@ public class WorldOfCells extends World {
     	wolfHome=-1;
     	int testFRACTTREE=0;
     	while(d<this.list.size() ){
-    		int x=this.list.get(d)%__dxCA;
-			int y=this.list.get(d)/__dyCA;
+    		int x=this.list.get(d)/__dyCA;   // encodage World : c = x*dyCA + y
+			int y=this.list.get(d)%__dyCA;
 			if(this.getCellHeight(x, y)==this.getMaxEverHeight() && testFRACTTREE==0){
 				uniqueObjects.add(new FractalTree(x,y,this));
 				testFRACTTREE=1;
@@ -107,6 +110,9 @@ public class WorldOfCells extends World {
 			px=(int)(Math.random()*dxCA);
 			py=(int)(Math.random()*dyCA);
 			Humain humanA = new Humain(px,py,this);
+			humanA.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);  // L1
+			humanA.initMind();
+			applyConfigTo(humanA);   // L3 — mode berger/chasseur
 			humains.add(humanA);
 			agents.add(humanA);
 			uniqueDynamicObjects.add(humanA);
@@ -129,6 +135,17 @@ public class WorldOfCells extends World {
 			agents.add(preyA);
 			uniqueDynamicObjects.add(preyA);
 		}
+    	for ( int i = 0 ; i != nbours; i++ ){           // L4 — super-prédateurs
+			px=(int)(Math.random()*dxCA);
+			py=(int)(Math.random()*dyCA);
+			Ours bear = new Ours(px,py,this);
+			bear.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);
+			bear.initMind();
+			applyConfigTo(bear);
+			ours.add(bear);
+			agents.add(bear);
+			uniqueDynamicObjects.add(bear);
+		}
 
     }
 
@@ -146,6 +163,7 @@ public class WorldOfCells extends World {
     		nbloups   = config.nbLoups;
     		nbmoutons = config.nbMoutons;
     		nbhumains = config.nbHumains;
+    		nbours    = config.nbOurs;
     		// Module 1 (refonte 2026-05) : conversion sec → ticks via simulationHz
     		setDureeJour(Math.max(1, Math.round(config.cycleTotalSec * config.simulationHz / 2f)));
     		setTransitionJour(Math.max(1, Math.round(config.transitionJourSec * config.simulationHz)));
@@ -159,18 +177,25 @@ public class WorldOfCells extends World {
     	uniqueDynamicObjects.removeAll(loups);
     	uniqueDynamicObjects.removeAll(moutons);
     	uniqueDynamicObjects.removeAll(humains);
+    	uniqueDynamicObjects.removeAll(ours);
     	agents.removeAll(loups);
     	agents.removeAll(moutons);
     	agents.removeAll(humains);
+    	agents.removeAll(ours);
     	loups.clear();
     	moutons.clear();
     	humains.clear();
+    	ours.clear();
 
     	int px, py;
     	for (int i = 0; i < nbhumains; i++) {
     		px = (int)(Math.random() * dxCA);
     		py = (int)(Math.random() * dyCA);
     		Humain h = new Humain(px, py, this);
+    		// L1 — diversité génétique initiale + esprit démarré depuis le génome.
+    		h.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);
+    		h.initMind();
+    		applyConfigTo(h);   // L3 — mode berger/chasseur
     		humains.add(h);
     		agents.add(h);
     		uniqueDynamicObjects.add(h);
@@ -193,6 +218,17 @@ public class WorldOfCells extends World {
     		agents.add(m);
     		uniqueDynamicObjects.add(m);
     	}
+    	for (int i = 0; i < nbours; i++) {              // L4 — super-prédateurs
+    		px = (int)(Math.random() * dxCA);
+    		py = (int)(Math.random() * dyCA);
+    		Ours bear = new Ours(px, py, this);
+    		bear.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY);
+    		bear.initMind();
+    		applyConfigTo(bear);
+    		ours.add(bear);
+    		agents.add(bear);
+    		uniqueDynamicObjects.add(bear);
+    	}
     }
 
     /**
@@ -201,10 +237,18 @@ public class WorldOfCells extends World {
      * (utilisé pour les modifs live via le menu in-game) préserve l'état
      * dynamique de l'agent et clampe juste l'énergie au nouveau plafond.
      */
+    /** Aléa pour la diversité génétique initiale des fondateurs (§ 4.5). */
+    private final java.util.Random spawnRng = new java.util.Random();
+
     private void applyConfigTo(Loup l) { applyConfigTo(l, true); }
 
     private void applyConfigTo(Loup l, boolean resetDynamic) {
     	if (config == null) return;
+    	// Diversité initiale : un fondateur (spawn) peut naître avec quelques axes
+    	// non-neutres → amorce la sélection (§ 4.5). Pas sur les modifs live.
+    	// Diversité initiale (§ 4.5) puis recalage de l'esprit sur le génome seedé
+    	// (L1 : un loup fondateur intelligent démarre réellement plus vif).
+    	if (resetDynamic) { l.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY); l.initMind(); }
     	l.vision     = config.loupVision;
     	l.energieD   = config.loupEnergieMax;
     	if (resetDynamic) l.energie = l.energieD;
@@ -221,11 +265,28 @@ public class WorldOfCells extends World {
     	if (resetDynamic) l.vitesse = l.vpas;
     }
 
+    /** L3 — applique le mode berger/chasseur de l'Humain depuis la config. */
+    private void applyConfigTo(Humain h) {
+    	if (config == null) return;
+    	h.chasseur = config.humainChasseur == 1;
+    }
+
+    /** L4 — applique la config à un ours. Pour l'instant l'ours n'a pas de
+     *  paramètres exposés au menu (biologie fixe) ; le hook existe pour symétrie
+     *  et extension future. */
+    private void applyConfigTo(Ours o) {
+    	if (config == null) return;
+    	// (aucun paramètre configurable pour l'instant)
+    }
+
     /** Variante mouton. */
     private void applyConfigTo(Mouton m) { applyConfigTo(m, true); }
 
     private void applyConfigTo(Mouton m, boolean resetDynamic) {
     	if (config == null) return;
+    	// Diversité initiale (§ 4.5) puis recalage de l'esprit sur le génome seedé
+    	// (un fondateur intelligent démarre réellement plus vif).
+    	if (resetDynamic) { m.genome.seedDiversity(spawnRng, Genome.SEED_DIVERSITY); m.initMind(); }
     	m.vision      = config.moutonVision;
     	m.energieMAX  = config.moutonEnergieMax;
     	if (resetDynamic) m.energie = m.energieMAX;
@@ -258,6 +319,7 @@ public class WorldOfCells extends World {
     	applyConfigToCAs();
     	for (Loup l : loups) applyConfigTo(l, false);
     	for (Mouton m : moutons) applyConfigTo(m, false);
+    	for (Humain h : humains) applyConfigTo(h);   // L3 — bascule berger/chasseur à chaud
     }
     
     public void colorInit(int x, int y, float color[]){
@@ -333,6 +395,12 @@ public class WorldOfCells extends World {
     @SuppressWarnings("deprecation")
     private void applyConfigToCAs() {
     	if (config == null) return;
+    	setSeasonLengthDays(config.seasonLengthDays);   // L5 — durée de saison (jours-jeu)
+    	setWindEnabled(config.windEnabled);
+    	setBaseWindForce(config.baseWindForce);
+    	setWindVariability(config.windVariability);
+    	Loup.HOWL_RADIUS = Math.max(1, config.howlRadius);   // meute : portee du hurlement (etat global partage, comme le vent)
+    	Agent.STERILE_HUNT_FORGET_VISITS = Math.max(1, config.sterileHuntForgetVisits);  // decote des terrains de chasse steriles (loup+ours)
     	if (forestCA != null) {
     		forestCA.darbre = config.forestDensite;
     		forestCA.pA     = config.forestProbApparition;
@@ -343,6 +411,9 @@ public class WorldOfCells extends World {
     		grassCA.dherbe = config.herbeDensite;
     		grassCA.pH     = config.herbeProbApparition;
     		grassCA.pF     = config.herbeProbFeu;
+    		grassCA.brinsMax            = config.brinsMax;
+    		grassCA.brinsRegrowthPerSec = config.brinsRegrowthPerSec;
+    		grassCA.brinsInitialFill    = config.brinsInitialFill;
     	}
     	if (lavaCA != null) {
     		lavaCA.pErruption      = config.laveProbErruption;
@@ -361,6 +432,43 @@ public class WorldOfCells extends World {
     	forestCA.step();
     	grassCA.step();
     	lavaCA.step();
+    	// L7 — neige : varie lentement, mise à jour 1×/sec (20 ticks) pour épargner
+    	// le balayage complet de la grille à chaque tick.
+    	if (getIteration() % 20 == 0) stepSnow();
+    	// L7 — eau qui s'écoule : ruissellement toutes les 5 ticks (compromis
+    	// fluidité visuelle / coût du balayage de grille en rendu logiciel).
+    	if (getIteration() % 5 == 0) stepWater();
+    	// V8 — orages : pendant la pluie, la foudre peut frapper un arbre et
+    	// l'embraser (la pluie ralentit ensuite la propagation, cf. L6).
+    	if (isRaining() && Math.random() < LIGHTNING_PROB_PER_TICK) strikeLightning();
+    }
+
+    /** Probabilité par tick qu'un éclair frappe pendant un orage (V8). */
+    private static final double LIGHTNING_PROB_PER_TICK = 0.004;
+    /** Durée (ticks) du flash blanc de foudre à l'écran. */
+    private static final int LIGHTNING_FLASH_TICKS = 6;
+
+    /**
+     * V8 — un éclair frappe un arbre vivant au hasard et l'embrase (FIRE_FIRST),
+     * pose un flash écran et une notification. Renvoie true si un arbre a été
+     * frappé (false s'il n'y a aucun arbre). Public pour être testable.
+     */
+    public boolean strikeLightning() {
+    	// Cherche un arbre vivant (state==1) à partir d'une position aléatoire.
+    	int start = (int) (Math.random() * dxCA * dyCA);
+    	int total = dxCA * dyCA;
+    	for (int k = 0; k < total; k++) {
+    		int idx = (start + k) % total;
+    		int x = idx % dxCA, y = idx / dxCA;
+    		if (forestCA.getCellState(x, y) == 1) {
+    			forestCA.setCellState(x, y, cellularautomata.ecosystem.ForestCA.FIRE_FIRST);
+    			events.treesBurned++;
+    			events.notify("Foudre ! un arbre s'embrase", getIteration());
+    			lightningFlash = LIGHTNING_FLASH_TICKS;
+    			return true;
+    		}
+    	}
+    	return false;
     }
     
     protected void stepAgents()
@@ -375,12 +483,15 @@ public class WorldOfCells extends World {
     			uniqueDynamicObjects.remove(i);
     		}
     	}
+    	// V6 — comptage des morts de ce step par espèce (pour les notifications).
+    	int deadHumains = 0, deadLoups = 0, deadMoutons = 0, deadOurs = 0;
     	for ( int i = 0 ; i < humains.size() ; i++ ){
 			if(humains.get(i)._alive == false) {
 				this.uniqueDynamicObjects.remove((UniqueDynamicObject)this.humains.get(i));
 				this.humains.remove(this.humains.get(i));
 				this.humains.remove(i);
 				nbhumains--;
+				deadHumains++;
 			}
     	}
     	for ( int i = 0 ; i < loups.size() ; i++ ){
@@ -389,6 +500,7 @@ public class WorldOfCells extends World {
 				this.agents.remove(this.loups.get(i));
 				this.loups.remove(i);
 				nbloups--;
+				deadLoups++;
 			}
     	}
     	for ( int i = 0 ; i < moutons.size() ; i++ ){
@@ -397,7 +509,27 @@ public class WorldOfCells extends World {
 				this.agents.remove(this.moutons.get(i));
 				this.moutons.remove(i);
 				nbmoutons--;
+				deadMoutons++;
 			}
+    	}
+    	for ( int i = 0 ; i < ours.size() ; i++ ){        // L4 — purge des ours morts
+			if(ours.get(i)._alive == false) {
+				this.uniqueDynamicObjects.remove((UniqueDynamicObject)this.ours.get(i));
+				this.agents.remove(this.ours.get(i));
+				this.ours.remove(i);
+				nbours--;
+				deadOurs++;
+			}
+    	}
+    	// V6 — compteur cumulé + notifications groupées par espèce.
+    	int totalDead = deadHumains + deadLoups + deadMoutons + deadOurs;
+    	if (totalDead > 0) {
+    		events.agentDeaths += totalDead;
+    		int it = getIteration();
+    		if (deadMoutons > 0) events.notify(deadMoutons + " mouton" + (deadMoutons > 1 ? "s morts" : " mort") + " !", it);
+    		if (deadLoups   > 0) events.notify(deadLoups   + " loup"   + (deadLoups   > 1 ? "s morts" : " mort") + " !", it);
+    		if (deadOurs    > 0) events.notify(deadOurs    + " ours mort" + (deadOurs > 1 ? "s" : "") + " !", it);
+    		if (deadHumains > 0) events.notify(deadHumains + " humain" + (deadHumains > 1 ? "s morts" : " mort") + " !", it);
     	}
     	int w = getWidth();
     	int h = getHeight();
@@ -417,6 +549,8 @@ public class WorldOfCells extends World {
     			if (dy >  h/2) dy -= h;
     			if (dy < -h/2) dy += h;
     			((Agent) obj).setLastMove(dx, dy);
+				if (((Agent) obj)._alive)
+					((Agent) obj).emitScent(getScentField(), getIteration());
     		}
     	}
 
@@ -543,17 +677,113 @@ public class WorldOfCells extends World {
     	}
     	if (cover <= 0f) return;
     	float ar = tr/cover, ag = tg/cover, ab = tb/cover;        // couleur d'état moyenne
+    	// L5 — teinte saisonnière du feuillage : verdoyant l'été, jauni l'automne,
+    	// terne l'hiver. On blende la couleur d'état vers la teinte de la saison.
+    	float[] st = currentSeason().foliageTint;
+    	final float SEASON_BLEND = 0.5f;
+    	ar = ar*(1f-SEASON_BLEND) + st[0]*SEASON_BLEND;
+    	ag = ag*(1f-SEASON_BLEND) + st[1]*SEASON_BLEND;
+    	ab = ab*(1f-SEASON_BLEND) + st[2]*SEASON_BLEND;
     	float strength = Math.min(1f, cover/4f) * GROUND_TINT_MAX; // couverture 0..1 × force max
     	col[0] = col[0]*(1f-strength) + ar*strength;
     	col[1] = col[1]*(1f-strength) + ag*strength;
     	col[2] = col[2]*(1f-strength) + ab*strength;
     }
 
+    /**
+     * Blanchit la couleur d'un sommet de terrain selon la NEIGE accumulée (L7)
+     * sur les 4 cellules adjacentes. Appelé APRÈS applyForestTint (la neige
+     * recouvre la végétation). La force suit l'épaisseur moyenne (∈ [0, SNOW_MAX])
+     * et plafonne pour rester légèrement translucide (le relief reste lisible).
+     */
+    public void applySnowTint(int vx, int vy, float[] col)
+    {
+    	final float SNOW_TINT_MAX = 0.92f;
+    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	double sum = 0; int n = 0;
+    	for (int[] c : cells) {
+    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
+    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    		sum += getSnowDepth(cxm, cym);
+    		n++;
+    	}
+    	if (n == 0) return;
+    	float strength = (float) (sum / n / World.SNOW_MAX) * SNOW_TINT_MAX;
+    	if (strength <= 0f) return;
+    	if (strength > SNOW_TINT_MAX) strength = SNOW_TINT_MAX;
+    	col[0] = col[0]*(1f-strength) + 1f*strength;   // blend vers le blanc
+    	col[1] = col[1]*(1f-strength) + 1f*strength;
+    	col[2] = col[2]*(1f-strength) + 1f*strength;
+    }
+
+    /**
+     * Brunit un sommet de terrain là où l'herbe a été récemment BROUTÉE (V4) :
+     * tant que le compteur `grazed` d'une cellule adjacente n'est pas retombé à
+     * 0, le sol prend une teinte « tondu » (brun fauve), proportionnelle à la
+     * fraction de compteur restante. Appelé après applyForestTint, avant la neige.
+     */
+    public void applyGrazedTint(int vx, int vy, float[] col)
+    {
+    	if (grassCA == null) return;
+    	final float GRAZED_TINT_MAX = 0.45f;
+    	final float[] BROWN = { 0.50f, 0.40f, 0.20f };
+    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	float sum = 0; int n = 0;
+    	for (int[] c : cells) {
+    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
+    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    		sum += grassCA.getGrazed(cxm, cym) / (float) grassCA.getGrazedDuration();
+    		n++;
+    	}
+    	if (n == 0) return;
+    	float strength = (sum / n) * GRAZED_TINT_MAX;
+    	if (strength <= 0f) return;
+    	col[0] = col[0]*(1f-strength) + BROWN[0]*strength;
+    	col[1] = col[1]*(1f-strength) + BROWN[1]*strength;
+    	col[2] = col[2]*(1f-strength) + BROWN[2]*strength;
+    }
+
+    /**
+     * Teinte un sommet de terrain en BLEU là où de l'eau de RUISSELLEMENT (L7)
+     * s'accumule (ruisseaux, flaques posés par la pluie). Force ∝ hauteur d'eau
+     * moyenne des 4 cellules adjacentes, plafonnée. Appelé entre la teinte herbe
+     * broutée et la neige.
+     */
+    public void applyWaterTint(int vx, int vy, float[] col)
+    {
+    	final float WATER_TINT_MAX = 0.40f;   // voile humide, pas un lagon : le sol reste reconnaissable
+    	final float WATER_SAT = 1.2f;   // hauteur d'eau (unités) donnant la teinte pleine
+    	final float[] BLUE = { 0.15f, 0.35f, 0.75f };
+    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	float sum = 0; int n = 0;
+    	for (int[] c : cells) {
+    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
+    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    		sum += (float) getWaterDepth(cxm, cym);
+    		n++;
+    	}
+    	if (n == 0) return;
+    	float strength = Math.min(1f, (sum / n) / WATER_SAT) * WATER_TINT_MAX;
+    	if (strength <= 0f) return;
+    	col[0] = col[0]*(1f-strength) + BLUE[0]*strength;
+    	col[1] = col[1]*(1f-strength) + BLUE[1]*strength;
+    	col[2] = col[2]*(1f-strength) + BLUE[2]*strength;
+    }
+
     public int getGrassCAValue(int x, int y)
     {
     	return grassCA.getCellState(x%dxCA,y%dyCA);
     }
-    
+
+    /** Phase 2 : max de brins de la case (0 hors bande d'herbe). */
+    public int getGrassMaxBrins(int x, int y) {
+        return grassCA.maxBrinsAt(x % dxCA, y % dyCA);
+    }
+
+    public int  getGrassBrins(int x, int y)        { return grassCA.getBrins(x % dxCA, y % dyCA); }
+    public void setGrassBrins(int x, int y, int n) { grassCA.setBrins(x % dxCA, y % dyCA, n); }
+    public void grazeGrassBrin(int x, int y)       { grassCA.grazeBrin(x % dxCA, y % dyCA); }
+
     public int getLavaCAValue(int x, int y)
     {
     	// Système Layer : si la couche du sommet est LAVA, on retourne son
@@ -617,9 +847,23 @@ public class WorldOfCells extends World {
 		this.nbmoutons = nbmoutons;
 	}
 
+	public int getNbours() {
+		return nbours;
+	}
+
+	public void setNbours(int nbours) {
+		this.nbours = nbours;
+	}
+
 	public int getBergerie() {
 		return bergerie;
 	}
+
+	/** Coordonnée X de la bergerie (foyer des Humains). Décodage identique au
+	 *  rendu (cf. Landscape : bergerie % dxCA). */
+	public int getBergerieX() { return bergerie % getWidth(); }
+	/** Coordonnée Y de la bergerie (foyer des Humains). */
+	public int getBergerieY() { return bergerie / getWidth(); }
 
 	public void setBergerie(int bergerie) {
 		this.bergerie = bergerie;
@@ -658,11 +902,15 @@ public class WorldOfCells extends World {
 	{
 		switch ( cellState )
 		{
-		case 1: // grass: green, fire, burnt
+		case 1: // grass vivante : échelle proportionnelle aux brins
+			float bs = objects.vegetation.Grass.bladeScale(getGrassBrins(x, y), getGrassMaxBrins(x, y));
+			Grass.displayObjectAt(_myWorld,gl,cellState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeight,movingX,movingY, bs);
+			break;
 		case 2:
 		case 3:
-		case 4:
-			Grass.displayObjectAt(_myWorld,gl,cellState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeight,movingX,movingY);
+		case 4: // feu, brûlé : échelle pleine (pas affectée par les brins)
+			Grass.displayObjectAt(_myWorld,gl,cellState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeight,movingX,movingY, 1f);
+			break;
 		default:
 			// nothing to display at this location.
 		}

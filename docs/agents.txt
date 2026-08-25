@@ -312,33 +312,108 @@ Idées d'extensions classées par effort estimé.
 
 --- Court terme ---
 
-    * Implémenter le step() de l'Humain — au moins une logique de chasseur
-      (cible Loup) ou de berger (suit un Mouton). Le squelette est déjà là.
-    * Activer la mort par vieillesse (maxAgeDays > 0). Le champ existe,
-      `getAgeDays()` aussi, il suffit de l'utiliser dans la condition de
-      mort.
-    * Système de faim variable selon l'activité (chasser coûte plus que
-      marcher) pour rendre la dynamique plus riche.
+    * [RÉALISÉ 2026-06-05] Rôle actif de l'Humain — logique de BERGER : quand
+      des Moutons sont dans son champ de vision, l'Humain quitte l'errance
+      (état HERD) et s'oriente vers le CENTRE DE MASSE du troupeau, et non
+      vers la bête la plus proche (un berger conduit le gros du troupeau, pas
+      une traînarde). Implémentation : `Humain.prey()` expose `world.moutons`
+      au Percept, `decideState` bascule en HERD si `preyVisible()`, et
+      `Perception.dirToFlockCentroid(...)` calcule la direction du barycentre
+      (tore-aware). Tests : `AgentBehaviorTest.humainBergerSuitLeCentreDeMasse
+      DuTroupeau` (contraste centroïde Est vs traînarde Ouest) et
+      `humainSansTroupeauEnVueErre`.
+    * [RÉALISÉ 2026-06-05] Effet écologique du berger — le Loup CRAINT l'Humain :
+      `Loup.predators()` expose `world.humains` au Percept, et `decideState`
+      bascule en FLEE_PREDATOR dès qu'un Humain est en vue, AVANT le test de
+      chasse → la peur du berger prime sur la faim (le loup fuit à l'opposé du
+      berger, à `vcourse`). Un troupeau gardé tient donc les loups à distance.
+      Tests : `loupFuitHumainMemeAffameAvecProie` (priorité fuite > chasse) et
+      `loupSansHumainChasseNormalement` (garde-fou : pas d'Humain → HUNT normal).
+      [RÉALISÉ 2026-06-06, L3] Variante CHASSEUR de l'Humain : champ
+      `Humain.chasseur` (config `humainChasseur`, toggle Berger/CHASSEUR dans les
+      menus). En mode chasseur, l'Humain pourchasse le Loup le plus proche (état
+      HUNT, cap vers `predatorDir`) et l'abat au contact (`postMove`). Tests
+      `HumainTest.chasseurPourchasseLeLoup` / `chasseurAbatLeLoupAuContact`.
+    * [RÉALISÉ] Mort par vieillesse (maxAgeDays > 0) — opérationnelle dans
+      `Loup.preStepAbort()` / `Mouton.preStepAbort()`
+      (`if (maxAgeDays > 0 && getAgeDays() > maxAgeDays) _alive = false`),
+      câblée via `config.loupMaxAgeDays` / `moutonMaxAgeDays`. Test :
+      `LoupTest.loupMeurtParVieillesse`.
+    * [RÉALISÉ 2026-06-06, L8] Faim variable / économie métabolique. `Agent`
+      expose `activityEnergyFactor()` (repos 0.5, errance 0.8, normal 1.0,
+      sprint/fuite/chasse 1.3) et `metabolicCost(base)` qui retranche un coût
+      ENTIER modulé par l'activité, en reportant le reliquat fractionnaire
+      (`metabolicDebt`) pour conserver la dépense moyenne. Câblé dans le bloc
+      énergie de `Mouton`, `Loup` et `Ours` (le `energie--` de base devient
+      `energie -= metabolicCost(1.0)`). Tests `MetabolismTest` (×2 : ordre des
+      facteurs, report fractionnaire). NB conforme au plan : l'ÉQUILIBRE
+      Lotka-Volterra résultant se règle/observe EN SIMULATION (graphe des
+      populations), pas en test unitaire.
 
 --- Moyen terme ---
 
-    * Reproduction sexuée (besoin de deux agents adjacents au lieu d'un
-      tirage probabiliste). Permet d'introduire des traits héritables.
-    * Communication simple entre agents (ex : un Mouton qui voit un Loup
-      « alerte » les Moutons voisins via un drapeau partagé).
-    * Mémoire spatiale : chaque agent garde la trace des cellules visitées
-      récemment (carte mentale petite) pour éviter d'errer en boucle.
+    * [RÉALISÉ 2026-06-05, volet Mouton] Reproduction sexuée — la reproduction du
+      Mouton exige désormais un congénère vivant à portée (`hasReproPartnerNearby`,
+      rayon REPRO_RADIUS=3), en plus des gardes énergie + Prepro : un mouton isolé
+      ne se reproduit plus. Le regroupement nocturne maintient le troupeau assez
+      serré pour que la repro reste possible (anti-extinction par dispersion).
+      Tests : `moutonSeReproduitSeulementAvecPartenaire` (+ tests de repro
+      existants mis à jour avec partenaire). Les **traits héritables** sont
+      désormais branchés sur cette reproduction (cf. « Héritage évolutif » en long
+      terme). [RÉALISÉ aussi pour le Loup] : `Loup.findReproPartner` + partenaire
+      requis (test `louveteauHeriteDesTraitsDesParents`). Reproduction sexuée
+      opérationnelle pour les deux espèces.
+    * [RÉALISÉ 2026-06-05] Communication entre proies (alarme du troupeau) — un
+      Mouton qui VOIT un Loup (FLEE_PREDATOR) alerte via `alertNeighbours()` tous
+      les Moutons à portée `ALERT_RADIUS=6` (tore-aware) : ils reçoivent
+      `alertTtl=ALERT_DURATION=4` tours et le cap de fuite du troupeau (`alertDir`).
+      Un mouton alerté fuit (FLEE_PREDATOR via `alertTtl>0`) même sans voir le loup,
+      dans le même cap → le troupeau détale ensemble. Anti-cascade : seuls les
+      moutons qui voient réellement le loup propagent (un alerté ne ré-alerte pas).
+      L'alarme s'estompe (`alertTtl--` par tour). Test :
+      `AgentBehaviorTest.moutonAlerteSesVoisinsDUnLoup`.
+    * [RÉALISÉ 2026-06-05] Mémoire spatiale (carte mentale) — `Agent` porte un
+      buffer circulaire des 8 dernières cellules visitées (`recordVisit` appelé à
+      chaque tour, `hasVisitedRecently`). En errance, le Mouton consulte
+      `aheadVisitedRecently()` : si la case droit devant a déjà été visitée, il
+      tourne au lieu d'y retourner → moins d'allers-retours en boucle. Tests :
+      `memoireSpatialeRetientLesCellulesRecentes` (structure + oubli au-delà de 8),
+      `moutonEviteDeRevenirSurSesPas` (anti-boucle). Anti-boucle étendu au **Loup**
+      (`lazyWander` ; test `loupEviteDeRevenirSurSesPas`). RESTE : anti-boucle
+      Humain, et surtout une MÉMOIRE SÉMANTIQUE (points d'eau, zones de chasse /
+      dangereuses, méthodes) avec oubli lié à l'âge — cf. notes de conception
+      « évolution » (chantier dédié).
 
 --- Long terme ---
 
-    * Héritage évolutif. Au lieu de constantes globales (`vision = 10`,
-      `vcourse = 13.5`), chaque agent porte ses propres valeurs, et les
-      enfants héritent + mutent légèrement des parents. La sélection
-      naturelle fait émerger les meilleures stratégies. Voir le skill
-      `alife` du projet pour des références (Axelrod, Sugarscape).
-    * Niveaux trophiques supplémentaires : herbivores plus petits qui ne
-      sont mangés que par moutons, super-prédateur qui mange les loups.
-      Permet de tester la stabilité de chaînes alimentaires à 3+ niveaux.
+    * [RÉALISÉ 2026-06-05, volet Mouton] Héritage évolutif. Les traits sont déjà
+      des champs d'instance (`vision`, `vcourse`, `vmarche`…). À la reproduction
+      sexuée, l'agneau hérite désormais des traits MOYENNÉS de ses deux parents
+      avec une mutation ±MUTATION_RATE=10% (`mutateInt`/`mutateDouble`), au lieu
+      de reprendre les défauts de la classe. La sélection naturelle peut donc
+      faire émerger des valeurs adaptées (ex : meilleure vision survit mieux →
+      se reproduit plus → diffuse son trait). Test :
+      `agneauHeriteDesTraitsMoyennesAvecMutation`. Étendu au **Loup** (vision,
+      vcourse, vtrot ; test `louveteauHeriteDesTraitsDesParents`) → héritage
+      évolutif opérationnel pour les deux espèces. RESTE : exposer les traits dans
+      l'UI (AgentInfoPanel) ; suivre la dérive des moyennes de population dans le
+      graphe ; gènes supplémentaires (swimFactor, seuils repro/faim) ; factoriser
+      `mutateInt`/`mutateDouble` dans Agent (dupliqués Loup/Mouton). Cf. skill
+      `alife` (Axelrod, Sugarscape).
+    * [RÉALISÉ 2026-06-06, L4] Niveau trophique supplémentaire — super-prédateur
+      OURS (`agents.Ours`) qui chasse le LOUP → chaîne à 3 niveaux Ours → Loup →
+      Mouton (→ herbe). Calqué sur le Loup (mêmes hooks Template Method, socle
+      cognitif L1) mais sans GLB (rendu cube), apex (ne fuit que feu/lave),
+      `prey()` = `world.loups`, dévore le loup au contact (gain plafonné à
+      energieD/2), reproduction sexuée + héritage. Le LOUP craint l'ours :
+      `Loup.predators()` renvoie désormais humains ∪ ours → il fuit les deux.
+      Câblage complet : liste `World.ours`, compteurs `nb ours`/`getNbours`,
+      spawn (2 chemins) + purge dans `stepAgents`, config `SimulationConfig.nbOurs`
+      (slider LaunchMenu), HUD (compteur Ours), `PopulationGraph` (4e courbe
+      brune), `AgentInfoPanel`. Tests `OursTest` (×3 : chasse, prédation, peur du
+      loup). 199 tests verts. RESTE (optionnel) : modèle GLB de l'ours ; petit
+      herbivore commun (2e proie). Permet de tester la stabilité de chaînes
+      alimentaires à 3+ niveaux.
     * Apprentissage par renforcement (au lieu d'arbre de comportement
       hardcodé). Demande un changement important d'architecture mais
       permettrait à l'écosystème de générer des stratégies non-anticipées.

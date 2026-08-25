@@ -1,0 +1,23 @@
+Map : 30-884-6481-1079952-1310613846, persistence : 1.0, octave : 3.0, fact : 0.1, periods : (8,8)
+# dim=80 saison=3j an=57600 ticks | loups=5 moutons=90 ours=0 humains=0
+# loupAge=30 moutonAge=30 loupE=1500 moutonE=1500
+day	season	loups	moutons	ours	humains
+0	SPRING	5	90	0	0	Em=1500	El=1500	herbe=46%	brinsMoy=3.84	moutonSurHerbe=42%	{Errance=90}
+1	SPRING	5	85	0	0	Em=1094	El=1246	herbe=80%	brinsMoy=3.83	moutonSurHerbe=56%	{Broute=1, Cherche terre=6, Fuit loup=41, Méfiance=1, Regroupement=36}
+2	SPRING	5	78	0	0	Em=1132	El=1229	herbe=80%	brinsMoy=3.83	moutonSurHerbe=71%	{Broute=4, Cherche terre=4, Fuit loup=11, Regroupement=59}
+3	SUMMER	5	72	0	0	Em=1133	El=1253	herbe=80%	brinsMoy=3.83	moutonSurHerbe=67%	{Broute=9, Cherche terre=1, Fuit loup=31, Regroupement=31}
+4	SUMMER	5	65	0	0	Em=1105	El=1024	herbe=80%	brinsMoy=3.56	moutonSurHerbe=60%	{Broute=4, Cherche terre=6, Errance=2, Fuit loup=16, Méfiance=1, Regroupement=36}
+5	SUMMER	5	58	0	0	Em=1113	El=1164	herbe=80%	brinsMoy=3.56	moutonSurHerbe=67%	{Cherche terre=6, Errance=1, Fuit loup=3, Regroupement=48}
+6	AUTUMN	5	51	0	0	Em=1134	El=1128	herbe=80%	brinsMoy=3.56	moutonSurHerbe=71%	{Broute=2, Cherche terre=4, Fuit loup=13, Regroupement=32}
+7	AUTUMN	5	38	0	0	Em=1064	El=983	herbe=79%	brinsMoy=2.30	moutonSurHerbe=53%	{Broute=1, Cherche partenaire=25, Cherche terre=7, Fuit loup=1, Regroupement=4}
+8	AUTUMN	5	30	0	0	Em=1124	El=950	herbe=79%	brinsMoy=2.31	moutonSurHerbe=90%	{Broute=1, Cherche partenaire=26, Cherche terre=1, Errance=1, Regroupement=1}
+9	WINTER	5	23	0	0	Em=1022	El=1051	herbe=78%	brinsMoy=2.31	moutonSurHerbe=57%	{Broute=1, Cherche partenaire=10, Cherche terre=3, Errance=2, Fuit feu=2, Fuit loup=4, Regroupement=1}
+10	WINTER	9	11	0	0	Em=1103	El=703	herbe=78%	brinsMoy=0.99	moutonSurHerbe=64%	{Fuit loup=6, Regroupement=5}
+11	WINTER	6	1	0	0	Em=416	El=671	herbe=79%	brinsMoy=0.99	moutonSurHerbe=0%	{Fuit loup=1}
+12	SPRING	0	0	0	0	Em=0	El=0	herbe=79%	brinsMoy=0.99	moutonSurHerbe=0%	{}
+# EXTINCTION TOTALE jour 12
+# --- BILAN ---
+# loups   min=0  EXTINCT à un moment
+# moutons min=0  EXTINCT à un moment
+  [rut MOUTON] j6 : 51 moutons
+  [rut LOUP]   j9 : 5 loups

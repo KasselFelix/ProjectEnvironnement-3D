@@ -361,12 +361,18 @@ manuelle de l'index de l'agent.
 
 --- Court terme ---
 
-    * Tooltip de survol : passer la souris sur un agent (sans cliquer)
-      devrait afficher un mini-popup avec son nom et son énergie. Évite
-      d'avoir à cliquer pour identifier rapidement.
-    * Indicateur visuel de l'agent sélectionné : un cercle de couleur
-      au sol sous l'agent, ou un halo lumineux. Aujourd'hui seule la
-      fiche `AgentInfoPanel` rappelle qu'un agent est sélectionné.
+    * [RÉALISÉ 2026-06-06, V3] Tooltip de survol : `Landscape.mouseMoved` mémorise
+      la position du curseur (`hoverX/hoverY`) en continu ; `computeHoverAgent`
+      (appelé après le picking, MODELVIEW caméra valide) projette chaque agent et
+      retient le plus proche du curseur dans `HOVER_TOLERANCE_PX=28`.
+      `drawHoverTooltip` affiche alors une bulle 2D « <Espèce> E:cur/max » près du
+      pointeur. Projection partagée avec le picking via `projectScreenDist`.
+    * [RÉALISÉ 2026-06-06, V3] Indicateur visuel de l'agent sélectionné :
+      `Landscape.drawSelectionHalo` trace un cercle pulsant (32 segments,
+      GL_LINE_LOOP, lighting/fog/texture désactivés puis restaurés — non affecté
+      par le cull GL_FRONT) au sol sous l'agent suivi, à `getCellTopAltitude`.
+      La luminosité pulse au rythme de l'itération. Build + lancement sanity OK
+      (validation visuelle fine F12 à confirmer côté utilisateur).
     * Sauvegarde de positions caméra favorites (touches 1-9 pour
       définir / rappeler une vue, comme dans Blender).
 

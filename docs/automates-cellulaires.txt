@@ -412,9 +412,18 @@ quand la lave solidifie elle enterre les cendres restantes.
 
 --- Court terme ---
 
-    * Test JUnit pour ForestCA et GrassCA. Au moins valider l'invariant
-      de la restriction d'altitude pour GrassCA, et le compteur de
-      dispersion des cendres pour ForestCA.
+    * [RÉALISÉ 2026-06-05, en partie] Tests JUnit ForestCA / GrassCA. ForestCA
+      est couvert (`ForestCATest` : fertilité pierre/compétition/eau, croissance,
+      dispersion de graines). L'invariant d'altitude de GrassCA est désormais
+      validé : le prédicat `GrassCA.canGrowGrass(x,y)` (bande [maxH/12, maxH×0.7],
+      extrait de `init()`/`step()`) est testé par `GrassCATest`
+      (`herbeSeulementDansLaBandeDAltitude`, `pasDHerbeDansLEau`).
+      [RÉALISÉ 2026-06-06] Compteur de dispersion des cendres (tDispertion)
+      couvert par `ForestCATest.compteurDeDispersionDesCendres` : un arbre brûlé
+      (state BURNT+1) avance de +1/tick dans le cycle cendre invisible, atteint
+      BURNT+tDispertion après (t-1) ticks, puis se disperse au tick t (cellule
+      vide + `markAsh` → germination boostée). Voisinage immergé pour isoler le
+      compteur de toute germination parasite.
     * Documenter chaque constante avec son unité et son ordre de grandeur
       attendu (le code en a déjà certaines, mais pas toutes).
 
@@ -422,15 +431,53 @@ quand la lave solidifie elle enterre les cendres restantes.
 
     * Couplage CA renforcé : la fumée du feu (nouveau CA ou champ
       d'opacité au-dessus de la forêt) devrait réduire la visibilité
-      des agents pendant quelques ticks. Et après le passage du feu,
-      la cendre devrait fertiliser le sol (augmenter localement pA de
-      ForestCA et pH de GrassCA pour quelques dizaines de ticks).
+      des agents pendant quelques ticks. [RÉALISÉ 2026-06-05, volet cendre→sol]
+      Après le passage du feu, la cendre fertilise désormais le sol, à la fois
+      pour ForestCA (`markAsh` + `ASH_BOOST_FACTOR=3` dans `germinationProb`,
+      ~200 ticks ; test `ForestCATest.cendreFertiliseLeSol`) ET pour GrassCA
+      (`markAsh` + bonus dans `grassGerminationProb` ; test
+      `GrassCATest.cendreFertiliseLeSolPourLHerbe`).
+      [RÉALISÉ 2026-06-06, L7, volet visibilité] La FUMÉE réduit la vision : un
+      agent entouré de feu ou de lave (≤ `SMOKE_RADIUS=3` cases,
+      `Perception.smokyAround`) voit sa portée effective divisée par deux
+      (`SMOKE_VISION_FACTOR=0.5`) dans `Perception.sense` → une cible visible par
+      temps clair disparaît dans la fumée. Test `SmokeVisionTest`. RESTE (visuel,
+      lot 2) : le rendu de la fumée grise elle-même (volet V2).
     * Nouveau CA « eau qui s'écoule » : à chaque tick, l'eau s'écoule
       vers la cellule voisine la plus basse. Permet de simuler les
       rivières et le ruissellement quand la lave bloque un cours.
-    * CA neige sur les sommets : couche blanche qui s'accumule en
-      altitude > seuil, fond progressivement avec une température
-      saisonnière (voir cycle-jour-nuit.txt pour les saisons).
+    * [RÉALISÉ 2026-06-06, L7] Neige sur les sommets. Grille `World.snowDepth`
+      (surface-state distinct du système Layer) pilotée par la loi PURE
+      `World.nextSnowDepth(current, tempC, altitudeNorm, snowLineFrac)` :
+      accumulation (×SNOW_ACCUM_RATE, plafond SNOW_MAX) sur les cellules au-dessus
+      de la ligne de neige (`SNOW_LINE_FRAC=0.55` × maxH) quand T ≤ 0°C, fonte
+      (×SNOW_MELT_RATE) quand T ≥ 2°C, jamais de neige sous la ligne. `stepSnow()`
+      balaie la grille à 1 Hz (toutes les 20 ticks) depuis
+      `WorldOfCells.stepCellularAutomata`. Rendu : `WorldOfCells.applySnowTint`
+      blanchit les sommets enneigés (par-dessus la teinte forêt) dans
+      `Landscape`. Couplé à la température L6 (cf. cycle-jour-nuit.txt). Tests :
+      `WorldSnowTest` (×5). 195 verts.
+    * [RÉALISÉ 2026-06-06, L7] Eau qui s'écoule (ruissellement / rivières). Grille
+      `World.waterDepth` (eau MOBILE de surface, en unités de hauteur de cellule,
+      distincte de l'océan `cellHeight < 0`). `stepWater()` (double-buffer pour
+      l'indépendance à l'ordre) : pour chaque cellule portant de l'eau, transfère
+      `(dénivelée terrain+eau)/2 × WATER_FLOW_RATE` vers le voisin cardinal le plus
+      bas → l'eau coule des crêtes vers les cuvettes (ruisseaux, flaques).
+      L'eau qui atteint l'océan est absorbée ; sur terre elle s'évapore lentement
+      (`WATER_EVAP`). SOURCE : la pluie L6 dépose `RAIN_WATER_PER_TICK` sur la
+      terre quand `isRaining()`. Cadence : toutes les 5 ticks depuis
+      `WorldOfCells.stepCellularAutomata`. Rendu : `WorldOfCells.applyWaterTint`
+      bleuit les cellules ruisselantes dans `Landscape`. Tests `WorldWaterTest`
+      (×4 : écoulement, conservation, drainage océan, source pluie). 211 verts.
+      [AJUSTÉ 2026-06-06] Réglage trop agressif corrigé : la pluie tombant tout un
+      jour-jeu (météo tirée 1×/jour) + `WATER_EVAP=0.0008` (25× plus lent que le
+      débit de pluie) laissait les cuvettes sans exutoire bleues ~96 min après
+      l'averse (~1500 ticks pour vider 1 unité), et `WATER_TINT_MAX=0.75` noyait
+      le sol en bleu lagon. Corrigé : `WATER_EVAP=0.004` (flaque piégée sèche en
+      ~15 s / 300 ticks, restant < débit pluie pour qu'une lame se forme bien) et
+      `WATER_TINT_MAX=0.40` (voile humide, sol reconnaissable). Tests ajoutés
+      `uneCuvetteIsoleeSecheParEvaporationEnUnTempsRaisonnable` (≤600 ticks) et
+      `leTintDEauResteDoux` (canal sol ≥ 0.45). 219 verts.
 
 --- Long terme ---
 

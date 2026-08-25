@@ -25,12 +25,15 @@ public class Mouton extends Agent {
 
 	public static void initModel(GL2 gl) {
 		try {
-			moutonModel = new GLBModel("models/Mouton_chibi.glb", false, gl, 0.32f);
+			moutonModel = new GLBModel("models/Mouton_chibi.glb", false, gl, 0.32f, true); // true = retenir prims pour carcasse tintee
 		} catch (Exception e) {
 			System.out.println("[Mouton] erreur chargement GLB: " + e.getMessage());
 			e.printStackTrace();
 		}
 	}
+
+	/** Accesseur statique pour la carcasse : renvoie le modèle GLB déjà chargé (ou null). */
+	public static GLBModel getModel() { return moutonModel; }
 
 	/**
 	 * Rend un mouton via la display list GLB. À appeler HORS d'un glBegin.
@@ -55,9 +58,13 @@ public class Mouton extends Agent {
 		if (y2 < 0) y2 += myWorld.getHeight();
 
 		float altitude = m.computeAgentAltitude(myWorld, m.x, m.y, normalizeHeight);
-		float px = offset + x2 * stepX;
-		float py = offset + y2 * stepY;
-		float scale = Math.abs(lenX) * 1.5f;
+		// Planté sur le SOMMET de terrain (coin de cellule) dont l'altitude est lue,
+		// pas au centre du quad — sinon décalage d'une demi-cellule → l'agent
+		// s'enfonce dans le sol en pente (même cause que les jeunes arbres, cf. Tree).
+		float px = offset + x2 * stepX - lenX;
+		float py = offset + y2 * stepY - lenY;
+		// Taille individuelle (§ 10.2) : trait héritable × croissance (âge) × Force.
+		float scale = Math.abs(lenX) * 1.5f * (float) m.displaySize();
 
 		// Rotation Z pour aligner −Y modèle (forward) vers (udx, udy) monde.
 		// Forward modèle = (0, −1), cible monde = (udx, udy).
@@ -72,8 +79,6 @@ public class Mouton extends Agent {
 		moutonModel.opengldraw(gl, dayFactor);
 		gl.glPopMatrix();
 	}
-
-	public boolean _alive;
 
 	public double PreproD=0;//0.06  reproduction des moutons
 	public double Prepro=PreproD;
@@ -99,16 +104,133 @@ public class Mouton extends Agent {
 	// états confondus (cf. SimulationConfig).
 	public double swimFactor = 0.25;
 
-	// Mort par vieillesse — surchargé par SimulationConfig au spawn et en live.
-	// Valeur ≤ 0 = pas de mort par âge.
-	public double maxAgeDays = -1;
-
 	public int earthSearch=0;// 1 si est dans l'eau et recherche la terre ferme
 
 	public int fuite=0;
+	/** Alarme du troupeau : tours restants où ce mouton fuit car ALERTÉ par un
+	 *  congénère qui a vu un loup (même sans le voir lui-même). 0 = pas alerté. */
+	public int alertTtl=0;
+	/** Direction de fuite imposée par l'alarme (cap du troupeau). -1 = aucune. */
+	public int alertDir=-1;
 	public int m=0;
 	public int lastX;
 	public int lastY;
+
+	/** Parent à suivre tant qu'on est bébé/jeune (§ 10.3). null pour un fondateur
+	 *  ou un orphelin. Le suivi cesse quand le parent meurt ou qu'on devient adulte. */
+	public Mouton parent;
+
+	/** Cap de navigation longue distance courant (§ 9), distinct de _orient (le
+	 *  regard pas-à-pas). -1 = pas de cap longue distance actif. */
+	public int directionSens = -1;
+
+	// memory / mind / character + CHARACTER_SESSION_DAYS : hissés dans Agent (L1) ;
+	// hérités tels quels. Le Mouton ne garde que ce qui lui est propre.
+	/** Rayon (cases) en deçà duquel un congénère « rompt » l'isolement (§ 7.3). */
+	private static final int FLOCK_NEAR_RADIUS = 6;
+
+	/** true si aucun congénère vivant n'est à portée de troupeau (§ 7.3). */
+	@Override
+	public boolean isIsolated() {
+		for (Mouton o : world.moutons) {
+			if (o == this || !o._alive) continue;
+			if (world.distance(o.x, o.y, x, y) <= FLOCK_NEAR_RADIUS) return false;
+		}
+		return true;
+	}
+
+	/** Satisfaction globale ∈ [0, 1] (§ 7.3) : moyenne des besoins primaires
+	 *  (faim, sécurité, social). Le besoin SOCIAL est MODULÉ par le caractère :
+	 *  un solitaire est satisfait seul, un grégaire en groupe. */
+	@Override
+	public double satisfaction() {
+		double hunger = Math.max(0.0, Math.min(1.0, energie / energieMAX));
+		double safety = (isOnFire() || currentState == agents.ai.AgentState.FLEE_PREDATOR) ? 0.0 : 1.0;
+		boolean iso = isIsolated();
+		double social;
+		switch (character.social()) {
+			case SOLITARY:   social = iso ? 1.0 : 0.0; break;
+			case GREGARIOUS: social = iso ? 0.0 : 1.0; break;
+			default:         social = iso ? 0.4 : 0.6; break;   // léger biais grégaire naturel
+		}
+		return (hunger + safety + social) / 3.0;
+	}
+
+	// initMind / evolutionSummary / stageLabel / socialLabel / activityLevel /
+	// refreshMemoryCapacity : hissés dans Agent (L1), hérités tels quels.
+
+	/** true si la carcasse perçue ({@code p.carcassX/Y}) est une carcasse de mouton. */
+	private boolean isMoutonCarcass(agents.ai.Percept p) {
+		objects.Carcass c = world.carcassAt(p.carcassX, p.carcassY);
+		return c != null && c.source == objects.Species.MOUTON;
+	}
+
+	/** Mémorise comme DANGER la position du loup visible le plus proche (§ 5). */
+	private void recordNearestPredatorAsDanger() {
+		Loup nearest = null;
+		double bestD = Double.MAX_VALUE;
+		for (Loup l : world.loups) {
+			if (!l._alive) continue;
+			double d = world.distance(l.x, l.y, x, y);
+			if (d <= vision && d < bestD) { bestD = d; nearest = l; }
+		}
+		if (nearest != null) memory.remember(agents.ai.MemoryKind.DANGER, nearest.x, nearest.y);
+	}
+
+	/** Rayon (cases) d'apprentissage d'un point de repère (bergerie → lieu sûr). */
+	private static final int LEARN_LANDMARK_RADIUS = 3;
+
+	/** Rayon (cases) d'apprentissage social auprès d'un congénère (§ 8). */
+	private static final int SOCIAL_LEARN_RADIUS = 6;
+
+	/**
+	 * Apprentissage social & éducation (§ 8) : le mouton recopie les
+	 * connaissances sémantiques de ses congénères vivants à portée (le parent en
+	 * fait partie quand l'agneau le suit → éducation). Un mouton isolé n'apprend
+	 * rien. La capacité mémoire (liée à l'intelligence) borne ce qu'il retient.
+	 */
+	public void learnFromNeighbours() {
+		for (Mouton other : world.moutons) {
+			if (other == this || !other._alive) continue;
+			if (world.distance(other.x, other.y, x, y) <= SOCIAL_LEARN_RADIUS) {
+				other.memory.teach(this.memory);
+			}
+		}
+	}
+
+	/** Mémorise les repères proches comme lieux sûrs (§ 5 / § 9) : si le mouton
+	 *  est près de la bergerie, il l'enregistre comme SAFE_PLACE. */
+	public void learnNearbyLandmarks() {
+		worlds.WorldOfCells wc = (worlds.WorldOfCells) world;
+		int bx = wc.getBergerieX(), by = wc.getBergerieY();
+		if (world.distance(x, y, bx, by) <= LEARN_LANDMARK_RADIUS) {
+			memory.remember(agents.ai.MemoryKind.SAFE_PLACE, bx, by);
+		}
+	}
+
+	/** Lieu sûr mémorisé le plus proche (tore-aware), ou null. */
+	private int[] nearestSafePlace() {
+		return memory.nearest(agents.ai.MemoryKind.SAFE_PLACE, x, y,
+				(a, b, c, d) -> world.distance(a, b, c, d));
+	}
+
+	/** true si la case droit devant (cap _orient) est une zone de danger mémorisée. */
+	private boolean dangerAhead() {
+		int ax = ((x + orientDx(_orient)) % world.getWidth() + world.getWidth()) % world.getWidth();
+		int ay = ((y + orientDy(_orient)) % world.getHeight() + world.getHeight()) % world.getHeight();
+		return memory.contains(agents.ai.MemoryKind.DANGER, ax, ay);
+	}
+
+	/** Rayon (cases) dans lequel un agneau suit son parent (§ 10.3). */
+	private static final int FOLLOW_RADIUS = 8;
+
+	/** true si l'agneau a un parent vivant à portée à suivre (bébé/jeune only). */
+	private boolean shouldFollowParent() {
+		agents.ai.LifeStage s = currentStage();
+		if (s != agents.ai.LifeStage.BABY && s != agents.ai.LifeStage.JUVENILE) return false;
+		return parent != null && parent._alive
+				&& world.distance(parent.x, parent.y, x, y) <= FOLLOW_RADIUS;
+	}
 
 	public Mouton( int __x, int __y, World __World )
 	{
@@ -119,6 +241,7 @@ public class Mouton extends Agent {
 		_greenValue = 0.f;
 		_blueValue = 1.f;
 
+		baseMassKg = 70.0; frontalAreaM2 = 0.35;   // espèce de référence → résistance vent 1.0
 	}
 
 	/** Accesseur public pour l'UI (les champs restent package-private). */
@@ -126,16 +249,98 @@ public class Mouton extends Agent {
 	public double getEnergieMax() { return energieMAX; }
 	public boolean isAlive() { return _alive; }
 
+	@Override protected double getEnergieForMass() { return energie; }
+	@Override public double energieMaxValue() { return energieMAX; }
+
 	@Override public String getTypeName() { return "Mouton"; }
+
+	/** Case d'herbe broutable la plus fournie : la case courante en priorité à brins
+	 *  égaux, sinon la voisine (8-conn) la plus riche en brins. Un mouton peut manger
+	 *  l'herbe d'à côté sans marcher dessus, ce qui débloque l'herbe sous un arbre
+	 *  (case impraticable) et facilite l'accès à la nourriture.
+	 *  Renvoie {x,y} de la case à brouter, ou null. */
+	private int[] grassBiteCell() {
+		int w = world.getWidth(), h = world.getHeight();
+		int bx = -1, by = -1, bestBrins = 0;
+		// case courante prioritaire à brins égaux
+		if (world.getGrassCAValue(x, y) == 1) { bx = x; by = y; bestBrins = ((worlds.WorldOfCells) world).getGrassBrins(x, y); }
+		for (int dx = -1; dx <= 1; dx++)
+			for (int dy = -1; dy <= 1; dy++) {
+				if (dx == 0 && dy == 0) continue;
+				int nx = ((x + dx) % w + w) % w, ny = ((y + dy) % h + h) % h;
+				if (world.getGrassCAValue(nx, ny) == 1) {
+					int b = ((worlds.WorldOfCells) world).getGrassBrins(nx, ny);
+					if (b > bestBrins) { bestBrins = b; bx = nx; by = ny; }
+				}
+			}
+		return (bx >= 0) ? new int[]{bx, by} : null;
+	}
+
+	/** Conditions de broutage : pas en fuite, faim modérée, herbe accessible (sur place
+	 *  ou adjacente). Partagé par postMove (effet) et isFeeding (vigilance réduite). */
+	private boolean isGrazingNow() {
+		return fuite == 0 && energie < (energieMAX * 0.75) && grassBiteCell() != null;
+	}
+
+	@Override public boolean isFeeding() {
+		return isGrazingNow();
+	}
+
+	@Override public boolean canGrazeNow() {
+		return eatBiteCooldown == 0 && grassBiteCell() != null;
+	}
+
+	@Override
+	protected boolean consumePlayerActions(agents.ai.Percept p) {
+		boolean acted = super.consumePlayerActions(p);
+		if (playerWantsGraze) {
+			playerWantsGraze = false;
+			int[] bite = grassBiteCell();
+			if (bite != null && eatBiteCooldown == 0) {
+				((worlds.WorldOfCells) world).grazeGrassBrin(bite[0], bite[1]);
+				energie += (int) ui.SimulationConfig.getInstance().energyPerBrin;
+				if (energie > energieMAX) energie = energieMAX;
+				eatBiteCooldown = Math.max(1, (int) Math.round(
+						ui.SimulationConfig.getInstance().grazeCooldownSec * simulationHz()));
+				m = 1;   // cohérent avec postMove : état « Broute » + vigilance réduite
+				acted = true;
+			}
+		}
+		return acted;
+	}
+
+	// Sous-projet D : risque = rester près d'une odeur de loup sans fuir.
+	@Override protected boolean riskSituation(agents.ai.Percept p) {
+		return p != null && p.scentDangerDetected();
+	}
+	@Override protected boolean tookRisk(agents.ai.Percept p) {
+		// Pas de dépendance à p : currentState reflète la décision de ce tick.
+		// Approximation connue : si un état de survie prioritaire (ON_FIRE, SEEK_LAND…)
+		// coïncide avec une odeur de loup, ce n'est PAS FLEE_PREDATOR → compté comme un
+		// risque pris. Co-occurrence rare et signal faible vs la durée de session → toléré.
+		return currentState != agents.ai.AgentState.FLEE_PREDATOR;
+	}
+
+	/** La proie ne bloque pas son prédateur : un Loup peut entrer sur sa case
+	 *  pour la dévorer (chevauchement transitoire). Bloque tous les autres. */
+	@Override
+	public boolean blocksMovementOf(objects.UniqueDynamicObject mover) {
+		return !(mover instanceof Loup);
+	}
 
 	@Override public String getCurrentBehavior() {
 		if (playerControlled) return "Piloté";
 		if (_fireState == 1) return "Fuit feu";
 		if (m == 1)          return "Broute";
 		switch (currentState) {
+			case FLEE_LAVA:     return "Fuit lave";
 			case FLEE_PREDATOR: return "Fuit loup";
 			case SEEK_LAND:     return "Cherche terre";
 			case SEEK_FOOD:     return "Cherche herbe";
+			case HERD:          return "Regroupement";
+			case REST:          return "Repos";
+			case WARY:          return "Méfiance";
+			case SEEK_MATE:     return "Cherche partenaire";
 			default:            return "Errance";
 		}
 	}
@@ -152,13 +357,19 @@ public class Mouton extends Agent {
 
 	@Override
 	protected boolean isMyTurn() {
-		return world.getIteration() % (int)((1.0/vitesse)*28) == 0;
+		// Math.max(1, …) : garde-fou anti division par zero (vitesse evolutive non
+		// bornee → diviseur 0 si vitesse > 28 ; au-dela l'agent agit chaque tick).
+		return world.getIteration() % Math.max(1, (int)((1.0/vitesse)*28)) == 0;
 	}
 
 	@Override
 	protected void resetTickFlags() {
 		fuite=0;
 		m=0;
+		refreshMemoryCapacity();             // la capacité mémoire suit l'âge (§ 5.1)
+		learnNearbyLandmarks();              // apprend la bergerie comme lieu sûr (§ 9)
+		learnFromNeighbours();               // apprend des congénères proches (§ 8)
+		if (alertTtl > 0) alertTtl--;        // l'alarme s'estompe (en TOURS, pas en ticks)
 		if(world.getCellHeight(x, y)>=0)earthSearch=0;
 		if(world.getCellHeight(x, y)<0){this._fireState=0;}
 
@@ -166,26 +377,67 @@ public class Mouton extends Agent {
 		lastY=y;
 	}
 
+	/** Rayon (cases) de propagation de l'alarme à un congénère. */
+	private static final int ALERT_RADIUS = 6;
+	/** Durée de l'alarme transmise, en TOURS de l'agent (gating vitesse). */
+	private static final int ALERT_DURATION = 4;
+
+	/**
+	 * Donne l'alarme : tout Mouton à portée ALERT_RADIUS (tore-aware) est marqué
+	 * alerté pour ALERT_DURATION tours et reçoit le cap de fuite du troupeau.
+	 * Seuls les moutons qui VOIENT réellement le loup propagent → pas de cascade
+	 * infinie (un mouton seulement alerté ne ré-alerte personne).
+	 */
+	private void alertNeighbours() {
+		for (Mouton other : world.moutons) {
+			if (other == this) continue;
+			if (world.distance(other.x, other.y, x, y) <= ALERT_RADIUS) {
+				other.alertTtl = ALERT_DURATION;
+				other.alertDir = _orient;
+			}
+		}
+	}
+
 	@Override
 	protected java.util.List<? extends objects.UniqueDynamicObject> predators() {
 		return world.loups;
+	}
+
+	// Sous-projet C (berger) : le mouton ne craint PAS l'humain (sinon il fuirait
+	// son berger). Aligné sur predators() = world.loups. Futur : par-instance pour
+	// distinguer mouton sauvage vs apprivoisé.
+	private static final scent.ScentKind[] SCENT_DANGER_KINDS = { scent.ScentKind.LOUP };
+	@Override public scent.ScentKind[] scentDangerKinds() { return SCENT_DANGER_KINDS; }
+	private static final worlds.Season[] MATING_SEASONS = { worlds.Season.AUTUMN };
+	@Override protected worlds.Season[] matingSeasons() { return MATING_SEASONS; }
+	@Override protected boolean matingReady() {
+		return currentStage().canReproduce() && energie >= energieMAX * reproEnergyThreshold;
 	}
 
 	@Override
 	protected boolean canMove() { return energie > 2; }
 
 	@Override
-	protected void applyControlSpeed() { vitesse = vcourse; }
+	protected void applyControlSpeed() {
+		// 2 allures seulement : SPRINT=vcourse ; WALK et TROT partagent vmarche.
+		switch (controlGait) {
+			case SPRINT: vitesse = vcourse;  break;
+			default:     vitesse = vmarche;  break;
+		}
+	}
 
 	@Override
 	protected void postMove(Percept p) {
-		//Broute
-		if(energie<(energieMAX*0.75) &&fuite==0) {
-			if(world.getGrassCAValue( x, y)==1){
-				world.setGrassCAValue( x, y, 0);
-				energie+=energieMAX/100;
-				m=1;
-				//System.out.println("broute");
+		//Broute (sur place OU case adjacente la plus fournie ; 1 brin / cooldown)
+		if (fuite == 0 && energie < energieMAX * 0.75 && eatBiteCooldown == 0) {
+			int[] bite = grassBiteCell();
+			if (bite != null) {
+				((worlds.WorldOfCells) world).grazeGrassBrin(bite[0], bite[1]);
+				energie += (int) ui.SimulationConfig.getInstance().energyPerBrin;
+				if (energie > energieMAX) energie = energieMAX;
+				m = 1;
+				eatBiteCooldown = Math.max(1, (int) Math.round(
+						ui.SimulationConfig.getInstance().grazeCooldownSec * simulationHz()));
 			}
 		}
 
@@ -229,6 +481,10 @@ public class Mouton extends Agent {
 		}
 
 
+		// Traînée du vent : calculée une fois, appliquée à la cadence (plus bas) ET
+		// au coût métabolique (le vent propulse → énergie/temps invariante au vent).
+		double windF = windDragFactor();
+
 		//mise a jour energie
 		if(energie<=0){
 			_alive = false;
@@ -237,7 +493,10 @@ public class Mouton extends Agent {
 			if( world.getCellHeight(lastX, lastY) > world.getCellHeight(x, y)){
 				energie--;
 			}
-			energie--;
+			// ÷windF SEULEMENT si l'agent a bougé ce tour (sinon le vent ne fournit pas
+			// de propulsion : à l'arrêt l'effort ne dépend pas du vent).
+			boolean moved = (x != lastX || y != lastY);
+			energie -= metabolicCost(moved ? 1.0 / windF : 1.0);   // L8 — coût métabolique modulé par l'activité
 		}
 		if(energie<10 && vitesse>=vcourse){
 			vitesse=vcourse/2;
@@ -254,6 +513,10 @@ public class Mouton extends Agent {
 		// n'est plus une échappatoire : le loup l'y rattrape.
 		if(world.getCellHeight(x,y)<0)vitesse=vitesse*swimFactor;
 
+		// L6 — grand froid (nuits d'hiver) : le mouton s'engourdit (no-op si > 5°C).
+		vitesse *= world.coldSpeedFactor();
+		vitesse *= windF;   // traînée vent (même facteur que le décompte d'énergie ci-dessus)
+
 		//si dans la lave
 		if(_world.getLavaCAValue(x,y)>0) {
 			_alive=false;
@@ -262,10 +525,41 @@ public class Mouton extends Agent {
 		//reproduction — conditionnée à l'énergie : le mouton doit être en bonne
 		// santé (≥ seuil) et INVESTIT une part de son énergie dans l'agneau
 		// (énergie conservée, pas créée). L'agneau naît à la position du parent.
-		if(energie >= energieMAX * reproEnergyThreshold && Math.random()<Prepro) {
+		Mouton mate = findReproPartner();
+		// Reproduction gardée par le STADE (§ 10.1) : bébé et jeune ne se
+		// reproduisent pas. La proba est modulée par la fertilité du génome
+		// (§ 4.1/§ 4.3) : FERTILE ×1.5, INFERTILE ×0.2 (cul-de-sac mou).
+		if(inMatingSeason() && currentStage().canReproduce() && energie >= energieMAX * reproEnergyThreshold && mate != null
+				&& Math.random() < Prepro * genome.reproProbaFactor() * currentStage().fertilityFactor()) {
 			double invest = energieMAX * reproOffspringRatio;
 			Mouton prea=new Mouton(this.x, this.y, this._world);
+			prea.isFounder = false;      // né par reproduction → démarre BÉBÉ (§ 10.1)
+			prea.parent = this;          // suit son parent tant qu'il est jeune (§ 10.3)
 			prea.energie = invest;       // l'agneau hérite de l'énergie investie
+			// Héritage évolutif : l'agneau hérite des traits MOYENNÉS des deux
+			// parents, avec une légère mutation → variation individuelle et
+			// sélection naturelle (les mieux adaptés laissent plus de descendants).
+			prea.vision  = mutateInt((this.vision + mate.vision) / 2);
+			prea.vcourse = mutateDouble((this.vcourse + mate.vcourse) / 2.0);
+			prea.vmarche = mutateDouble((this.vmarche + mate.vmarche) / 2.0);
+			// Taille héritable (§ 10.2) : moyenne des parents + mutation, clampée.
+			prea.sizeFactor = clampSize(mutateDouble((this.sizeFactor + mate.sizeFactor) / 2.0));
+			// Héritage du GÉNOME : axes hérités des deux parents (+ conflit→NEUTRE,
+			// mutation de type, saut de génération possible — cf. Genome.inherit § 4.4).
+			prea.genome = agents.ai.Genome.inherit(this.genome, mate.genome,
+					EVO_RNG, TYPE_MUTATION_RATE, GRANDPARENT_PROB);
+			prea.initMind();             // esprit démarré depuis le génome hérité (§ 6)
+			// Longévité de l'agneau : base parentale × facteur de son propre axe
+			// Longévité (§ 4.1), puis malus si un parent est INFERTILE (§ 4.3 :
+			// enfants à courte espérance de vie).
+			double childMaxAge = this.maxAgeDays;
+			if (childMaxAge > 0) {
+				childMaxAge *= prea.genome.longevityFactor();
+				if (isInfertile(this) || isInfertile(mate)) {
+					childMaxAge *= INFERTILE_CHILD_LONGEVITY_MALUS;
+				}
+			}
+			prea.maxAgeDays = childMaxAge;
 			energie -= invest;           // le parent paie ce coût → retombe sous le seuil
 			this.world.uniqueDynamicObjects.add(prea);
 			this.world.agents.add(prea);
@@ -281,7 +575,31 @@ public class Mouton extends Agent {
 
 	@Override
 	protected void postTick() {
-		if ( world.getIteration() % 20 == 0 )if(_fireState==1)energie-=energieMAX/10;
+		if (eatBiteCooldown > 0) eatBiteCooldown--;   // Phase 2 : cadence du broutage (cf. Loup)
+		if ( world.getIteration() % ticksPerGameSecond() == 0 )if(_fireState==1)energie-=energieMAX/10;
+
+		// Entraînement cérébral (§ 6.2) + émergence du caractère (§ 7) :
+		// centralisés dans Agent.trainMindAndCharacter() (L1).
+		trainMindAndCharacter();
+	}
+
+	/** Rayon (cases) dans lequel un congénère vivant compte comme partenaire de
+	 *  reproduction. La reproduction sexuée exige un tel partenaire à portée. */
+	// Héritage du génome + helpers de mutation/taille : factorisés dans Agent (C3).
+
+	/** Partenaire de reproduction le plus proche (Mouton vivant dans reproRadius),
+	 *  ou null si aucun. La reproduction sexuée l'exige ; il fournit aussi la
+	 *  moitié des traits hérités par l'agneau. Le regroupement nocturne maintient
+	 *  le troupeau assez serré pour éviter l'extinction par dispersion. */
+	private Mouton findReproPartner() {
+		Mouton best = null;
+		double bestD = Double.MAX_VALUE;
+		for (Mouton other : world.moutons) {
+			if (other == this || !other._alive) continue;
+			double d = world.distance(other.x, other.y, x, y);
+			if (d <= ui.SimulationConfig.getInstance().reproRadius && d < bestD) { bestD = d; best = other; }
+		}
+		return best;
 	}
 
 
@@ -290,10 +608,53 @@ public class Mouton extends Agent {
 	 *  ne cherche de l'herbe que s'il n'est ni en feu, ni poursuivi, ni dans
 	 *  l'eau. Affamé = énergie sous 50% du max ET de l'herbe en vue. */
 	public AgentState decideState(Percept p) {
+		// Une carcasse de congénère = signal de prédateur récent → zone à éviter.
+		if (p.carcassVisible() && isMoutonCarcass(p)
+				&& !memory.contains(agents.ai.MemoryKind.DANGER, p.carcassX, p.carcassY))
+			memory.remember(agents.ai.MemoryKind.DANGER, p.carcassX, p.carcassY);
+
 		if (isOnFire())          return AgentState.ON_FIRE;
+		if (p.lavaVisible())     return AgentState.FLEE_LAVA;   // L2 — la lave tue au contact : priorité absolue
 		if (p.predatorVisible()) return AgentState.FLEE_PREDATOR;
+		if (alertTtl > 0)        return AgentState.FLEE_PREDATOR;   // alerté par le troupeau
+		// Sous-projet C : méfiance olfactive graduée, SOUS la fuite visuelle.
+		// Trace de loup forte/fraîche → fuite ; faible → méfiance. scentDangerKinds
+		// = {LOUP} (Task 1) → l'odeur humaine n'arrive jamais ici (berger).
+		ui.SimulationConfig cfgScent = ui.SimulationConfig.getInstance();
+		// Sous-projet D : le seuil de fuite est modulé par le trait — TÉMÉRAIRE le
+		// relève (reste WARY plus longtemps), PRUDENT l'abaisse (fuit plus tôt),
+		// NEUTRE → facteur 1.0 (identique à avant D).
+		double scentFleeThreshold = cfgScent.scentFleeIntensity
+				* character.boldnessFactor(cfgScent.fleeBoldnessDelta);
+		if (p.scentDangerDetected() && p.scentDangerIntensity >= scentFleeThreshold)
+			return AgentState.FLEE_PREDATOR;
+		if (p.scentDangerDetected() || scentCommitLeft > 0)
+			return AgentState.WARY;
 		if (p.inWater)           return AgentState.SEEK_LAND;
+		// Suivi du parent (§ 10.3) : un agneau colle à son parent, priorité sur
+		// l'herbe / le troupeau / l'errance (mais après la survie ci-dessus).
+		if (shouldFollowParent()) return AgentState.FOLLOW_PARENT;
+		// Sous-projet E : un mouton adulte en rut (automne) cherche un partenaire à
+		// l'odeur — au-dessus du regroupement/broutage, sous la survie (ci-dessus).
+		if (wantsToSeekMate(p)) return AgentState.SEEK_MATE;
+		// Un mouton AFFAMÉ broute en priorité, MÊME la nuit : la faim prime sur le
+		// regroupement. Sinon le troupeau s'agglutine sur une case sans herbe et meurt
+		// de faim au milieu de la nourriture (les agents se bloquant entre eux, le
+		// troupeau ne pouvait plus se disperser vers l'herbe). Seul un mouton rassasié
+		// (≥ 60 %) se regroupe la nuit pour la sécurité du nombre.
+		if (energie < energieMAX * 0.6 && p.grassVisible()) return AgentState.SEEK_FOOD;
+		// La nuit : le troupeau se regroupe (sécurité du nombre) s'il voit des
+		// congénères — SAUF un SOLITAIRE qui évite le troupeau (§ 7.2). Sinon, un
+		// mouton ISOLÉ qui connaît un lieu sûr y rentre (§ 9).
+		if (world.getJour() == 0) {
+			if (character.social() != agents.ai.SocialTrait.SOLITARY
+					&& agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons) >= 0)
+				return AgentState.HERD;
+			if (nearestSafePlace() != null)
+				return AgentState.HOME;
+		}
 		if (energie < energieMAX * 0.5 && p.grassVisible()) return AgentState.SEEK_FOOD;
+		if (energie >= energieMAX)                          return AgentState.REST;   // repu → rumination
 		return AgentState.WANDER;
 	}
 
@@ -302,25 +663,114 @@ public class Mouton extends Agent {
 	public MoveConstraints applyState(AgentState s, Percept p) {
 		// par défaut, on remet les flags legacy à 0 ; chaque état réactive ce qu'il faut
 		fuite = 0; earthSearch = 0;
+		// Hors de l'état de ralliement (HOME), on purge le record de distance du
+		// homing : sinon un record périmé empêcherait un futur retour au bercail.
+		if (s != AgentState.HOME) mem.resetHoming();
 		switch (s) {
-			case ON_FIRE:
-				// fuit vers l'eau si vue, sinon continue tout droit (pas de demi-tour)
-				if (p.waterDir >= 0) _orient = p.waterDir;
+			case FOLLOW_PARENT:
+				// L'agneau marche vers son parent (§ 10.3) — la proximité déclenche
+				// aussi l'éducation (Phase F).
+				if (parent != null) {
+					int pdir = agents.ai.Perception.dirToCell(this, world, parent.x, parent.y);
+					if (pdir >= 0) _orient = pdir;
+				}
+				vitesse = vmarche;
+				return MoveConstraints.landBound();
+			case HOME:
+				// Rentre vers le lieu sûr connu le plus proche (§ 9).
+				int[] safe = nearestSafePlace();
+				if (safe != null) {
+					boolean inSight = world.distance(x, y, safe[0], safe[1]) <= vision;
+					if (inSight) {
+						// En vue : ralliement à terre AVEC garde-fou de progrès
+						// (Agent.homingStepToward, partagé avec le loup). Si le lieu
+						// sûr est muré (eau/forêt) et qu'aucun pas ne rapproche, le
+						// homing CÈDE LA PRIORITÉ à l'errance au lieu de figer le
+						// mouton au pied de l'obstacle (même cause racine que le loup).
+						int dir = homingStepToward(safe[0], safe[1], vision, p);
+						if (dir >= 0) { _orient = dir; }
+						else { return wanderMove(); }
+					} else {
+						// Hors vue : navigation à l'estime, perturbée par l'axe
+						// Orientation (directionSens, feature § 9).
+						directionSens = agents.ai.Perception.navigate(this, world,
+								safe[0], safe[1], genome.orientationErrorProb(), EVO_RNG);
+						if (directionSens >= 0) _orient = directionSens;
+					}
+				}
+				vitesse = vmarche;
+				return MoveConstraints.landBound();
+			case HERD:
+				// Regroupement nocturne : marche vers le centre de masse du troupeau.
+				int gdir = agents.ai.Perception.dirToFlockCentroid(this, world, world.moutons);
+				if (gdir >= 0) _orient = gdir;
+				vitesse = vmarche;
+				return MoveConstraints.landBound();
+			case REST:
+				// Repu : rumination sur place. On annule le déplacement de ce tick
+				// (le coût d'énergie de postMove s'applique quand même — l'économie
+				// métabolique réelle est laissée à un futur modèle d'activité).
+				wantsToMove = false;
+				vitesse = vmarche;
+				return MoveConstraints.landBound();
+			case ON_FIRE: {
+				// Rejoint la case d'EAU la plus proche (l'eau éteint le feu) avec sortie
+				// GARANTIE des pièges concaves : pursuitStep (direct → BFS vision →
+				// replanif élargie si bloqué dans un U). Fallback steer si aucune eau à portée.
 				vitesse = vcourse;
-				return MoveConstraints.amphibious();
+				int[] water = nearestWaterCell(escapeRadius());
+				if (water[0] >= 0) return pursuitStep(p, water, vision);
+				if (p.waterDir >= 0) _orient = p.waterDir;
+				return steerAroundObstacles(p, true, vision);
+			}
+			case FLEE_LAVA:
+				// L2 — fuit à l'opposé de la lave la plus proche, au sprint. Le
+				// mouton craint l'eau : il reste à terre (allowSwim=false). Anti-revisite
+				// → il longe proprement la lave/les arbres sans se piéger dans une poche.
+				if (p.lavaDir >= 0) _orient = AgentState.opposite(p.lavaDir);
+				fuite = 1;                       // supprime le Broute pendant la fuite
+				vitesse = vcourse;
+				return steerAroundObstacles(p, false, vision);  // contourne arbres/lave (anti-revisite), eau interdite
 			case FLEE_PREDATOR:
-				// Fuit à l'opposé du prédateur MAIS évite de plonger dans l'eau
-				// (mortelle pour le mouton) si une issue terrestre existe.
-				_orient = chooseFleeOrient(p);
+				if (p.predatorVisible()) {
+					// Voit le loup : fuit à l'opposé (en évitant l'eau si possible),
+					// donne l'alarme au troupeau proche ET mémorise la zone de danger.
+					_orient = chooseFleeOrient(p);
+					alertNeighbours();
+					recordNearestPredatorAsDanger();
+				} else if (alertDir >= 0) {
+					// Alerté sans voir le loup : fuit dans le cap du troupeau.
+					_orient = alertDir;
+				} else {
+					// Sous-projet C : fuite déclenchée par l'ODEUR (ni vue, ni alerte).
+					// Engage un cap opposé à la trace qq ticks (anti-oscillation) ;
+					// le timer décroît dans step().
+					if (scentCommitLeft <= 0 && p.scentDangerDir >= 0) {
+						scentFleeDir = AgentState.opposite(p.scentDangerDir);
+						scentCommitLeft = ui.SimulationConfig.getInstance().scentCommitTicks;
+					}
+					if (scentFleeDir >= 0) _orient = scentFleeDir;
+				}
 				fuite = 1;                       // supprime le Broute pendant la fuite
 				vitesse = vcourse;               // correctif : toujours vcourse à la fuite
 				return MoveConstraints.amphibious();
 			case SEEK_LAND:
-				// va vers la terre si vue, sinon continue tout droit jusqu'à la percevoir
-				if (p.landDir >= 0) _orient = p.landDir;
+				// Par défaut : terre la plus proche. MAIS s'il a fui (danger mémorisé),
+				// il ne doit pas regagner la rive du PRÉDATEUR : on vise alors une rive
+				// EN VUE la plus éloignée du danger (aucun prédateur n'est visible ici,
+				// sinon on serait en FLEE_PREDATOR). Anti « demi-tour vers le loup » en
+				// pleine traversée de rivière.
+				int seekDir = p.landDir;
+				int[] danger = memory.nearest(agents.ai.MemoryKind.DANGER, x, y,
+						(a, b, c, d) -> world.distance(a, b, c, d));
+				if (danger != null) {
+					int safeBank = bankDirAwayFromDanger(danger[0], danger[1]);
+					if (safeBank >= 0) seekDir = safeBank;
+				}
+				if (seekDir >= 0) _orient = seekDir;
 				earthSearch = 1;
 				vitesse = vcourse;   // ralenti dans l'eau par swimFactor (postMove)
-				return MoveConstraints.amphibious();
+				return dodgeObstacles(true);   // contourne les arbres vers la terre
 			case SEEK_FOOD:
 				// affamé : se dirige vers l'herbe la plus proche en vue (plus
 				// d'errance aléatoire). L'herbe est sur terre → landBound. Le
@@ -328,14 +778,48 @@ public class Mouton extends Agent {
 				if (p.grassDir >= 0) _orient = p.grassDir;
 				vitesse = vmarche;
 				return MoveConstraints.landBound();
+			case WARY: {
+				// Méfiance : s'écarte de la trace au PAS, sans brouter, en gardant un
+				// cap engagé (anti-oscillation ; décru en step()). steerAroundObstacles
+				// est anti-revisite → pas d'aller-retour.
+				if (scentCommitLeft <= 0 && p.scentDangerDir >= 0) {
+					scentFleeDir = AgentState.opposite(p.scentDangerDir);
+					scentCommitLeft = ui.SimulationConfig.getInstance().scentCommitTicks;
+				}
+				if (scentFleeDir >= 0) _orient = scentFleeDir;
+				vitesse = vmarche;
+				// Ne broute pas : isGrazingNow() est gardé par `fuite == 0`, donc on
+				// pose `fuite = 1` (même suppresseur que la fuite) ; postMove ne broutera
+				// pas. m = 0 efface tout drapeau de broutage résiduel.
+				fuite = 1;
+				m = 0;
+				return steerAroundObstacles(p, false, vision);
+			}
+			case SEEK_MATE:
+				vitesse = vmarche;
+				return seekMateStep(p, vision);
 			case WANDER:
 			default:
-				if (Math.random() < 0.2) {
-					_orient = (Math.random() > 0.5) ? (_orient + 1) % 4 : (_orient - 1 + 4) % 4;
-				}
-				vitesse = vmarche;
-				return MoveConstraints.landBound();
+				return wanderMove();
 		}
+	}
+
+	/**
+	 * Mouvement d'errance (état WANDER, et repli de HOME quand le lieu sûr est
+	 * inatteignable) : évite une zone de danger connue / une case déjà visitée
+	 * (mémoires sémantique § 5.3 et spatiale), sinon tourne un peu au hasard. Le
+	 * pas réel (et le contournement d'obstacle) est laissé au repli de Locomotion.
+	 */
+	private MoveConstraints wanderMove() {
+		if (dangerAhead()) {
+			_orient = (_orient + 1) % 4;
+		} else if (aheadVisitedRecently()) {
+			_orient = (_orient + 1) % 4;
+		} else if (Math.random() < 0.2) {
+			_orient = (Math.random() > 0.5) ? (_orient + 1) % 4 : (_orient - 1 + 4) % 4;
+		}
+		vitesse = vmarche;
+		return MoveConstraints.landBound();
 	}
 
 	/**
@@ -364,6 +848,29 @@ public class Mouton extends Agent {
 		int tx = ((x + orientDx(orient)) % w + w) % w;
 		int ty = ((y + orientDy(orient)) % h + h) % h;
 		return world.getCellHeight(tx, ty) >= 0;
+	}
+
+	/**
+	 * Direction cardinale d'une RIVE EN VUE (terre ferme atteignable tout droit dans
+	 * la portée de vision) la PLUS ÉLOIGNÉE de ({@code dgX},{@code dgY}) — pour qu'un
+	 * mouton sortant de l'eau après une fuite ne regagne pas la rive du prédateur.
+	 * Renvoie -1 si aucune rive n'est en vue (→ l'appelant garde la terre la plus proche).
+	 */
+	private int bankDirAwayFromDanger(int dgX, int dgY) {
+		int w = world.getWidth(), h = world.getHeight();
+		int best = -1; double bestD = -1;
+		for (int d = 0; d < 4; d++) {
+			if (!waterCrossable(d, vision)) continue;          // pas de rive en vue par là
+			int lx = x, ly = y;                                // cellule de débarquement = 1re terre le long de d
+			for (int r = 1; r <= vision; r++) {
+				int cx = ((x + orientDx(d) * r) % w + w) % w;
+				int cy = ((y + orientDy(d) * r) % h + h) % h;
+				if (world.getCellHeight(cx, cy) >= 0) { lx = cx; ly = cy; break; }
+			}
+			double dist = world.distance(lx, ly, dgX, dgY);
+			if (dist > bestD) { bestD = dist; best = d; }
+		}
+		return best;
 	}
 
 	public void displayUniqueObject(World myWorld, GL2 gl, int offsetCA_x, int offsetCA_y, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight)

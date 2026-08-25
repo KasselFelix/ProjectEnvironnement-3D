@@ -20,54 +20,78 @@ import graphics.Landscape;
  *   - PARAMS : sous-ensemble des sliders de SimulationConfig modifiables à
  *     chaud (proba reproduction, vision, vitesses, CA, durée jour). Les
  *     densités initiales et le paysage ne sont pas exposés ici (déjà figés).
- *   - AGENTS : liste read-only des loups et moutons vivants avec leur état.
+ *   - AGENTS : liste depliable par espece (loups/moutons/humains/ours), via AgentRoster.
  *
  * Tout est en ASCII (GLUT bitmap ne supporte que ça de manière fiable).
  */
 public class InGameMenu {
 
-    public enum Tab { AGENTS, AIDE, PARAMS }
+    public enum Tab { AGENTS, AIDE, HOTBAR, PARAMS }
 
-    /** Raccourcis affichés dans l'onglet AIDE (label → action). */
-    private static final String[][] SHORTCUTS = {
-        {"m",       "Ouvrir/fermer ce menu"},
-        {"clic in", "Re-focaliser le menu"},
-        {"clic out","Defocaliser (clavier au jeu)"},
-        {"Tab",     "Changer d'onglet"},
-        {"Enter",   "(AGENTS) Suivre l'agent"},
-        {"f",       "Toggle camera-follow"},
-        {"c",       "Piloter agent (3D: ZS av, QD strafe, AE tourne)"},
-        {"g",       "Afficher/masquer graphe pop"},
-        {"v",       "Vue de dessus / 3D"},
-        {"o",       "Objets on/off"},
-        {"l",       "Eclairage"},
-        {"p",       "Eclairage haute qualite"},
-        {"n",       "Basculer Jour <-> Nuit"},
-        {"r",       "Eruption volcanique"},
-        {"1 / 2",   "+/- amplitude altitude"},
-        {"ZQSD",    "Naviguer (ou fleches)"},
-        {"Space",   "Camera vers le bas (long)"},
-        {"Shift",   "Camera vers le haut (long)"},
-        {"LMB clic","Picking / Focus menu / Onglet"},
-        {"LMB 2x",  "(menu AGENTS) Suivre l'agent"},
-        {"LMB drag","Rotation 3D / Pan / Orbit"},
-        {"RMB drag","Pan 3D (sort du suivi)"},
-        {"Molette", "Zoom (menu : scroll lignes)"},
-        {"F12",     "Capture ecran -> screenshots/"},
-        {"Esc",     "Quitter"},
-    };
+    // --- Onglet RACCOURCIS (AIDE) : modèle de lignes interactif (rebind clavier) ---
+    private enum SLKind { HEADER, ACTION, RESET, INFO }
+    private static final class ShortLine {
+        final SLKind kind; final input.GameAction action; final String text;
+        ShortLine(SLKind k, input.GameAction a, String t) { kind = k; action = a; text = t; }
+        boolean selectable() { return kind == SLKind.ACTION || kind == SLKind.RESET; }
+    }
+    private final java.util.List<ShortLine> shortLines = new java.util.ArrayList<>();
+
+    private void buildShortLines() {
+        shortLines.clear();
+        input.KeyContext[] order = { input.KeyContext.GLOBAL, input.KeyContext.SIMULATION, input.KeyContext.PILOTAGE };
+        String[] titles = { "GLOBAL", "SIMULATION (hors pilotage)", "PILOTAGE (agent controle)" };
+        for (int c = 0; c < order.length; c++) {
+            shortLines.add(new ShortLine(SLKind.HEADER, null, titles[c]));
+            for (input.GameAction a : input.GameAction.values())
+                if (a.context == order[c]) shortLines.add(new ShortLine(SLKind.ACTION, a, null));
+        }
+        shortLines.add(new ShortLine(SLKind.RESET, null, "Retablir les defauts"));
+        shortLines.add(new ShortLine(SLKind.INFO, null, "--- Souris (non modifiable) ---"));
+        shortLines.add(new ShortLine(SLKind.INFO, null, "Clic gauche: selection / drag camera"));
+        shortLines.add(new ShortLine(SLKind.INFO, null, "Clic droit: pan ; Molette: zoom/scroll"));
+        shortLines.add(new ShortLine(SLKind.INFO, null, "Echap: plein ecran (reserve)"));
+    }
+
+    /** Place selectedIndex sur la 1ère ligne AIDE sélectionnable (1ère ACTION). */
+    private void firstAideSelectable() {
+        for (int i = 0; i < shortLines.size(); i++) {
+            if (shortLines.get(i).selectable()) { selectedIndex = i; return; }
+        }
+        selectedIndex = 0;
+    }
+
+    // --- État de capture de touche (rebind) + avertissements ---
+    private input.GameAction captureAction = null;
+    private String bindWarning = null;
+    private long bindWarningUntilMs = 0;
+    private void warn(String m) { bindWarning = m; bindWarningUntilMs = System.currentTimeMillis() + 3000; }
+    public boolean isCapturing() { return captureAction != null; }
 
     private static class Row {
         final String label;
         final Supplier<String> value;
         final Runnable dec;
         final Runnable inc;
+        String help = "";   // V7 — bulle d'aide affichée pour la ligne sélectionnée
         Row(String label, Supplier<String> value, Runnable dec, Runnable inc) {
             this.label = label;
             this.value = value;
             this.dec   = dec;
             this.inc   = inc;
         }
+        Row withHelp(String h) { this.help = h; return this; }
+    }
+
+    /** En-tête de section dans l'onglet PARAMS (non sélectionnable, dec/inc no-op). */
+    private static class Section extends Row {
+        Section(String title) { super(title, () -> "", () -> {}, () -> {}); }
+    }
+
+    /** Vrai si l'index PARAMS i est hors-borne OU un en-tête de section (= non
+     *  actionnable par dec/inc). */
+    private boolean isParamHeader(int i) {
+        return i < 0 || i >= paramRows.size() || paramRows.get(i) instanceof Section;
     }
 
     private static final int ROW_HEIGHT = 16;
@@ -77,89 +101,61 @@ public class InGameMenu {
     private final SimulationConfig config;
     private final WorldOfCells world;
     private final Landscape landscape;       // pour pousser la sélection d'agent (Phase 8)
+    private final input.Settings settings;   // bindings clavier (onglet RACCOURCIS)
     private final List<Row> paramRows = new ArrayList<>();
     private boolean open = false;
     private Tab activeTab = Tab.AGENTS;
     private int selectedIndex = 0;
     private int agentScroll = 0;
 
-    public InGameMenu(SimulationConfig config, WorldOfCells world, Landscape landscape) {
+    /** Depliage par espece, indexe par AgentRoster.Species.ordinal() (L,M,H,O). */
+    private final boolean[] expanded = new boolean[AgentRoster.Species.values().length];
+
+    public InGameMenu(SimulationConfig config, WorldOfCells world, Landscape landscape, input.Settings settings) {
         this.config = config;
         this.world  = world;
         this.landscape = landscape;
+        this.settings = settings;
         buildParamRows();
+        buildShortLines();
     }
 
     private void buildParamRows() {
-        paramRows.add(intRow("Vision loup",       () -> config.loupVision,     v -> config.loupVision     = v, 1, 50, 1));
-        paramRows.add(intRow("EnergieMax loup",   () -> config.loupEnergieMax, v -> config.loupEnergieMax = v, 50, 5000, 50));
-        paramRows.add(doubleRow("Prepro loup",     () -> config.loupPrepro,
-                v -> config.loupPrepro = v, 0.0, 0.05, 0.0005, "%.4f"));
-        paramRows.add(doubleRow("Age max loup",    () -> config.loupMaxAgeDays,
-                v -> config.loupMaxAgeDays = v, 0.0, 200.0, 1.0, "%.1f"));
-        paramRows.add(intRow("Vision mouton",     () -> config.moutonVision, v -> config.moutonVision = v, 1, 50, 1));
-        paramRows.add(doubleRow("EnergieMax mouton", () -> config.moutonEnergieMax,
-                v -> config.moutonEnergieMax = v, 50.0, 5000.0, 50.0, "%.0f"));
-        paramRows.add(doubleRow("Prepro mouton",    () -> config.moutonPrepro,
-                v -> config.moutonPrepro = v, 0.0, 0.2, 0.005, "%.3f"));
-        paramRows.add(doubleRow("Age max mouton",  () -> config.moutonMaxAgeDays,
-                v -> config.moutonMaxAgeDays = v, 0.0, 200.0, 1.0, "%.1f"));
-        paramRows.add(intRow("Simulation Hz",     () -> config.simulationHz,   v -> config.simulationHz   = v, 10, 60, 5));
-        paramRows.add(intRow("Distance de vue",   () -> config.viewDistanceCells, v -> config.viewDistanceCells = v, 10, 200, 5));
-        paramRows.add(doubleRow("Sensibilite souris", () -> (double) config.mouseLookSensitivity,
-                v -> config.mouseLookSensitivity = (float) v, 0.02, 0.40, 0.02, "%.2f"));
-        paramRows.add(doubleRow("Cycle complet (sec)", () -> (double) config.cycleTotalSec,
-                v -> config.cycleTotalSec = (float) v, 60.0, 1200.0, 30.0, "%.0f"));
-        paramRows.add(doubleRow("Ratio jour/cycle", () -> (double) config.dayFractionRatio,
-                v -> config.dayFractionRatio = (float) v, 0.30, 0.80, 0.05, "%.2f"));
-        paramRows.add(doubleRow("Croissance foret", () -> config.forestProbApparition,
-                v -> config.forestProbApparition = v, 0.0, 0.001, 0.000002, "%.6f"));
-        paramRows.add(doubleRow("Croissance arbre", () -> config.treeGrowthDays,
-                v -> config.treeGrowthDays = v, 1.0, 100.0, 1.0, "%.0f"));
-        paramRows.add(doubleRow("Croissance herbe", () -> config.herbeProbApparition,
-                v -> config.herbeProbApparition = v, 0.0, 0.001, 0.000002, "%.6f"));
-        paramRows.add(doubleRow("Proba eruption",  () -> config.laveProbErruption,
-                v -> config.laveProbErruption = v, 0.0, 0.05, 0.0005, "%.4f"));
-        paramRows.add(doubleRow("Profondeur cratere", () -> (double) config.craterHoleDepth,
-                v -> config.craterHoleDepth = (float) v, 0.5, 8.0, 0.5, "%.1f"));
-        paramRows.add(doubleRow("Duree eruption (sec)", () -> (double) config.eruptionDurationSec,
-                v -> config.eruptionDurationSec = (float) v, 1.0, 30.0, 0.5, "%.1f"));
-        paramRows.add(doubleRow("Solidification (sec)", () -> (double) config.solidifyEndSec,
-                v -> config.solidifyEndSec = (float) v, 0.5, 30.0, 0.5, "%.1f"));
-        paramRows.add(doubleRow("Drainage (sec)",   () -> (double) config.subsidenceIntervalSec,
-                v -> config.subsidenceIntervalSec = (float) v, 0.05, 2.0, 0.05, "%.2f"));
-        paramRows.add(doubleRow("Viscosite lave",   () -> (double) config.lavaViscosity,
-                v -> config.lavaViscosity = (float) v, 1.0, 2.0, 0.1, "%.1f"));
-        paramRows.add(doubleRow("Puissance min eruption", () -> (double) config.erruptionPowerMin,
-                v -> config.erruptionPowerMin = (float) v, 0.1, 5.0, 0.1, "%.2f"));
-        paramRows.add(doubleRow("Puissance max eruption", () -> (double) config.erruptionPowerMax,
-                v -> config.erruptionPowerMax = (float) v, 0.5, 10.0, 0.1, "%.2f"));
+        // Source UNIQUE : le registre déclaratif (ParamRegistry), filtré aux
+        // paramètres modifiables à chaud (BOTH) ou propres à l'in-game
+        // (INGAME_ONLY). On insère un en-tête de Section au changement de
+        // section pour lever l'ambiguïté des libellés courts ("Vision" sous
+        // "BIOLOGIE - Loup" vs "BIOLOGIE - Mouton").
+        String currentSection = null;
+        for (ParamRegistry.ParamDef d : ParamRegistry.build(config)) {
+            if (d.visibility == ParamRegistry.Visibility.LAUNCH_ONLY) continue;
+            if (!d.section.equals(currentSection)) {
+                paramRows.add(new Section(d.section));
+                currentSection = d.section;
+            }
+            paramRows.add(new Row(d.label, d.value, d.dec, d.inc).withHelp(d.help));
+        }
+        // Le curseur démarre sur la 1ère ligne réelle (pas un en-tête).
+        firstParamSelectable();
     }
 
-    private interface IntGet { int get(); }
-    private interface IntSet { void set(int v); }
-    private interface DblGet { double get(); }
-    private interface DblSet { void set(double v); }
-
-    private Row intRow(String label, IntGet get, IntSet set, int min, int max, int step) {
-        return new Row(label,
-                () -> Integer.toString(get.get()),
-                () -> set.set(Math.max(min, get.get() - step)),
-                () -> set.set(Math.min(max, get.get() + step)));
+    /** Place selectedIndex sur la 1ère ligne PARAMS non-en-tête. */
+    private void firstParamSelectable() {
+        for (int i = 0; i < paramRows.size(); i++) {
+            if (!(paramRows.get(i) instanceof Section)) { selectedIndex = i; return; }
+        }
+        selectedIndex = 0;
     }
-    private Row doubleRow(String label, DblGet get, DblSet set, double min, double max, double step, String fmt) {
-        return new Row(label,
-                () -> String.format(fmt, get.get()),
-                () -> set.set(Math.max(min, round(get.get() - step))),
-                () -> set.set(Math.min(max, round(get.get() + step))));
-    }
-    private static double round(double v) { return Math.round(v * 1_000_000.0) / 1_000_000.0; }
 
     public void toggle() { open = !open; }
     public boolean isOpen() { return open; }
 
     /** Ouvre le menu sur un onglet donné (utilisé au démarrage de la simulation). */
-    public void openOnTab(Tab tab) { open = true; activeTab = tab; }
+    public void openOnTab(Tab tab) {
+        open = true; activeTab = tab;
+        if (tab == Tab.PARAMS) firstParamSelectable();
+        else if (tab == Tab.AIDE) firstAideSelectable();
+    }
 
     /**
      * True si le point écran (x, y) tombe dans le rectangle du panneau menu.
@@ -174,7 +170,7 @@ public class InGameMenu {
     }
 
     /** Constantes géométriques utilisées par draw() ET par les helpers de hit-test. */
-    private static final int TAB_W       = 78;
+    private static final int TAB_W       = 58;  // 4 onglets : 4*58 + 3*4 + 8 = 244 <= 260
     private static final int TAB_SPACING = 4;
     private static final int TAB_TOP_OFFSET = 8;  // py + 8 dans draw()
     private static final int TAB_HEIGHT  = 20;
@@ -183,7 +179,17 @@ public class InGameMenu {
     // Le highlight rect ligne 0 est dessiné à (rowY-11, ROW_HEIGHT-2) =
     // (y+9, 14). Donc la zone cliquable de la ligne 0 commence à y+9.
     private static final int AGENT_LIST_TOP_OFFSET = 9;
-    private static final int VISIBLE_AGENT_ROWS = 22;
+    private static final int VISIBLE_AGENT_ROWS = 22;   // capacite par defaut (avant 1er rendu)
+
+    /** Nb de lignes agent reellement affichables : calcule depuis la hauteur du
+     *  panneau a chaque frame dans drawAgents, puis lu par rowAt / clampAgentSelection
+     *  / moveSelection. Remplace le cap fixe pour exploiter toute la hauteur du panneau. */
+    private int agentRowCapacity = VISIBLE_AGENT_ROWS;
+
+    /** Dernier agent suivi pour lequel on a auto-deplie son espece. Permet de ne
+     *  deplier qu'au CHANGEMENT de suivi : sinon l'utilisateur ne pourrait jamais
+     *  replier l'espece de l'agent qu'il suit (re-depliee a chaque frame). */
+    private Agent lastAutoExpanded = null;
 
     /**
      * Retourne l'onglet sous le point écran (x, y), ou null si pas sur un
@@ -195,8 +201,8 @@ public class InGameMenu {
         int py = HEADER_HEIGHT;
         int tabsY = py + TAB_TOP_OFFSET;
         if (y < tabsY || y >= tabsY + TAB_HEIGHT) return null;
-        // Trois onglets : AGENTS, AIDE (RACCOURCIS), PARAMS dans cet ordre.
-        Tab[] order = { Tab.AGENTS, Tab.AIDE, Tab.PARAMS };
+        // Quatre onglets : AGENTS, AIDE (TOUCHES), HOTBAR, PARAMS dans cet ordre.
+        Tab[] order = { Tab.AGENTS, Tab.AIDE, Tab.HOTBAR, Tab.PARAMS };
         for (int i = 0; i < order.length; i++) {
             int tx = px + 8 + i * (TAB_W + TAB_SPACING);
             if (x >= tx && x < tx + TAB_W) return order[i];
@@ -215,71 +221,107 @@ public class InGameMenu {
         activeTab = tab;
         selectedIndex = 0;
         agentScroll = 0;
+        if (activeTab == Tab.PARAMS) firstParamSelectable();
+        else if (activeTab == Tab.AIDE) firstAideSelectable();
         return true;
     }
 
     /**
-     * Si l'onglet actif est AGENTS et que (x, y) tombe sur une ligne d'agent
-     * visible, retourne l'index global (loups puis moutons concaténés).
-     * Sinon retourne -1.
+     * Si l'onglet AGENTS est actif et que (x,y) tombe sur une ligne VISIBLE du
+     * panneau, retourne son index dans les lignes visibles ; sinon -1.
      */
-    public int agentRowAt(int viewportWidth, int viewportHeight, int x, int y) {
+    public int rowAt(int viewportWidth, int viewportHeight, int x, int y) {
         if (!open || activeTab != Tab.AGENTS) return -1;
         int px = viewportWidth - PANEL_WIDTH;
         if (x < px || x >= viewportWidth) return -1;
-
-        int py = HEADER_HEIGHT;
-        int contentY = py + CONTENT_TOP_OFFSET;
-        int firstRowY = contentY + AGENT_LIST_TOP_OFFSET;  // sous le header "Loups: X..."
+        int contentY = HEADER_HEIGHT + CONTENT_TOP_OFFSET;
+        int firstRowY = contentY + AGENT_LIST_TOP_OFFSET;
         if (y < firstRowY) return -1;
         int visualRow = (y - firstRowY) / ROW_HEIGHT;
-        if (visualRow < 0 || visualRow >= VISIBLE_AGENT_ROWS) return -1;
-        int globalIdx = agentScroll + visualRow;
-        int total = world.loups.size() + world.moutons.size();
-        if (globalIdx >= total) return -1;
-        return globalIdx;
+        if (visualRow < 0 || visualRow >= agentRowCapacity) return -1;
+        int idx = agentScroll + visualRow;
+        int rowCount = new AgentRoster(world).visibleRows(expanded).size();
+        if (idx >= rowCount) return -1;
+        return idx;
     }
 
-    /**
-     * Sélectionne l'agent à l'index global donné et le pousse à Landscape pour
-     * déclencher le suivi caméra. Appelé par double-clic sur ligne agent.
-     * Retourne true si un agent a été effectivement sélectionné.
-     */
-    public boolean selectAgentByGlobalIndex(int globalIdx) {
-        if (globalIdx < 0) return false;
-        int loupsCount = world.loups.size();
-        Agent picked;
-        int displayIndex;
-        if (globalIdx < loupsCount) {
-            picked = world.loups.get(globalIdx);
-            displayIndex = globalIdx;
-        } else {
-            int mi = globalIdx - loupsCount;
-            if (mi >= world.moutons.size()) return false;
-            picked = world.moutons.get(mi);
-            displayIndex = mi;
-        }
-        landscape.setSelectedAgent(picked, displayIndex);
-        selectedIndex = globalIdx;
+    /** Vrai si la ligne visible a cet index est une entete d'espece. */
+    public boolean isHeaderRow(int rowIndex) {
+        java.util.List<AgentRoster.Row> rows = new AgentRoster(world).visibleRows(expanded);
+        return rowIndex >= 0 && rowIndex < rows.size() && rows.get(rowIndex).header;
+    }
+
+    /** Deplie/replie l'espece de la ligne entete a cet index (no-op si espece vide
+     *  ou si la ligne n'est pas une entete). Met aussi le curseur sur cette ligne. */
+    public void toggleHeader(int rowIndex) {
+        AgentRoster roster = new AgentRoster(world);
+        java.util.List<AgentRoster.Row> rows = roster.visibleRows(expanded);
+        if (rowIndex < 0 || rowIndex >= rows.size()) return;
+        AgentRoster.Row row = rows.get(rowIndex);
+        if (!row.header) return;
+        if (roster.groups().get(row.sp.ordinal()).agents.size() == 0) return;
+        expanded[row.sp.ordinal()] = !expanded[row.sp.ordinal()];
+        selectedIndex = rowIndex;
+    }
+
+    /** Suit l'agent de la ligne (non-entete) a cet index. Retourne true si un agent
+     *  a ete selectionne (-> l'appelant active le suivi camera et defocalise). */
+    public boolean followAgentRow(int rowIndex) {
+        java.util.List<AgentRoster.Row> rows = new AgentRoster(world).visibleRows(expanded);
+        if (rowIndex < 0 || rowIndex >= rows.size()) return false;
+        AgentRoster.Row row = rows.get(rowIndex);
+        if (row.header || row.agent == null) return false;
+        landscape.setSelectedAgent(row.agent, row.localIndex);
+        selectedIndex = rowIndex;
         return true;
+    }
+
+    /** Synchro vue 3D -> menu : deplie l'espece de l'agent et place le curseur sur
+     *  sa ligne. Appele apres un picking dans la scene. */
+    public void syncToAgent(Agent a) {
+        if (a == null) return;
+        AgentRoster.Species sp = AgentRoster.speciesOf(a);
+        if (sp == null) return;
+        expanded[sp.ordinal()] = true;
+        java.util.List<AgentRoster.Row> rows = new AgentRoster(world).visibleRows(expanded);
+        for (int i = 0; i < rows.size(); i++) {
+            if (rows.get(i).agent == a) { selectedIndex = i; break; }
+        }
     }
 
     /** Retourne true si la touche a été consommée par le menu. */
     public boolean handleKey(int keyCode) {
         if (!open) return false;
+        // Capture de touche en cours (rebind) : la prochaine frappe devient le
+        // nouveau binding (ESC annule). Consomme TOUT avant le switch normal.
+        if (captureAction != null) {
+            if (keyCode == com.jogamp.newt.event.KeyEvent.VK_ESCAPE) { captureAction = null; return true; }
+            try {
+                input.GameAction evicted = settings.bindings().rebindPrimary(captureAction, keyCode);
+                if (evicted != null) warn("Touche retiree de : " + evicted.label);
+                settings.save();
+            } catch (IllegalArgumentException reserved) {
+                warn("Touche reservee");
+            }
+            captureAction = null;
+            return true;
+        }
         switch (keyCode) {
             case KeyEvent.VK_M:
                 open = false;
                 return true;
             case KeyEvent.VK_TAB:
-                // Cycle AGENTS -> RACCOURCIS (AIDE) -> PARAMS -> AGENTS.
+                // Cycle AGENTS -> TOUCHES (AIDE) -> HOTBAR -> PARAMS -> AGENTS.
                 // AGENTS en premier car le plus consulté ; PARAMS en dernier
                 // pour éviter les manipulations involontaires des sliders.
                 if (activeTab == Tab.AGENTS)       activeTab = Tab.AIDE;
-                else if (activeTab == Tab.AIDE)    activeTab = Tab.PARAMS;
+                else if (activeTab == Tab.AIDE)    activeTab = Tab.HOTBAR;
+                else if (activeTab == Tab.HOTBAR)  activeTab = Tab.PARAMS;
                 else                                activeTab = Tab.AGENTS;
                 selectedIndex = 0;
                 agentScroll = 0;
+                if (activeTab == Tab.PARAMS) firstParamSelectable();
+                else if (activeTab == Tab.AIDE) firstAideSelectable();
                 return true;
             case KeyEvent.VK_UP:
             case KeyEvent.VK_Z:     moveSelection(-1); return true;
@@ -287,39 +329,50 @@ public class InGameMenu {
             case KeyEvent.VK_S:     moveSelection(+1); return true;
             case KeyEvent.VK_LEFT:
             case KeyEvent.VK_Q:
-                if (activeTab == Tab.PARAMS && !paramRows.isEmpty()) {
+                if (activeTab == Tab.HOTBAR) { cycleSlot(false); return true; }
+                if (activeTab == Tab.PARAMS && !isParamHeader(selectedIndex)) {
                     paramRows.get(selectedIndex).dec.run();
                     world.applyLiveConfig();
                 }
                 return true;
             case KeyEvent.VK_RIGHT:
             case KeyEvent.VK_D:
-                if (activeTab == Tab.PARAMS && !paramRows.isEmpty()) {
+                if (activeTab == Tab.HOTBAR) { cycleSlot(true); return true; }
+                if (activeTab == Tab.PARAMS && !isParamHeader(selectedIndex)) {
                     paramRows.get(selectedIndex).inc.run();
                     world.applyLiveConfig();
                 }
                 return true;
             case KeyEvent.VK_ENTER:
-                // Sur l'onglet AGENTS : sélectionne l'agent surligné pour le suivre.
                 if (activeTab == Tab.AGENTS) {
-                    int n = world.loups.size() + world.moutons.size();
-                    if (n > 0 && selectedIndex < n) {
-                        Agent picked;
-                        int displayIndex;
-                        if (selectedIndex < world.loups.size()) {
-                            picked = world.loups.get(selectedIndex);
-                            displayIndex = selectedIndex;
-                        } else {
-                            int mi = selectedIndex - world.loups.size();
-                            picked = world.moutons.get(mi);
-                            displayIndex = mi;
-                        }
-                        landscape.setSelectedAgent(picked, displayIndex);
+                    if (isHeaderRow(selectedIndex)) {
+                        toggleHeader(selectedIndex);
+                    } else {
+                        followAgentRow(selectedIndex);
+                    }
+                } else if (activeTab == Tab.AIDE && selectedIndex >= 0 && selectedIndex < shortLines.size()) {
+                    ShortLine sl = shortLines.get(selectedIndex);
+                    if (sl.kind == SLKind.RESET) {
+                        settings.bindings().resetDefaults(); settings.save(); warn("Defauts retablis");
+                    } else if (sl.kind == SLKind.ACTION) {
+                        captureAction = sl.action;
                     }
                 }
                 return true;
             default: return false;
         }
+    }
+
+    /** Onglet HOTBAR : cycle l'action assignee au slot selectionne (selectedIndex
+     *  = 0..8) a travers TOUTES les HotbarAction (VIDE incluse), pour l'espece
+     *  editee, et persiste immediatement. */
+    private void cycleSlot(boolean forward) {
+        objects.Species sp = landscape.hotbarEditSpecies();
+        input.HotbarAction[] all = input.HotbarAction.values();
+        input.HotbarAction cur = settings.hotbar().slot(sp, selectedIndex);
+        int i = (cur.ordinal() + (forward ? 1 : all.length - 1)) % all.length;
+        settings.hotbar().assign(sp, selectedIndex, all[i]);
+        settings.save();
     }
 
     /**
@@ -332,13 +385,34 @@ public class InGameMenu {
     }
 
     private void moveSelection(int delta) {
-        int n = (activeTab == Tab.PARAMS) ? paramRows.size() : (world.loups.size() + world.moutons.size());
+        int n;
+        if (activeTab == Tab.PARAMS)        n = paramRows.size();
+        else if (activeTab == Tab.AGENTS)   n = new AgentRoster(world).visibleRows(expanded).size();
+        else if (activeTab == Tab.AIDE)     n = shortLines.size();
+        else if (activeTab == Tab.HOTBAR)   n = input.HotbarLayout.SLOTS;
+        else                                 n = 0;
         if (n == 0) return;
         selectedIndex = (selectedIndex + delta + n) % n;
+        // PARAMS : on saute les en-têtes de section dans le sens du déplacement.
+        // Borne de sécurité n pour éviter une boucle infinie si tout est en-tête.
+        if (activeTab == Tab.PARAMS) {
+            int dir = (delta == 0) ? 1 : Integer.signum(delta);
+            for (int step = 0; step < n && paramRows.get(selectedIndex) instanceof Section; step++) {
+                selectedIndex = (selectedIndex + dir + n) % n;
+            }
+        }
+        // AIDE : on saute les lignes non sélectionnables (HEADER / INFO).
+        if (activeTab == Tab.AIDE) {
+            int dir = (delta == 0) ? 1 : Integer.signum(delta);
+            for (int step = 0; step < n && !shortLines.get(selectedIndex).selectable(); step++) {
+                selectedIndex = (selectedIndex + dir + n) % n;
+            }
+        }
         // Petit auto-scroll dans la vue Agents.
         if (activeTab == Tab.AGENTS) {
             if (selectedIndex < agentScroll) agentScroll = selectedIndex;
-            if (selectedIndex >= agentScroll + 22) agentScroll = selectedIndex - 21;
+            if (selectedIndex >= agentScroll + agentRowCapacity)
+                agentScroll = selectedIndex - agentRowCapacity + 1;
         }
     }
 
@@ -364,12 +438,14 @@ public class InGameMenu {
         ui.drawQuad(gl, px, py, pw, ph, 0.08f, 0.10f, 0.14f, bgAlpha);
         ui.drawBorder(gl, px, py, pw, ph, 0.4f, 0.5f, 0.65f, 1f);
 
-        // Onglets (largeur ajustée pour faire tenir 3 onglets dans le panneau).
-        int tabW = 78;
-        int tabSpacing = 4;
-        drawTab(gl, ui, px + 8,                              py + 8, tabW, 20, "AGENTS",    activeTab == Tab.AGENTS, viewportHeight);
-        drawTab(gl, ui, px + 8 + tabW + tabSpacing,          py + 8, tabW, 20, "RACCOURCIS",activeTab == Tab.AIDE,   viewportHeight);
-        drawTab(gl, ui, px + 8 + 2*(tabW + tabSpacing),      py + 8, tabW, 20, "PARAMS",    activeTab == Tab.PARAMS, viewportHeight);
+        // Onglets : largeur (TAB_W) et espacement (TAB_SPACING) partagés avec
+        // tabAt() pour que les positions à l'écran correspondent exactement aux
+        // zones cliquables. AIDE est affiché « TOUCHES » (place serrée à 4 onglets).
+        Tab[] tabOrder = { Tab.AGENTS, Tab.AIDE, Tab.HOTBAR, Tab.PARAMS };
+        String[] tabLabels = { "AGENTS", "TOUCHES", "HOTBAR", "PARAMS" };
+        for (int i = 0; i < tabOrder.length; i++)
+            drawTab(gl, ui, px + 8 + i * (TAB_W + TAB_SPACING), py + 8, TAB_W, TAB_HEIGHT,
+                    tabLabels[i], activeTab == tabOrder[i], viewportHeight);
 
         // Hint clavier — déplacé juste sous les onglets pour être visible.
         ui.drawText(gl, px + 10, py + 46, viewportHeight,
@@ -382,16 +458,78 @@ public class InGameMenu {
             case PARAMS: drawParams(gl, ui, px, contentY, pw, contentH, viewportHeight); break;
             case AGENTS: drawAgents(gl, ui, px, contentY, pw, contentH, viewportHeight); break;
             case AIDE:   drawShortcuts(gl, ui, px, contentY, pw, contentH, viewportHeight); break;
+            case HOTBAR: drawHotbar(gl, ui, px, contentY, pw, contentH, viewportHeight); break;
         }
     }
 
     private void drawShortcuts(GL2 gl, UiRenderer ui, int px, int y, int pw, int ph, int viewportHeight) {
         int rowY = y + ROW_HEIGHT;
-        for (String[] s : SHORTCUTS) {
-            ui.drawText(gl, px + 10, rowY, viewportHeight, "[" + s[0] + "]", 1f, 0.9f, 0.5f);
-            ui.drawText(gl, px + 80, rowY, viewportHeight, s[1], 0.9f, 0.9f, 0.9f);
+        for (int i = 0; i < shortLines.size(); i++) {
+            ShortLine sl = shortLines.get(i);
+            switch (sl.kind) {
+                case HEADER:
+                    ui.drawText(gl, px + 8, rowY, viewportHeight, sl.text, 0.5f, 0.85f, 1f);
+                    break;
+                case INFO:
+                    ui.drawText(gl, px + 10, rowY, viewportHeight, sl.text, 0.55f, 0.55f, 0.55f);
+                    break;
+                case RESET: {
+                    boolean sel = (i == selectedIndex);
+                    if (sel) ui.drawQuad(gl, px + 4, rowY - 12, pw - 8, ROW_HEIGHT - 2, 0.20f, 0.30f, 0.45f, 1f);
+                    ui.drawText(gl, px + 10, rowY, viewportHeight, sl.text, 0.95f, 0.85f, 0.6f);
+                    break;
+                }
+                case ACTION: {
+                    boolean sel = (i == selectedIndex);
+                    if (sel) ui.drawQuad(gl, px + 4, rowY - 12, pw - 8, ROW_HEIGHT - 2, 0.20f, 0.30f, 0.45f, 1f);
+                    ui.drawText(gl, px + 10, rowY, viewportHeight, sl.action.label, 0.95f, 0.95f, 0.95f);
+                    String right; float rr, rg, rb;
+                    if (sl.action == captureAction) {
+                        right = "Appuyez sur une touche..."; rr = 1f; rg = 0.9f; rb = 0.3f;
+                    } else {
+                        java.util.List<Integer> ks = settings.bindings().keysOf(sl.action);
+                        if (ks == null || ks.isEmpty()) { right = "[---]"; rr = 0.5f; rg = 0.5f; rb = 0.5f; }
+                        else {
+                            StringBuilder sb = new StringBuilder("[").append(input.KeyNames.name(ks.get(0))).append("]");
+                            for (int a = 1; a < ks.size(); a++) sb.append(" (+ ").append(input.KeyNames.name(ks.get(a))).append(")");
+                            right = sb.toString(); rr = 1f; rg = 1f; rb = 0.7f;
+                        }
+                    }
+                    int textW = ui.textWidth(right);
+                    ui.drawText(gl, px + pw - 12 - textW, rowY, viewportHeight, right, rr, rg, rb);
+                    break;
+                }
+            }
             rowY += ROW_HEIGHT;
         }
+        // Avertissement (conflit / reservee / reset) en bas du panneau, en orange.
+        if (bindWarning != null && System.currentTimeMillis() < bindWarningUntilMs) {
+            int wy = y + ph - 8;
+            ui.drawQuad(gl, px + 4, wy - 12, pw - 8, 16, 0.10f, 0.13f, 0.18f, 0.95f);
+            ui.drawText(gl, px + 8, wy, viewportHeight, bindWarning, 0.95f, 0.55f, 0.2f);
+        }
+    }
+
+    private void drawHotbar(GL2 gl, UiRenderer ui, int px, int y, int pw, int ph, int viewportHeight) {
+        objects.Species sp = landscape.hotbarEditSpecies();
+        int rowY = y + ROW_HEIGHT;
+        ui.drawText(gl, px + 8, rowY, viewportHeight, "Espece : " + sp.name(), 0.5f, 0.85f, 1f);
+        rowY += ROW_HEIGHT;
+        for (int i = 0; i < input.HotbarLayout.SLOTS; i++) {
+            boolean sel = (i == selectedIndex);
+            if (sel) ui.drawQuad(gl, px + 4, rowY - 12, pw - 8, ROW_HEIGHT - 2, 0.20f, 0.30f, 0.45f, 1f);
+            input.HotbarAction act = settings.hotbar().slot(sp, i);
+            ui.drawText(gl, px + 10, rowY, viewportHeight, "Slot " + (i + 1), 0.95f, 0.95f, 0.95f);
+            String name = (act == input.HotbarAction.VIDE) ? "(vide)"
+                    : act.label + (act.isImplemented() ? "" : " (a venir)");
+            String val = (sel ? "< " : "  ") + name + (sel ? " >" : "  ");
+            int tw = ui.textWidth(val);
+            ui.drawText(gl, px + pw - 12 - tw, rowY, viewportHeight, val, 1f, 1f, 0.7f);
+            rowY += ROW_HEIGHT;
+        }
+        // aide bas de panneau
+        ui.drawText(gl, px + 8, y + ph - 8, viewportHeight,
+                "Fleches: changer l'action du slot", 0.7f, 0.85f, 1f);
     }
 
     private void drawTab(GL2 gl, UiRenderer ui, int x, int y, int w, int h, String label,
@@ -411,6 +549,12 @@ public class InGameMenu {
         int rowY = y + ROW_HEIGHT;
         for (int i = 0; i < paramRows.size(); i++) {
             Row r = paramRows.get(i);
+            if (r instanceof Section) {
+                // En-tête de section : libellé coloré, pas de valeur ni highlight.
+                ui.drawText(gl, px + 8, rowY, viewportHeight, r.label, 0.5f, 0.85f, 1f);
+                rowY += ROW_HEIGHT;
+                continue;
+            }
             boolean sel = (i == selectedIndex);
             if (sel) {
                 ui.drawQuad(gl, px + 4, rowY - 12, pw - 8, ROW_HEIGHT - 2,
@@ -423,44 +567,73 @@ public class InGameMenu {
                     val, 1f, 1f, 0.7f);
             rowY += ROW_HEIGHT;
         }
+        // V7 — bulle d'aide de la ligne sélectionnée, en bas du panneau.
+        if (selectedIndex >= 0 && selectedIndex < paramRows.size()) {
+            String help = paramRows.get(selectedIndex).help;
+            if (help != null && !help.isEmpty()) {
+                int hy = y + ph - 8;
+                ui.drawQuad(gl, px + 4, hy - 12, pw - 8, 16, 0.10f, 0.13f, 0.18f, 0.95f);
+                ui.drawText(gl, px + 8, hy, viewportHeight, help, 0.7f, 0.85f, 1f);
+            }
+        }
     }
 
     private void drawAgents(GL2 gl, UiRenderer ui, int px, int y, int pw, int ph, int viewportHeight) {
-        ui.drawText(gl, px + 8, y, viewportHeight,
-                "Loups: " + world.loups.size() + "   Moutons: " + world.moutons.size(),
-                0.75f, 0.85f, 1f);
+        AgentRoster roster = new AgentRoster(world);
+        autoExpandFollowed(roster);
+        java.util.List<AgentRoster.Row> rows = roster.visibleRows(expanded);
+        // Capacite = ce que la hauteur du panneau permet (1ere ligne a y+20).
+        agentRowCapacity = Math.max(1, (ph - 20) / ROW_HEIGHT);
+        clampAgentSelection(rows.size());
+
+        int visible = Math.min(agentRowCapacity, Math.max(0, rows.size() - agentScroll));
         int rowY = y + 20;
-        int totalAgents = world.loups.size() + world.moutons.size();
-        int visibleRows = Math.min(22, totalAgents - agentScroll);
-        for (int row = 0; row < visibleRows; row++) {
-            int i = agentScroll + row;
-            String label;
-            int agentEnergie;
-            int ax, ay;
-            double ageDays;
-            if (i < world.loups.size()) {
-                Loup l = world.loups.get(i);
-                label = "L#" + i;
-                agentEnergie = l.getEnergie();
-                ax = l.x; ay = l.y;
-                ageDays = l.getAgeDays();
-            } else {
-                int mi = i - world.loups.size();
-                Mouton m = world.moutons.get(mi);
-                label = "M#" + mi;
-                agentEnergie = (int) m.getEnergie();
-                ax = m.x; ay = m.y;
-                ageDays = m.getAgeDays();
-            }
-            boolean sel = (i == selectedIndex);
+        for (int vr = 0; vr < visible; vr++) {
+            int idx = agentScroll + vr;
+            AgentRoster.Row row = rows.get(idx);
+            AgentRoster.Group g = roster.groups().get(row.sp.ordinal());
+            boolean sel = (idx == selectedIndex);
             if (sel) {
                 ui.drawQuad(gl, px + 4, rowY - 11, pw - 8, ROW_HEIGHT - 2,
                         0.20f, 0.30f, 0.45f, 1f);
             }
-            String line = String.format("%-5s E:%-4d (%3d,%3d) %4.1fj",
-                    label, agentEnergie, ax, ay, ageDays);
-            ui.drawText(gl, px + 10, rowY, viewportHeight, line, 0.95f, 0.95f, 0.95f);
+            if (row.header) {
+                int count = g.agents.size();
+                String marker = (count == 0) ? "[ ]" : (expanded[row.sp.ordinal()] ? "[-]" : "[+]");
+                String line = marker + " " + g.name + " " + count;
+                if (count == 0) ui.drawText(gl, px + 8, rowY, viewportHeight, line, 0.5f, 0.5f, 0.5f);
+                else            ui.drawText(gl, px + 8, rowY, viewportHeight, line, g.color[0], g.color[1], g.color[2]);
+            } else {
+                Agent a = row.agent;
+                String line = String.format(" %c#%d E%d/%d (%d,%d) %s",
+                        g.prefix, row.localIndex, AgentRoster.energy(a), AgentRoster.maxEnergy(a),
+                        a.x, a.y, a.getCurrentBehavior());
+                ui.drawText(gl, px + 14, rowY, viewportHeight, line, g.color[0], g.color[1], g.color[2]);
+            }
             rowY += ROW_HEIGHT;
         }
+    }
+
+    /** Deplie l'espece de l'agent suivi UNE SEULE FOIS, au changement de suivi
+     *  (on voit qui on suit, sans empecher l'utilisateur de replier ensuite). */
+    private void autoExpandFollowed(AgentRoster roster) {
+        Agent sel = landscape.getSelectedAgent();
+        if (sel == lastAutoExpanded) return;   // deja traite -> laisse l'utilisateur replier
+        lastAutoExpanded = sel;
+        if (sel == null) return;
+        AgentRoster.Species sp = AgentRoster.speciesOf(sel);
+        if (sp != null) expanded[sp.ordinal()] = true;
+    }
+
+    /** Reclampe curseur + scroll sur le nb de lignes visibles (qui change quand on
+     *  deplie/replie ou que la population evolue). */
+    private void clampAgentSelection(int rowCount) {
+        if (rowCount <= 0) { selectedIndex = 0; agentScroll = 0; return; }
+        if (selectedIndex >= rowCount) selectedIndex = rowCount - 1;
+        if (selectedIndex < 0) selectedIndex = 0;
+        int maxScroll = Math.max(0, rowCount - agentRowCapacity);
+        if (agentScroll > maxScroll) agentScroll = maxScroll;
+        if (selectedIndex < agentScroll) agentScroll = selectedIndex;
+        else if (selectedIndex >= agentScroll + agentRowCapacity) agentScroll = selectedIndex - agentRowCapacity + 1;
     }
 }

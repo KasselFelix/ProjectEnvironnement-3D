@@ -1,5 +1,8 @@
 package agents;
 
+import agents.ai.AgentState;
+import agents.ai.MemoryKind;
+import agents.ai.Percept;
 import landscapegenerator.PerlinNoiseLandscapeGenerator;
 import org.junit.jupiter.api.Test;
 import worlds.WorldOfCells;
@@ -30,6 +33,7 @@ class LoupTest {
         world.nbloups = 0;
         world.nbmoutons = 0;
         world.nbhumains = 0;
+        world.nbours = 0;
         double[][] landscape = PerlinNoiseLandscapeGenerator
                 .generatePerlinNoiseLandscape(DX_VIEW, DY_VIEW, 0.7, 0.4, 4);
         world.init(DX, DY, landscape);
@@ -37,20 +41,27 @@ class LoupTest {
     }
 
     /**
-     * C3 — Rééquilibrage du gain énergétique à la prédation.
+     * Task 3 (carcasse) — La mise à mort ne donne plus de gain instantané.
      *
-     * Attendu après correctif : un loup à énergie 100 qui mange un mouton
-     * doit voir son énergie passer à 100 + energieD/2 = 600, et non à
-     * energieD = 1000 (restauration totale, code original).
+     * Avant Task 3 : un loup qui tuait un mouton gagnait immédiatement
+     * energieD/2 énergie (correctif C3). Désormais, la proie laisse une
+     * carcasse sur la cellule du kill et le loup n'obtient aucun bonus
+     * immédiat d'énergie. Le gain passera par des bouchées successives (Task 5).
      *
      * Robustesse : on place un mouton à la position du loup ET sur les 4
      * cases cardinales adjacentes, donc quel que soit le mouvement du loup
-     * dans son step(), il finira sur une case contenant un mouton et le mangera.
+     * dans son step(), il finira sur une case contenant un mouton et le tuera.
      */
     @Test
     void loupGainEnergieBornéEnMangeantMouton() {
         WorldOfCells world = buildWorld();
         int cx = 10, cy = 10;
+        // Terrain aplani autour du loup : sans cela, le bruit de Perlin peut
+        // rendre la case cardinale visée impassable → le fallback aléatoire de
+        // Locomotion.move envoie le loup sur une DIAGONALE non couverte par un
+        // mouton → aucune prédation → test flaky. Sur terre plate, le loup se
+        // déplace toujours sur une case cardinale (toutes occupées par un mouton).
+        AgentTestSupport.flattenLandArea(world, cx, cy, 3);
 
         Loup loup = new Loup(cx, cy, world);
         loup.energie = 100;
@@ -78,19 +89,172 @@ class LoupTest {
         int dead = 0;
         for (Mouton m : moutons) if (!m._alive) dead++;
         assertEquals(1, dead,
-                "Exactement un mouton doit être mangé par step (boucle break dans Loup.step).");
+                "Exactement un mouton doit être tué par step (boucle break dans Loup.step).");
 
-        // Après prédation, le bloc "mise à jour énergie" de Loup.step() décrémente
-        // energie de 1 à 4 unités (base + eau + descente). On vérifie donc la borne :
-        // C3 impose un gain plafonné à energieD/2, donc energie ≤ 100 + energieD/2,
-        // alors que le code original ramène energie à energieD = 1000.
-        int gainMaxAttendu = 100 + loup.energieD / 2;
-        assertTrue(loup.energie > 100,
-                "Le loup a dû gagner de l'énergie en mangeant le mouton (energie > 100 initial).");
-        assertTrue(loup.energie <= gainMaxAttendu,
-                "C3 : gain plafonné à energieD/2. Attendu energie ≤ "
-                + gainMaxAttendu + ", observé " + loup.energie
-                + " (probable restauration totale à energieD du code original).");
+        // Task 3 : plus de gain instantané au kill. L'énergie ne doit pas
+        // bondir de +energieD/2 — la petite décroissance métabolique du step
+        // est autorisée (quelques unités), mais pas un grand bond.
+        // 100 (énergie initiale) + 5 : marge pour le coût métabolique d'un step (~1-2 unités).
+        // Tout bond > 5 trahirait un gain instantané résiduel (l'ancien +energieD/2).
+        assertTrue(loup.energie <= 105,
+                "Task 3 : pas de gain instantané au kill. energie observée : " + loup.energie
+                + " (attendu ≤ 105 = 100 + marge métabolique).");
+
+        // La carcasse est créée sur la cellule du kill.
+        assertEquals(1, world.carcasses.size(),
+                "Une carcasse doit être créée sur la cellule du kill.");
+        assertEquals(objects.Species.MOUTON, world.carcasses.get(0).source,
+                "La carcasse doit être de source MOUTON.");
+    }
+
+    /**
+     * L1 — Mémoire de chasse (MemoryKind.HUNTING). Après une prédation réussie,
+     * le loup mémorise la cellule comme zone de chasse fertile : la prochaine
+     * fois qu'il sera affamé sans proie en vue, il pourra y retourner (homing,
+     * cf. loupRetourneVersSaZoneDeChasse).
+     */
+    @Test
+    void loupMemoriseSaZoneDeChasse() {
+        WorldOfCells world = buildWorld();
+        int cx = 10, cy = 10;
+        AgentTestSupport.flattenLandArea(world, cx, cy, 3);
+
+        Loup loup = new Loup(cx, cy, world);
+        loup.energie = 100;   // affamé (< energieD * HUNGER_RATIO)
+        world.loups.add(loup);
+        world.agents.add(loup);
+        world.uniqueDynamicObjects.add(loup);
+
+        int[][] positions = {
+                {cx, cy}, {cx, cy - 1}, {cx, cy + 1}, {cx - 1, cy}, {cx + 1, cy}
+        };
+        for (int[] pos : positions) {
+            Mouton mt = new Mouton(pos[0], pos[1], world);
+            world.moutons.add(mt);
+            world.agents.add(mt);
+            world.uniqueDynamicObjects.add(mt);
+        }
+
+        loup.step();
+
+        assertTrue(loup.memory.contains(MemoryKind.HUNTING, loup.x, loup.y),
+                "Après une prédation réussie, le loup mémorise sa position comme "
+                + "zone de chasse (HUNTING) en (" + loup.x + "," + loup.y + ").");
+    }
+
+    /**
+     * L1 — Retour vers la zone de chasse mémorisée. Un loup affamé qui ne voit
+     * aucune proie mais connaît une zone HUNTING s'oriente vers elle (homing)
+     * plutôt que de balayer en spirale aveugle.
+     */
+    @Test
+    void loupRetourneVersSaZoneDeChasse() {
+        WorldOfCells world = buildWorld();
+        int cx = 25, cy = 25;
+        AgentTestSupport.flattenLandArea(world, cx, cy, 12);
+
+        Loup loup = new Loup(cx, cy, world);
+        loup.energie = 100;   // affamé → state SEARCH si aucune proie visible
+        world.loups.add(loup);
+        world.agents.add(loup);
+        world.uniqueDynamicObjects.add(loup);
+
+        // Zone de chasse mémorisée plein EST (cap 1), à distance > vision.
+        int hx = (cx + loup.vision + 4) % world.getWidth(), hy = cy;
+        loup.memory.remember(MemoryKind.HUNTING, hx, hy);
+
+        // Aucun mouton dans le monde → pas de proie en vue.
+        Percept p = agents.ai.Perception.sense(loup, world, world.humains, world.moutons);
+        AgentState s = loup.decideState(p);
+        assertEquals(AgentState.SEARCH, s, "loup affamé sans proie visible → SEARCH");
+        loup.applyState(s, p);
+        assertEquals(1, loup._orient,
+                "le loup oriente vers la zone HUNTING mémorisée à l'EST (cap 1), "
+                + "observé cap " + loup._orient);
+    }
+
+    /**
+     * L2 — Fuite active de la lave : un loup qui voit une coulée de lave dans sa
+     * vision adopte l'état FLEE_LAVA et s'oriente à l'opposé (la lave plein EST →
+     * fuite plein OUEST, cap 3), au-dessus de toute autre priorité hors feu.
+     */
+    @Test
+    void loupFuitLaLaveAVue() {
+        WorldOfCells world = buildWorld();
+        int cx = 25, cy = 25;
+        AgentTestSupport.flattenLandArea(world, cx, cy, 12);
+
+        Loup loup = new Loup(cx, cy, world);
+        loup.energie = 100;   // affamé : sans lave il chasserait/chercherait
+        world.loups.add(loup);
+        world.agents.add(loup);
+        world.uniqueDynamicObjects.add(loup);
+
+        // Coulée de lave plein EST, dans la vision (vision=10) : on empile une
+        // couche LAVA (state>0) → getLavaCAValue renverra >0 sur cette cellule.
+        int lx = (cx + 4) % world.getWidth();
+        world.pushLayer(lx, cy, objects.Material.LAVA, 1f, 1);
+
+        Percept p = agents.ai.Perception.sense(loup, world, world.humains, world.moutons);
+        assertTrue(p.lavaVisible(), "la lave doit être perçue dans la vision");
+        AgentState s = loup.decideState(p);
+        assertEquals(AgentState.FLEE_LAVA, s, "lave en vue → FLEE_LAVA (priorité haute)");
+        loup.applyState(s, p);
+        assertEquals(3, loup._orient,
+                "le loup fuit à l'opposé de la lave EST → cap OUEST (3), observé " + loup._orient);
+    }
+
+    /**
+     * L1 — Isolement de meute : un loup seul est isolé ; un loup avec un
+     * congénère proche ne l'est pas. Alimente l'émergence du caractère social.
+     */
+    @Test
+    void loupIsolementDeMeute() {
+        WorldOfCells world = buildWorld();
+        Loup solo = new Loup(20, 20, world);
+        world.loups.add(solo);
+        world.agents.add(solo);
+        world.uniqueDynamicObjects.add(solo);
+        assertTrue(solo.isIsolated(), "un loup seul dans le monde est isolé");
+
+        Loup mate = new Loup(22, 20, world);   // à 2 cases (< PACK_NEAR_RADIUS)
+        world.loups.add(mate);
+        world.agents.add(mate);
+        world.uniqueDynamicObjects.add(mate);
+        assertFalse(solo.isIsolated(), "un loup avec un congénère proche n'est pas isolé");
+    }
+
+    /**
+     * L1 — Cohésion de meute : un loup repu (state WANDER) NON solitaire qui voit
+     * un congénère dérive vers lui (le barycentre de meute), au lieu de flâner au
+     * hasard. Le congénère est placé plein SUD pour un cap déterministe.
+     */
+    @Test
+    void loupRepuRejointLaMeute() {
+        WorldOfCells world = buildWorld();
+        int cx = 25, cy = 25;
+        AgentTestSupport.flattenLandArea(world, cx, cy, 12);
+
+        Loup loup = new Loup(cx, cy, world);
+        // Ni affamé (> HUNGER_RATIO×energieD) ni plein (< energieD) → state WANDER,
+        // qui déclenche lazyWander → packCohesion.
+        loup.energie = (int) (loup.energieD * 0.9);
+        world.loups.add(loup);
+        world.agents.add(loup);
+        world.uniqueDynamicObjects.add(loup);
+
+        Loup mate = new Loup(cx, cy + 4, world);   // plein SUD, dans la vision
+        world.loups.add(mate);
+        world.agents.add(mate);
+        world.uniqueDynamicObjects.add(mate);
+
+        Percept p = agents.ai.Perception.sense(loup, world, world.humains, world.moutons);
+        AgentState s = loup.decideState(p);
+        assertEquals(AgentState.WANDER, s, "loup repu sans proie ni danger → WANDER");
+        loup.applyState(s, p);
+        assertEquals(2, loup._orient,
+                "le loup repu (caractère non solitaire) s'oriente vers la meute au SUD "
+                + "(cap 2), observé cap " + loup._orient);
     }
 
     /**

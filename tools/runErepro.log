@@ -1,0 +1,50 @@
+Map : 23-612-10317-167959-820734576, persistence : 1.0, octave : 3.0, fact : 0.05333333333333334, periods : (8,8)
+# dim=150 saison=3j an=57600 ticks | loups=0 moutons=28 ours=0 humains=0
+# loupAge=15 moutonAge=24 loupE=1500 moutonE=2500
+day	season	loups	moutons	ours	humains
+0	SPRING	0	28	0	0	Em=2500	El=0	herbe=43%	moutonSurHerbe=25%	{Errance=28}
+1	SPRING	0	28	0	0	Em=1858	El=0	herbe=71%	moutonSurHerbe=57%	{Cherche terre=1, Regroupement=27}
+2	SPRING	0	27	0	0	Em=1884	El=0	herbe=73%	moutonSurHerbe=30%	{Regroupement=27}
+3	SUMMER	0	27	0	0	Em=1885	El=0	herbe=74%	moutonSurHerbe=41%	{Broute=2, Regroupement=25}
+4	SUMMER	0	27	0	0	Em=1879	El=0	herbe=72%	moutonSurHerbe=26%	{Regroupement=27}
+5	SUMMER	0	27	0	0	Em=1865	El=0	herbe=73%	moutonSurHerbe=19%	{Regroupement=27}
+6	AUTUMN	0	27	0	0	Em=1865	El=0	herbe=69%	moutonSurHerbe=15%	{Broute=2, Regroupement=25}
+7	AUTUMN	0	27	0	0	Em=1528	El=0	herbe=71%	moutonSurHerbe=0%	{Cherche partenaire=23, Cherche terre=2, Regroupement=2}
+8	AUTUMN	0	25	0	0	Em=1101	El=0	herbe=67%	moutonSurHerbe=4%	{Broute=1, Cherche partenaire=17, Cherche terre=5, Regroupement=2}
+9	WINTER	0	25	0	0	Em=1066	El=0	herbe=67%	moutonSurHerbe=4%	{Broute=2, Cherche herbe=6, Cherche partenaire=14, Cherche terre=1, Errance=1, Regroupement=1}
+10	WINTER	0	23	0	0	Em=1502	El=0	herbe=51%	moutonSurHerbe=4%	{Broute=2, Cherche herbe=7, Errance=2, Regroupement=12}
+11	WINTER	0	20	0	0	Em=1706	El=0	herbe=55%	moutonSurHerbe=10%	{Cherche herbe=3, Errance=2, Regroupement=15}
+12	SPRING	0	19	0	0	Em=1662	El=0	herbe=57%	moutonSurHerbe=5%	{Broute=2, Cherche herbe=3, Errance=1, Regroupement=13}
+13	SPRING	0	13	0	0	Em=1848	El=0	herbe=66%	moutonSurHerbe=15%	{Broute=1, Errance=2, Regroupement=10}
+14	SPRING	0	13	0	0	Em=1868	El=0	herbe=70%	moutonSurHerbe=23%	{Broute=3, Errance=1, Regroupement=9}
+15	SUMMER	0	13	0	0	Em=1835	El=0	herbe=70%	moutonSurHerbe=15%	{Broute=1, Errance=2, Regroupement=10}
+16	SUMMER	0	13	0	0	Em=1887	El=0	herbe=73%	moutonSurHerbe=31%	{Broute=1, Errance=1, Regroupement=11}
+17	SUMMER	0	13	0	0	Em=1882	El=0	herbe=74%	moutonSurHerbe=54%	{Errance=1, Regroupement=12}
+18	AUTUMN	0	13	0	0	Em=1883	El=0	herbe=75%	moutonSurHerbe=15%	{Errance=1, Regroupement=12}
+19	AUTUMN	0	31	0	0	Em=846	El=0	herbe=63%	moutonSurHerbe=6%	{Broute=7, Cherche partenaire=12, Errance=11, Regroupement=1}
+20	AUTUMN	0	23	0	0	Em=462	El=0	herbe=61%	moutonSurHerbe=4%	{Broute=2, Cherche herbe=8, Cherche partenaire=2, Cherche terre=2, Errance=8, Regroupement=1}
+21	WINTER	0	21	0	0	Em=418	El=0	herbe=59%	moutonSurHerbe=5%	{Broute=3, Cherche herbe=4, Cherche partenaire=3, Errance=10, Regroupement=1}
+22	WINTER	0	17	0	0	Em=643	El=0	herbe=54%	moutonSurHerbe=0%	{Broute=2, Cherche herbe=5, Errance=6, Regroupement=4}
+23	WINTER	0	16	0	0	Em=678	El=0	herbe=50%	moutonSurHerbe=0%	{Broute=3, Cherche herbe=4, Regroupement=9}
+24	SPRING	0	15	0	0	Em=659	El=0	herbe=48%	moutonSurHerbe=0%	{Broute=2, Cherche herbe=6, Errance=3, Regroupement=4}
+25	SPRING	0	9	0	0	Em=240	El=0	herbe=63%	moutonSurHerbe=11%	{Broute=3, Cherche herbe=3, Errance=2, Regroupement=1}
+26	SPRING	0	9	0	0	Em=232	El=0	herbe=70%	moutonSurHerbe=0%	{Broute=5, Cherche herbe=2, Regroupement=2}
+27	SUMMER	0	9	0	0	Em=207	El=0	herbe=70%	moutonSurHerbe=22%	{Broute=4, Cherche herbe=2, Errance=3}
+28	SUMMER	0	8	0	0	Em=281	El=0	herbe=66%	moutonSurHerbe=38%	{Broute=1, Errance=4, Regroupement=3}
+29	SUMMER	0	8	0	0	Em=251	El=0	herbe=65%	moutonSurHerbe=13%	{Broute=2, Cherche herbe=3, Errance=1, Regroupement=2}
+30	AUTUMN	0	6	0	0	Em=220	El=0	herbe=68%	moutonSurHerbe=33%	{Broute=3, Cherche herbe=1, Errance=2}
+31	AUTUMN	0	3	0	0	Em=167	El=0	herbe=66%	moutonSurHerbe=0%	{Broute=1, Cherche herbe=2}
+32	AUTUMN	0	1	0	0	Em=302	El=0	herbe=64%	moutonSurHerbe=0%	{Broute=1}
+33	WINTER	0	1	0	0	Em=301	El=0	herbe=65%	moutonSurHerbe=0%	{Broute=1}
+34	WINTER	0	1	0	0	Em=303	El=0	herbe=62%	moutonSurHerbe=0%	{Broute=1}
+35	WINTER	0	1	0	0	Em=302	El=0	herbe=65%	moutonSurHerbe=0%	{Broute=1}
+36	SPRING	0	1	0	0	Em=300	El=0	herbe=60%	moutonSurHerbe=100%	{Errance=1}
+# --- BILAN ---
+# loups   min=0  EXTINCT à un moment
+# moutons min=1  jamais éteint
+  [rut MOUTON] j6 : 27 moutons
+  [rut LOUP]   j9 : 0 loups
+  [rut MOUTON] j18 : 13 moutons
+  [rut LOUP]   j21 : 0 loups
+  [rut MOUTON] j30 : 6 moutons
+  [rut LOUP]   j33 : 0 loups

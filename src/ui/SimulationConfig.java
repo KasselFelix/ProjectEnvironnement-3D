@@ -37,6 +37,10 @@ public class SimulationConfig {
     public int nbLoups    = 5;
     public int nbMoutons  = 20;
     public int nbHumains  = 2;
+    /** L4 — super-prédateurs (ours) qui chassent les loups. */
+    public int nbOurs     = 1;
+    /** L3 — 0 = berger (garde le troupeau), 1 = chasseur (pourchasse les loups). */
+    public int humainChasseur = 0;
 
     // ───── Biologie Loup (cf. Loup.java — défauts synchronisés avec le code) ─
     public int    loupVision      = 12;
@@ -49,6 +53,29 @@ public class SimulationConfig {
     /** Fraction de la vitesse terrestre conservée dans l'eau. Le loup nage bien
      *  (0.6) — bien mieux que le mouton. Plage utile [0.2, 1.0]. */
     public double loupSwimFactor  = 0.6;
+    /** Multiplicateur du coût métabolique du loup (énergie perdue par pas). < 1 → le
+     *  loup brûle moins → a faim moins souvent → chasse/tue moins souvent (clé de
+     *  l'équilibre proie-prédateur). 1.0 = comportement historique. Plage utile [0.1, 1.5]. */
+    public double loupMetabolicFactor = 1.0;
+    /** Idem pour l'ours (super-prédateur). 1.0 = comportement historique. */
+    public double oursMetabolicFactor = 1.0;
+    /** Seuil de faim du loup (fraction de energieD) : SOUS ce niveau il chasse, TUE
+     *  (au-dessus il est repu et ne tue pas — il en laisse pour la meute), sprinte et
+     *  rallie la meute. TOUS les comportements de faim lisent ce seuil → ils glissent
+     *  ensemble. Plus bas → le loup ne chasse que vraiment affamé → bien moins de
+     *  tueries (clé de l'équilibre). 0.7 = historique. Plage utile [0.2, 0.9]. */
+    public double loupHungerRatio = 0.7;
+    /** Idem pour l'ours. 0.7 = historique. */
+    public double oursHungerRatio = 0.7;
+    /** Portée d'audition du hurlement de meute (cases, distance torique). Un loup
+     *  repu voyant une proie hurle ; les loups affamés dans ce rayon convergent.
+     *  Défaut 30 (~3× vision). Propagé sur Loup.HOWL_RADIUS via applyConfigToCAs. */
+    public int    howlRadius      = 30;
+    /** Tours de recherche infructueuse (état SEARCH, depuis une zone de chasse mémorisée,
+     *  sans proie en vue) au-delà desquels un prédateur OUBLIE ce terrain de chasse. Une
+     *  mise à mort sur place remet le compteur à zéro. Partagé loup + ours. Propagé sur
+     *  Agent.STERILE_HUNT_FORGET_VISITS via applyConfigToCAs. */
+    public int    sterileHuntForgetVisits = 50;
 
     // ───── Biologie Mouton (cf. Mouton.java) ───────────────────────────────
     public int    moutonVision      = 10;
@@ -78,15 +105,54 @@ public class SimulationConfig {
      *  d'herbe modeste et récupère vite (petit né avec peu, parent peu ponctionné). */
     public double moutonReproEnergyThreshold = 0.40;
     public double moutonReproOffspringRatio  = 0.25;
+    /** Rayon (cases, distance torique) dans lequel un agent trouve un partenaire de
+     *  reproduction. Historiquement 3 (le regroupement nocturne devait suffire), mais à
+     *  faible densité les congénères sont trop dispersés → reproduction étouffée. Partagé
+     *  loup + mouton. Plage utile [3, 15]. */
+    public int    reproRadius                = 3;
 
     // ───── Contrôle manuel d'agent (touche 'c') ───────────────────────────
     /** Sensibilité du mouse-look en pilotage 1ère personne (degrés de rotation
      *  caméra par pixel de souris). Plus bas = plus lent/précis. Plage UI [0.02, 0.40]. */
     public float  mouseLookSensitivity = 0.06f;
 
+    // ───── Affichage HUD ──────────────────────────────────────────────────
+    /** Affiche la 2nde ligne du HUD (dégâts cumulés : arbres brûlés, agents
+     *  morts, lave émise). Désactivée par défaut — togglable dans PARAMS. */
+    public boolean showDamageHud = false;
+
     // ───── Temps (refonte 2026-05 — cycle complet + ratio jour/nuit) ───────
     /** Fréquence cible de la simulation en Hz. Plage UI [10, 60] pas 5. */
     public int    simulationHz       = 20;
+
+    // ───── ODEUR (substrat olfactif, sous-projet A) ─────
+    public int     scentEmitPeriod   = 3;      // ticks entre deux depots
+    public double  scentLifetimeSec  = 90.0;   // tau (sec-jeu)
+    public double  scentWindDrift    = 0.05;   // cellules de derive par (m/s) par sec
+    public double  scentBaseScale    = 1.0;    // multiplicateur global de force
+    public boolean scentDebugOverlay = false;  // heatmap de debug
+
+    // ── Olfaction (sous-projet B) : acuité par espèce + portail + seuil ──────
+    public double olfactionBaseLoup   = 1.0;   // référence, pistage fin
+    public double olfactionBaseOurs   = 1.2;   // meilleur nez
+    public double olfactionBaseMouton = 0.4;   // sent le danger de près
+    public double olfactionBaseHumain = 0.15;  // très pauvre : ne peut pas pister
+    public double olfactionGate       = 0.3;   // sous ce seuil : anosmique (0 calcul)
+    public double olfactionDetectBase = 0.15;  // seuil détection = base / acuité
+    public double olfactionProbeK     = 4.0;   // distance sonde ≈ acuité × K
+
+    // ── Comportements olfactifs (sous-projet C) ──────────────────────────────
+    public double scentFleeIntensity      = 0.5;   // mouton : intensité danger ≥ → fuite ; < → méfiance
+    public double scentTrackCastIntensity = 0.15;  // loup : intensité proie ≥ → suit le cap ; < → caste
+    public int    scentCommitTicks        = 5;     // ticks d'engagement d'un cap (anti-oscillation)
+    public double scentMateThreshold      = 0.15;  // seuil de detection du partenaire (canal seduction)
+
+    // ── Caractère : trait prudence/témérité (sous-projet D) ──────────────────
+    public double fleeBoldnessDelta     = 0.5;   // mouton : seuil de fuite olfactif ×(1±delta)
+    public double hungerBoldnessDelta   = 0.25;  // loup/ours : seuil de faim chasse + kill ×(1±delta)
+    public double confrontBoldnessDelta = 0.6;   // berger : rayon d'engagement ×(1±delta)
+    public int    confrontRadiusBase    = 4;     // berger : rayon de confront de base (cases)
+
     /** Durée totale d'un cycle 24h jeu en secondes réelles (jour + nuit cumulés).
      *  Default 240s ⇒ 1h jeu = 10s réelles. */
     public float  cycleTotalSec      = 240f;
@@ -96,6 +162,9 @@ public class SimulationConfig {
     public float  dayFractionRatio   = 14f / 24f;
     /** Durée de la transition aube/crépuscule en secondes (anciennement transitionJour en iter). */
     public float  transitionJourSec  = 5f;
+    /** L5 — durée d'une saison en jours-jeu (un an = 4 × ce nombre). 0 = saisons
+     *  désactivées (été perpétuel). Default 3 ⇒ un an = 12 jours-jeu. */
+    public int    seasonLengthDays   = 3;
 
     // ───── Forêt (cf. ForestCA.java) ───────────────────────────────────────
     public double forestDensite        = 0.1;       // darbre   — densité initiale d'arbres
@@ -107,6 +176,12 @@ public class SimulationConfig {
     public double herbeDensite         = 0.55;      // dherbe   — densité initiale d'herbe
     public double herbeProbApparition  = 0.000006;  // pH       — proba de pousse / tick / case
     public double herbeProbFeu         = 0.0000003; // pF       — proba que l'herbe prenne feu spontanément
+    // ── Herbe en brins (Phase 2) ─────────────────────────────────────────────
+    public int    brinsMax           = 5;     // plafond de brins par case
+    public double energyPerBrin      = 60.0;  // énergie gagnée par bouchée (1 brin) — calibré
+    public double grazeCooldownSec   = 0.5;   // secondes-jeu entre deux bouchées (mouton)
+    public double brinsRegrowthPerSec= 6.0;   // brins/sec quand sous le max (×saison) — calibré
+    public double brinsInitialFill   = 1.0;   // fraction du max remplie à l'init
 
     // ───── Lave (cf. LavaCA.java) ──────────────────────────────────────────
     public double laveProbErruption    = 0.0;       // pErruption — 0 = jamais (sauf touche `r`)
@@ -126,6 +201,14 @@ public class SimulationConfig {
      *  par tick au voisin, à state=1). Dégradé automatiquement par le state au runtime
      *  (lave qui refroidit coule plus lentement). Bas = lave épaisse, haut = lave fluide. */
     public float  lavaViscosity        = 2.0f;
+
+    // ───── Vent (2026-06-07) ───────────────────────────────────────────────
+    /** Vent actif (true par defaut). */
+    public boolean windEnabled     = true;
+    /** Force de base du vent en m/s. */
+    public double  baseWindForce   = 5.0;
+    /** Amplitude des rafales (variabilite). */
+    public double  windVariability = 1.0;
 
     // ───── Drapeaux UI ─────────────────────────────────────────────────────
     /** true tant que l'utilisateur n'a pas cliqué Start dans le menu de lancement. */
