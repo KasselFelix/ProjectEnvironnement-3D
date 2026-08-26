@@ -2,7 +2,7 @@ package agents;
 
 import agents.ai.AgentState;
 import agents.ai.Axis;
-import agents.ai.Genome;
+//import agents.ai.Genome;
 import agents.ai.MemoryKind;
 import agents.ai.Percept;
 import agents.ai.Perception;

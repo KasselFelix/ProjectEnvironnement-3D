@@ -8,8 +8,8 @@ import java.util.function.Supplier;
 import javax.media.opengl.GL2;
 
 import agents.Agent;
-import agents.Loup;
-import agents.Mouton;
+//import agents.Loup;
+//import agents.Mouton;
 import worlds.WorldOfCells;
 import graphics.Landscape;
 
