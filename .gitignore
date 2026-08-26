@@ -9,8 +9,14 @@ hs_err_pid*.log
 core.*
 replay_pid*.log
 
-# Eclipse (les laisser dehors si tu veux que d'autres importent en Eclipse)
+# Ignore all Eclipse settings
 .settings/
+
+# But keep Java compiler settings
+!.settings/org.eclipse.jdt.core.prefs
+
+# And keep encoding settings
+!.settings/org.eclipse.core.resources.prefs
 
 # IDE locaux — on commit les configs partagées (tasks/launch/extensions),
 # on ignore le reste (settings utilisateur, cache, etc.)
