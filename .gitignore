@@ -1,8 +1,10 @@
 # Sortie de compilation
 bin/
 
-# Exécutable empaqueté (jpackage) : se reconstruit
+# Exécutable empaqueté (jpackage) : se reconstruit avec package.ps1,
+# et se publie en Release GitHub (trop lourd pour le dépôt)
 dist/
+build/
 
 # Sortie de compilation des tests et fat-jar JUnit (téléchargé via test-setup.sh)
 test/bin/
