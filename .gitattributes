@@ -1,0 +1,22 @@
+# Fins de ligne : le dépôt stocke tout le texte en LF.
+# Chaque OS récupère ensuite ses fins de ligne habituelles, sauf exceptions ci-dessous.
+* text=auto
+
+# Scripts shell : toujours LF, sinon bash échoue sous Linux / WSL ($'\r', pipefail…)
+*.sh text eol=lf
+
+# Scripts Windows : toujours CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binaires : jamais de conversion ni de diff texte
+*.class binary
+*.jar binary
+*.png binary
+*.jpg binary
+*.glb binary
+*.pdf binary
+*.exe binary
+*.dll binary
+*.so binary

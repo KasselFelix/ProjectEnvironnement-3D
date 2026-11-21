@@ -1,6 +1,9 @@
 # Sortie de compilation
 bin/
 
+# Exécutable empaqueté (jpackage) : se reconstruit
+dist/
+
 # Sortie de compilation des tests et fat-jar JUnit (téléchargé via test-setup.sh)
 test/bin/
 
