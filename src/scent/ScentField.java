@@ -43,6 +43,9 @@ public final class ScentField {
     /** Nombre de puffs vivants (tests + debug). */
     public int size() { return puffs.size(); }
 
+    /** Puffs vivants dans l'ordre d'échantillonnage (tests). */
+    List<ScentPuff> puffsView() { return java.util.Collections.unmodifiableList(puffs); }
+
     /** Ajoute un puff ORDINAIRE (sans seduction). Compat sous-projets A-D. */
     public void emit(int emitterId, ScentKind kind, int familyId,
                      int x, int y, int birthTick, float baseIntensity) {
@@ -63,25 +66,95 @@ public final class ScentField {
      * puff le plus intense au point lu.
      */
     public ScentReading sampleAt(int px, int py, int now) {
-        final int hz = hz();
-        final double lifeSec = SimulationConfig.getInstance().scentLifetimeSec;
-        final double windX = world.getWindX(), windY = world.getWindY();
-        final double windMag = Math.hypot(windX, windY);
-        final boolean raining = world.isRaining();
+        refreshCache(now);
         final int w = world.getWidth(), h = world.getHeight();
 
-        float[] perKind = new float[ScentKind.values().length];
+        float[] perKind = new float[KIND_COUNT];
         int domEmitter = 0, domFamily = -1;
         ScentKind domKind = null;
         float domI = 0f;
 
-        for (ScentPuff p : puffs) {
-            float i = intensityAt(p, px, py, now, hz, lifeSec, windX, windY, windMag, raining, w, h);
+        for (int k = 0, n = puffs.size(); k < n; k++) {
+            ScentPuff p = puffs.get(k);
+            float i = cachedIntensityAt(p, px, py, w, h);
             if (i <= 0f) continue;
             perKind[p.kind.ordinal()] += i;
             if (i > domI) { domI = i; domEmitter = p.emitterId; domFamily = p.familyId; domKind = p.kind; }
         }
         return new ScentReading(perKind, domEmitter, domFamily, domKind, domI);
+    }
+
+    private static final int KIND_COUNT = ScentKind.values().length;
+
+    // ── Cache par tick ───────────────────────────────────────────────────
+    // Les agents lisent le champ ~10 fois chacun par tick, en balayant tous
+    // les puffs (jusqu'à MAX_PUFFS). Le pic et l'étalement d'un puff ne
+    // dépendent que du tick et des paramètres (hz, durée de vie, vent, pluie),
+    // pas du point lu : on les calcule une fois par puff et par « époque ».
+    // Une époque change dès qu'un paramètre change ou que step() fait vieillir
+    // les puffs. Les expressions sont celles d'intensityAt, dans le même ordre :
+    // les intensités obtenues sont identiques au bit près.
+    private int cacheEpoch = 0;
+    private int cNow = Integer.MIN_VALUE, cHz;
+    private double cLife = Double.NaN, cWindX = Double.NaN, cWindY = Double.NaN;
+    private boolean cRain;
+    private double cWindMag, cUx, cUy;
+    private boolean cWindy;
+
+    private void refreshCache(int now) {
+        final int hz = hz();
+        final double lifeSec = SimulationConfig.getInstance().scentLifetimeSec;
+        final double windX = world.getWindX(), windY = world.getWindY();
+        final boolean raining = world.isRaining();
+        if (now == cNow && hz == cHz && lifeSec == cLife && windX == cWindX
+                && windY == cWindY && raining == cRain) return;
+        cacheEpoch++;
+        cNow = now; cHz = hz; cLife = lifeSec; cWindX = windX; cWindY = windY; cRain = raining;
+        cWindMag = Math.hypot(windX, windY);
+        cWindy = cWindMag > 1e-6;
+        if (cWindy) { cUx = windX / cWindMag; cUy = windY / cWindMag; }
+    }
+
+    private void fillPuffCache(ScentPuff p) {
+        p.cacheEpoch = cacheEpoch;
+        double age = (cNow - p.birthTick) / (double) cHz + p.extraAgeSec;
+        if (age < 0) { p.cachePeak = 0; return; }
+        double tauEff = tauEff(cLife, cWindMag, cRain);
+        double peak = p.baseIntensity * Math.exp(-age / tauEff);
+        if (peak < EPSILON) { p.cachePeak = 0; return; }
+        p.cachePeak = peak;
+        if (cWindy) {
+            p.cacheSigPar  = SIGMA0 + (K_BASE + K_WIND * cWindMag) * age;
+            p.cacheSigPerp = SIGMA0 + K_BASE * age;
+        } else {
+            p.cacheSigPerp = SIGMA0 + K_BASE * age;
+        }
+        // (float)(peak·exp(-e)) vaut 0 dès que peak·exp(-e) < 2^-150 ≈ 7,0e-46 :
+        // c'est le cas pour e > ln(peak) + 104,5 (exp(-104,5) ≈ 4,4e-46).
+        p.cacheZeroE = Math.log(peak) + 104.5;
+    }
+
+    /** = intensityAt(p, px, py, cNow, …) avec les valeurs mises en cache. */
+    private float cachedIntensityAt(ScentPuff p, int px, int py, int w, int h) {
+        if (p.cacheEpoch != cacheEpoch) fillPuffCache(p);
+        double peak = p.cachePeak;
+        if (peak == 0) return 0f;
+        double dx = signedDelta(p.cx, px, w);
+        double dy = signedDelta(p.cy, py, h);
+        double e;
+        if (cWindy) {
+            double ux = cUx, uy = cUy;
+            double dPar  = dx * ux + dy * uy;          // le long du vent
+            double dPerp = dx * (-uy) + dy * ux;       // en travers
+            double sigPar = p.cacheSigPar, sigPerp = p.cacheSigPerp;
+            e = (dPar * dPar) / (2 * sigPar * sigPar)
+              + (dPerp * dPerp) / (2 * sigPerp * sigPerp);
+        } else {
+            double sig = p.cacheSigPerp;
+            e = (dx * dx + dy * dy) / (2 * sig * sig);
+        }
+        if (e > p.cacheZeroE) return 0f;             // résultat exactement 0f : exp inutile
+        return (float) (peak * Math.exp(-e));
     }
 
     /** Constante de temps effective (sec) : dilution par le vent + pluie. */
@@ -170,6 +243,7 @@ public final class ScentField {
      * eteints, application du budget dur.
      */
     public void step(double dtSec) {
+        cacheEpoch++;   // extraAgeSec va changer → caches des puffs périmés
         final double windX = world.getWindX(), windY = world.getWindY();
         final double driftK = SimulationConfig.getInstance().scentWindDrift;
         final int now = world.getIteration();
@@ -237,16 +311,13 @@ public final class ScentField {
      * (le pretendant ne s'auto-attire pas). 0 si aucun.
      */
     public float matingIntensityAt(int px, int py, int now, ScentKind kind, int excludeEmitter) {
-        final int hz = hz();
-        final double lifeSec = SimulationConfig.getInstance().scentLifetimeSec;
-        final double windX = world.getWindX(), windY = world.getWindY();
-        final double windMag = Math.hypot(windX, windY);
-        final boolean raining = world.isRaining();
+        refreshCache(now);
         final int w = world.getWidth(), h = world.getHeight();
         float sum = 0f;
-        for (ScentPuff p : puffs) {
+        for (int k = 0, n = puffs.size(); k < n; k++) {
+            ScentPuff p = puffs.get(k);
             if (!p.mating || p.kind != kind || p.emitterId == excludeEmitter) continue;
-            sum += intensityAt(p, px, py, now, hz, lifeSec, windX, windY, windMag, raining, w, h);
+            sum += cachedIntensityAt(p, px, py, w, h);
         }
         return sum;
     }

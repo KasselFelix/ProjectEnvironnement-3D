@@ -1300,8 +1300,8 @@ public class Agent extends UniqueDynamicObject{
 
 	/**
 	 * Émet (dans un glBegin(GL_QUADS) déjà ouvert) un triangle isocèle pointant
-	 * dans la direction du dernier déplacement, encodé comme un quad dégénéré
-	 * (4 vertices dont deux confondus). Cela permet aux agents de garder un
+	 * dans la direction du dernier déplacement, encodé en deux quads dégénérés
+	 * (sommet de pointe dupliqué, un quad par face). Cela permet aux agents de garder un
 	 * indicateur visuel d'orientation tout en restant batchés dans le big
 	 * glBegin du Landscape.
 	 *
@@ -1324,10 +1324,19 @@ public class Agent extends UniqueDynamicObject{
 		float blY = (float) (baseY + udx * lenY);
 		float brX = (float) (baseX + udy * lenX);
 		float brY = (float) (baseY - udx * lenY);
+		// Sommet dupliqué en positions 1-2 (voisines) : les deux découpages
+		// possibles du quad donnent le même triangle. L'ancien ordre (apex, bl,
+		// apex, br) dupliquait les sommets 1 et 3 : coupé selon la diagonale 1-3
+		// (pilote NVIDIA), il ne restait que deux triangles plats → triangle
+		// invisible. Deux quads, un par sens d'enroulement (la scène cull une face).
+		gl.glVertex3f(apexX, apexY, z);
 		gl.glVertex3f(apexX, apexY, z);
 		gl.glVertex3f(blX,   blY,   z);
+		gl.glVertex3f(brX,   brY,   z);
+		gl.glVertex3f(apexX, apexY, z);
 		gl.glVertex3f(apexX, apexY, z);
 		gl.glVertex3f(brX,   brY,   z);
+		gl.glVertex3f(blX,   blY,   z);
 	}
 
 	//abstract public void step( );

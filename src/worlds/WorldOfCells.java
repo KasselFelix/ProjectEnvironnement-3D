@@ -563,17 +563,19 @@ public class WorldOfCells extends World {
 		int ib4=ib-_dx,jb4=jb;							int ib6=ib+_dx,jb6=jb;
 		int ib7=ib-_dx,jb7=jb+_dy;int ib8=ib,jb8=jb+_dy;int ib9=ib+_dx,jb6=jb+_dy;
 		*/
-		double tmp=Double.MAX_VALUE;
+		// Minimum des 9 images du tore. La racine étant croissante (et arrondie
+		// correctement), sqrt(min des carrés) == min des sqrt, au bit près :
+		// une seule racine au lieu de 9.
+		int best = Integer.MAX_VALUE;
 		for(int i=-1;i<2;i++){
-			ib=ib+i*dxCA;
+			int di = ib + i*dxCA - ia;
 			for(int j=-1;j<2;j++){
-				jb=jb+j*dyCA;
-				tmp=Math.min(tmp,Math.abs(Math.sqrt((jb-ja)*(jb-ja)+(ib-ia)*(ib-ia))));
-				jb=jb-j*dyCA;
+				int dj = jb + j*dyCA - ja;
+				int d2 = dj*dj + di*di;
+				if (d2 < best) best = d2;
 			}
-			ib=ib-i*dxCA;
 		}
-		return tmp;
+		return Math.sqrt(best);
 	}
 	
 	
@@ -613,6 +615,10 @@ public class WorldOfCells extends World {
     	return forestCA.fertility(x%dxCA, y%dyCA);
     }
 
+    /** Décalages des 4 cases qui partagent le sommet (vx, vy), dans l'ordre
+     *  historique (même ordre de sommation → mêmes couleurs au bit près). */
+    private static final int[][] VERTEX_CELL_OFFSETS = { {-1,-1}, {0,-1}, {-1,0}, {0,0} };
+
     /**
      * Couleur de terrain d'un SOMMET de la grille (coin partagé par jusqu'à 4
      * cases) = moyenne pondérée des couleurs de terrain des cases adjacentes.
@@ -627,13 +633,13 @@ public class WorldOfCells extends World {
      */
     public float[] getVertexTerrainColor(int vx, int vy)
     {
-    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	// 4 cases adjacentes au sommet (VERTEX_CELL_OFFSETS, sans allocation)
     	double niv = getMaxEverHeight() / 10.0; // = nivPlage de colorInit
     	float r = 0f, g = 0f, b = 0f, wsum = 0f;
     	float rw = 0f, gw = 0f, bw = 0f, wsumW = 0f; // accumulateur eau (fallback)
-    	for (int[] c : cells) {
-    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
-    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    	for (int[] o : VERTEX_CELL_OFFSETS) {
+    		int cxm = (((vx + o[0]) % dxCA) + dxCA) % dxCA;
+    		int cym = (((vy + o[1]) % dyCA) + dyCA) % dyCA;
     		double h = getCellHeight(cxm, cym);
     		float[] col = getCellColorValue(cxm, cym); // RGBA terrain (forêt ne peint plus)
     		if (h >= 0) {                              // TERRE : sable (1.3) > vert (1.0)
@@ -661,12 +667,12 @@ public class WorldOfCells extends World {
     {
     	final float GROUND_TINT_MAX = 0.82f; // force max (couverture pleine)
     	final float SAPLING_TINT    = 0.20f; // teinte minimale d'une jeune pousse
-    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	// 4 cases adjacentes au sommet (VERTEX_CELL_OFFSETS, sans allocation)
     	float tr = 0f, tg = 0f, tb = 0f, cover = 0f;
     	float[] sc = new float[3];
-    	for (int[] c : cells) {
-    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
-    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    	for (int[] o : VERTEX_CELL_OFFSETS) {
+    		int cxm = (((vx + o[0]) % dxCA) + dxCA) % dxCA;
+    		int cym = (((vy + o[1]) % dyCA) + dyCA) % dyCA;
     		if (!forestCA.hasMarker(cxm, cym)) continue;
     		forestCA.getStateColor(cxm, cym, sc);
     		int st = forestCA.getCellState(cxm, cym);
@@ -699,11 +705,11 @@ public class WorldOfCells extends World {
     public void applySnowTint(int vx, int vy, float[] col)
     {
     	final float SNOW_TINT_MAX = 0.92f;
-    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	// 4 cases adjacentes au sommet (VERTEX_CELL_OFFSETS, sans allocation)
     	double sum = 0; int n = 0;
-    	for (int[] c : cells) {
-    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
-    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    	for (int[] o : VERTEX_CELL_OFFSETS) {
+    		int cxm = (((vx + o[0]) % dxCA) + dxCA) % dxCA;
+    		int cym = (((vy + o[1]) % dyCA) + dyCA) % dyCA;
     		sum += getSnowDepth(cxm, cym);
     		n++;
     	}
@@ -727,11 +733,11 @@ public class WorldOfCells extends World {
     	if (grassCA == null) return;
     	final float GRAZED_TINT_MAX = 0.45f;
     	final float[] BROWN = { 0.50f, 0.40f, 0.20f };
-    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	// 4 cases adjacentes au sommet (VERTEX_CELL_OFFSETS, sans allocation)
     	float sum = 0; int n = 0;
-    	for (int[] c : cells) {
-    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
-    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    	for (int[] o : VERTEX_CELL_OFFSETS) {
+    		int cxm = (((vx + o[0]) % dxCA) + dxCA) % dxCA;
+    		int cym = (((vy + o[1]) % dyCA) + dyCA) % dyCA;
     		sum += grassCA.getGrazed(cxm, cym) / (float) grassCA.getGrazedDuration();
     		n++;
     	}
@@ -754,11 +760,11 @@ public class WorldOfCells extends World {
     	final float WATER_TINT_MAX = 0.40f;   // voile humide, pas un lagon : le sol reste reconnaissable
     	final float WATER_SAT = 1.2f;   // hauteur d'eau (unités) donnant la teinte pleine
     	final float[] BLUE = { 0.15f, 0.35f, 0.75f };
-    	int[][] cells = { {vx-1,vy-1}, {vx,vy-1}, {vx-1,vy}, {vx,vy} };
+    	// 4 cases adjacentes au sommet (VERTEX_CELL_OFFSETS, sans allocation)
     	float sum = 0; int n = 0;
-    	for (int[] c : cells) {
-    		int cxm = ((c[0] % dxCA) + dxCA) % dxCA;
-    		int cym = ((c[1] % dyCA) + dyCA) % dyCA;
+    	for (int[] o : VERTEX_CELL_OFFSETS) {
+    		int cxm = (((vx + o[0]) % dxCA) + dxCA) % dxCA;
+    		int cym = (((vy + o[1]) % dyCA) + dyCA) % dyCA;
     		sum += (float) getWaterDepth(cxm, cym);
     		n++;
     	}

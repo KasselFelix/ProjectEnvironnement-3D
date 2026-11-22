@@ -155,9 +155,9 @@ public class LavaCA extends CellularAutomataInteger {
 
 	public void init() {
 		int s = 0;
-		Collections.shuffle(world.list);
-		for (int d = 0; d < world.list.size(); d++) {
-			int c = world.list.get(d);   // encodage World : c = x*_dy + y
+		int[] order = world.shuffledCellOrder();   // permutation aléatoire (mise à jour asynchrone)
+		for (int d = 0; d < order.length; d++) {
+			int c = order[d];   // encodage World : c = x*_dy + y
 			int x = c / _dy;
 			int y = c % _dy;
 			float height = (float) world.getCellHeight(x, y);
@@ -428,9 +428,9 @@ public class LavaCA extends CellularAutomataInteger {
 		int solidifyEndTicks = (cfg != null) ? Math.max(1, (int)(cfg.solidifyEndSec * hz)) : solidifyEnd;
 
 		int props = 0;
-		Collections.shuffle(world.list);
-		for (int d = 0; d < world.list.size() && props < maxProps; d++) {
-			int c = world.list.get(d);   // encodage World : c = x*_dy + y
+		int[] order = world.shuffledCellOrder();   // permutation aléatoire (mise à jour asynchrone)
+		for (int d = 0; d < order.length && props < maxProps; d++) {
+			int c = order[d];   // encodage World : c = x*_dy + y
 			int x = c / _dy;
 			int y = c % _dy;
 			Layer top = world.topLayer(x, y);
@@ -642,9 +642,11 @@ public class LavaCA extends CellularAutomataInteger {
 		float craterTarget = 0f;
 		for (int x = 0; x < _dx; x++) {
 			for (int y = 0; y < _dy; y++) {
-				if (world.distance(x, y, sourceX, sourceY) > rCratere) continue;
+				// Test de couche d'abord (bon marché, presque toujours négatif),
+				// distance ensuite : mêmes cellules retenues.
 				Layer top = world.topLayer(x, y);
 				if (top == null || top.material != Material.LAVA || !top.persistent) continue;
+				if (world.distance(x, y, sourceX, sourceY) > rCratere) continue;
 				if (top.lineage != null && top.lineage.source != null) {
 					float r = top.lineage.source.pressure * RESIDUAL_FACTOR;
 					if (r > craterTarget) craterTarget = r;

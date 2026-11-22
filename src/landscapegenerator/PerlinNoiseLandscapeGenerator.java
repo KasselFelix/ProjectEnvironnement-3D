@@ -72,6 +72,23 @@ public class PerlinNoiseLandscapeGenerator {
 	static int r2    = (int)(Math.random()*1000000)+100000;
 	static int r3    = (int)(Math.random()*2000000000)+100000000;
 
+	// -Dmap=<rand>-<rand2>-<r1>-<r2>-<r3> (la ligne « Map : » imprimée au lancement)
+	// rejoue une carte précise : utile pour comparer des mesures de performance ou
+	// reproduire un bug sur le même terrain. Sans la propriété : carte aléatoire.
+	static {
+		String map = System.getProperty("map");
+		if (map != null) {
+			String[] p = map.trim().split("-");
+			if (p.length == 5) {
+				rand = Integer.parseInt(p[0]); rand2 = Integer.parseInt(p[1]);
+				r1 = Integer.parseInt(p[2]);   r2 = Integer.parseInt(p[3]);
+				r3 = Integer.parseInt(p[4]);
+			} else {
+				System.err.println("[map] format attendu : a-b-c-d-e (ignoré) : " + map);
+			}
+		}
+	}
+
 	/**
 	 * Point d'entrée : génère une heightmap périodique de taille
 	 * {@code dxView × dyView} via Perlin.

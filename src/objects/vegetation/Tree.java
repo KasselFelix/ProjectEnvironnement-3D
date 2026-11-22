@@ -154,6 +154,20 @@ public class Tree extends CommonObject {
                                       double height, float offset, float stepX, float stepY,
                                       float lenX, float lenY, float normalizeHeight,
                                       int movingX, int movingY) {
+        displayTreeAt(myWorld, gl, cellState, x, y, height, offset, stepX, stepY,
+                lenX, lenY, normalizeHeight, movingX, movingY, null);
+    }
+
+    /**
+     * Variante avec frustum culling : l'arbre n'est pas dessiné si sa sphère
+     * englobante est entièrement hors de la vue ({@code frustum} null = toujours
+     * dessiné). La fenêtre de rendu est un carré centré sur la caméra : en 3D,
+     * la majorité de ses arbres sont derrière ou sur les côtés.
+     */
+    public static void displayTreeAt(World myWorld, GL2 gl, int cellState, float x, float y,
+                                      double height, float offset, float stepX, float stepY,
+                                      float lenX, float lenY, float normalizeHeight,
+                                      int movingX, int movingY, graphics.Frustum frustum) {
         if (treeModel == null) return;
         if (cellState < 1 || cellState > 5) return; // état 1=vivant, 2-4=en feu, 5=brûlé
 
@@ -194,14 +208,42 @@ public class Tree extends CommonObject {
 
         // Yaw aléatoire déterministe en coordonnées MONDE (x+movingX, y+movingY) :
         // stable entre frames ET quand le viewport panne — l'arbre ne tourne pas.
+        // Sphère englobante du modèle (bbox ±0.33 × ±0.31 × [0,1] → demi-diagonale
+        // ≈ 0.68) mise à l'échelle, centrée à mi-hauteur ; 0.75 = petite marge.
+        if (frustum != null
+                && !frustum.sphereVisible(px, py, altitude + 0.5 * scale * zStretch, 0.75 * scale))
+            return;
+
         float yawDeg = (float) (360.0 * stableHash(x + movingX, y + movingY, SALT_YAW));
 
         gl.glPushMatrix();
         gl.glTranslatef(px, py, altitude);
         gl.glRotatef(yawDeg, 0f, 0f, 1f);
         gl.glScalef(scale, scale, scale * zStretch);
-        treeModel.opengldraw(gl);
+        if (batching) treeModel.drawBatched(gl);
+        else          treeModel.opengldraw(gl);
         gl.glPopMatrix();
+    }
+
+    /** Vrai entre {@link #beginTrees} et {@link #endTrees} quand le lot est actif. */
+    private static boolean batching = false;
+
+    /**
+     * Ouvre la passe des arbres : les états du modèle (culling, éclairage double
+     * face, texture) sont posés une seule fois pour tous les arbres au lieu d'un
+     * par arbre. Entre {@code beginTrees} et {@link #endTrees}, ne dessiner que
+     * des arbres via {@link #displayTreeAt}. {@code -Dtrees.batch=false} revient
+     * au rendu arbre par arbre (comparaison A/B).
+     */
+    public static void beginTrees(GL2 gl) {
+        batching = treeModel != null && treeModel.supportsBatch() && !"false".equals(System.getProperty("trees.batch"));
+        if (batching) treeModel.beginBatch(gl);
+    }
+
+    /** Ferme la passe ouverte par {@link #beginTrees}. */
+    public static void endTrees(GL2 gl) {
+        if (batching) treeModel.endBatch(gl);
+        batching = false;
     }
 
 }

@@ -42,6 +42,13 @@ public final class GLBModel {
     public float farpoint, nearpoint;
 
     private int objectList = -1;
+    /** Display list « géométrie seule » (glBegin…glEnd, sans aucun changement
+     *  d'état), compilée uniquement pour les modèles à une primitive. Sert au
+     *  rendu par lot ({@link #beginBatch} / {@link #drawBatched} / {@link #endBatch}) :
+     *  les états sont posés une fois pour toutes les instances. -1 si absente. */
+    private int geometryList = -1;
+    /** L'unique primitive du modèle quand {@link #geometryList} existe. */
+    private Prim batchPrim = null;
     /** Émission de base du matériau (0..1). Appliquée dynamiquement dans
      *  {@link #opengldraw(GL2, float)} et modulable par le facteur jour/nuit —
      *  PAS figée dans la display list, sinon l'agent brillerait la nuit. */
@@ -235,6 +242,16 @@ public final class GLBModel {
         gl.glCullFace(GL2.GL_FRONT);
         gl.glEndList();
 
+        // Liste géométrie seule pour le rendu par lot (modèles mono-primitive :
+        // une seule texture/couleur, donc les états sont les mêmes pour tout le mesh).
+        if (prims.size() == 1) {
+            batchPrim = prims.get(0);
+            geometryList = gl.glGenLists(1);
+            gl.glNewList(geometryList, GL2.GL_COMPILE);
+            emitTriangles(gl, batchPrim);
+            gl.glEndList();
+        }
+
         // Conserver les primitives pour le chemin de rendu teinté (immédiat).
         // Opt-in : uniquement pour les modèles utilisés comme source de carcasse
         // (mouton, loup) — activer via retainPrimsForTinting=true à l'appel.
@@ -249,6 +266,62 @@ public final class GLBModel {
 
     public void opengldraw(GL2 gl) {
         opengldraw(gl, 1f);
+    }
+
+    /** Vrai si le modèle peut être dessiné par lot (une seule primitive, sans émission). */
+    public boolean supportsBatch() {
+        return geometryList >= 0 && emissionLevel <= 0f;
+    }
+
+    /**
+     * Rendu par lot, pour dessiner beaucoup d'instances du même modèle (arbres) :
+     * {@code beginBatch} pose UNE fois les états que la display list complète
+     * posait à chaque instance, {@link #drawBatched} ne rejoue que la géométrie,
+     * {@link #endBatch} restaure comme {@link #opengldraw(GL2)}. Entre les deux,
+     * l'appelant ne doit changer que la matrice MODELVIEW. Résultat identique à
+     * une suite d'{@code opengldraw} (mêmes états, même géométrie, même ordre).
+     * Précondition : {@link #supportsBatch()}.
+     */
+    public void beginBatch(GL2 gl) {
+        gl.glCullFace(GL2.GL_BACK);
+        gl.glLightModeli(GL2.GL_LIGHT_MODEL_TWO_SIDE, 1);
+        gl.glEnable(GL2.GL_COLOR_MATERIAL);
+        gl.glTexEnvi(GL2.GL_TEXTURE_ENV, GL2.GL_TEXTURE_ENV_MODE, GL2.GL_MODULATE);
+        if (batchPrim.texture != null) {
+            gl.glEnable(GL2.GL_TEXTURE_2D);
+            batchPrim.texture.bind(gl);
+            gl.glColor4f(1f, 1f, 1f, 1f);
+        } else {
+            gl.glDisable(GL2.GL_TEXTURE_2D);
+            gl.glColor4f(batchPrim.baseColor[0], batchPrim.baseColor[1], batchPrim.baseColor[2], batchPrim.baseColor[3]);
+        }
+    }
+
+    /** Une instance du lot ouvert par {@link #beginBatch}. */
+    public void drawBatched(GL2 gl) {
+        gl.glCallList(geometryList);
+    }
+
+    /** Ferme le lot : mêmes états finaux qu'après {@link #opengldraw(GL2)}. */
+    public void endBatch(GL2 gl) {
+        gl.glDisable(GL2.GL_TEXTURE_2D);
+        gl.glLightModeli(GL2.GL_LIGHT_MODEL_TWO_SIDE, 0);
+        gl.glCullFace(GL2.GL_FRONT);
+        gl.glDisable(GL2.GL_COLOR_MATERIAL);
+    }
+
+    /** Émet les triangles d'une primitive (normale, UV, position par sommet). */
+    private static void emitTriangles(GL2 gl, Prim p) {
+        gl.glBegin(GL2.GL_TRIANGLES);
+        for (int t = 0; t < p.indices.length; t++) {
+            int v = p.indices[t];
+            if (p.normals != null) gl.glNormal3f(p.normals[v*3], p.normals[v*3+1], p.normals[v*3+2]);
+            // AWTTextureIO uploade ligne 0 en haut → t=0 = haut de l'image, comme
+            // la convention glTF (V=0 en haut). On émet V sans flip.
+            if (p.uvs != null)     gl.glTexCoord2f(p.uvs[v*2], p.uvs[v*2+1]);
+            gl.glVertex3f(p.positions[v*3], p.positions[v*3+1], p.positions[v*3+2]);
+        }
+        gl.glEnd();
     }
 
     /**
