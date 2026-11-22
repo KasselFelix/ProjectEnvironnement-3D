@@ -30,6 +30,26 @@ Voir [docs/presentation-projet.pdf](docs/presentation-projet.pdf) pour la prése
 
 JOGL est embarqué dans le dépôt (~50 Mo) car les versions modernes (2.3.2+) ont retiré le namespace `javax.media.opengl` utilisé par ce code. Voir `setup.sh` pour les détails.
 
+## Exécutable Windows (sans installer Java)
+
+Pour simplement lancer la simulation sous Windows 10 ou 11 (64 bits), sans JDK ni compilation :
+
+1. Télécharger `ProjectEnvironnement-3D-<version>-windows-x64.zip` depuis la page [Releases](https://github.com/KasselFelix/ProjectEnvironnement-3D/releases/latest) (environ 70 Mo).
+2. Le dézipper où l'on veut (par exemple sur le Bureau). On obtient un dossier `ProjectEnvironnement-3D\`.
+3. Dans ce dossier, double-cliquer sur **`ProjectEnvironnement-3D.exe`**.
+
+L'exécutable contient son propre Java (runtime embarqué) et les bibliothèques OpenGL nécessaires.
+
+- **Avertissement Windows SmartScreen** : l'exécutable n'est pas signé, Windows peut donc afficher « Windows a protégé votre ordinateur ». Cliquer sur **Informations complémentaires** puis **Exécuter quand même**.
+- **Garder le dossier entier** : l'exe lit `models\`, `textures\` et `landscapes\` à côté de lui, et a besoin de `app\` et `runtime\`. Pour un raccourci, créer un raccourci vers l'exe plutôt que de déplacer l'exe seul.
+- **Voir les messages du jeu** (en cas de problème) : ouvrir une invite de commandes dans le dossier, puis lancer :
+
+  ```bat
+  ProjectEnvironnement-3D.exe > log.txt 2>&1
+  ```
+
+  Les messages et erreurs éventuelles se retrouvent dans `log.txt`.
+
 ## Installation et lancement
 
 Trois manières d'utiliser ce projet, au choix : ligne de commande (la plus simple, la plus portable), Eclipse, ou VS Code. Les trois fonctionnent sur Linux, macOS et Windows — les particularités par plateforme (affichage OpenGL, shell, séparateur de classpath) sont décrites plus bas, voir [Notes par plateforme](#notes-pour-linux-et-macos).
@@ -139,6 +159,7 @@ Pour cmd la syntaxe diffère encore ; préférer PowerShell ou Git Bash.
 | `./run.sh` | Compile puis lance `app.MyEcosystem` |
 | `./test-setup.sh` | Télécharge le jar JUnit dans `test/lib/` (idempotent, une seule fois) |
 | `./test.sh` | Compile et exécute tous les tests JUnit 5 |
+| `.\package.ps1` | (Windows, PowerShell) Construit l'exécutable Windows et son archive `.zip` (détails dans l'en-tête du script) |
 
 ## Contrôles en jeu
 
@@ -204,9 +225,12 @@ ProjectEnvironnement-3D/
 ├── test/                      # Tests JUnit 5 (miroir de src/ par package)
 ├── landscapes/                # Images PNG de paysages prédéfinis
 ├── models/                    # Modèles 3D GLB (Mouton, Loup, arbre)
+├── textures/                  # Textures du sol (noise.png) et atlas
+├── assets/                    # Icône de l'exécutable Windows (icon.ico)
 ├── docs/                      # Rapports thématiques, PDFs, captures d'écran
 ├── archive/                   # Version pédagogique originale (intacte)
-└── setup.sh build.sh run.sh test-setup.sh test.sh
+├── setup.sh build.sh run.sh test-setup.sh test.sh
+└── package.ps1                # Construction de l'exécutable Windows (jpackage)
 ```
 
 Pour comprendre **comment la heightmap est générée** (pipeline du bruit de Perlin, continuité sur le tore, paramètres à régler), voir [docs/generation-terrain.txt](docs/generation-terrain.txt).
