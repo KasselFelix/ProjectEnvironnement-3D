@@ -50,8 +50,6 @@ L'exécutable contient son propre Java (runtime embarqué) et les bibliothèques
 
   Les messages et erreurs éventuelles se retrouvent dans `log.txt`.
 
-Pour reconstruire l'exécutable soi-même, voir [Construire l'exécutable Windows](#construire-lexécutable-windows).
-
 ## Installation et lancement
 
 Trois manières d'utiliser ce projet, au choix : ligne de commande (la plus simple, la plus portable), Eclipse, ou VS Code. Les trois fonctionnent sur Linux, macOS et Windows — les particularités par plateforme (affichage OpenGL, shell, séparateur de classpath) sont décrites plus bas, voir [Notes par plateforme](#notes-pour-linux-et-macos).
@@ -161,30 +159,7 @@ Pour cmd la syntaxe diffère encore ; préférer PowerShell ou Git Bash.
 | `./run.sh` | Compile puis lance `app.MyEcosystem` |
 | `./test-setup.sh` | Télécharge le jar JUnit dans `test/lib/` (idempotent, une seule fois) |
 | `./test.sh` | Compile et exécute tous les tests JUnit 5 |
-| `.\package.ps1` | (Windows, PowerShell) Construit l'exécutable Windows et son archive `.zip` |
-
-### Construire l'exécutable Windows
-
-Prérequis : Windows, un **JDK 17 ou plus récent** qui fournit `jpackage` (par exemple Microsoft Build of OpenJDK ou Temurin). Le script le cherche via `-JdkHome`, puis `JAVA_HOME`, puis le `PATH`.
-
-```powershell
-.\package.ps1                     # version 1.0.0 par défaut
-.\package.ps1 -Version 1.1.0      # numéro de version de l'exe et du zip
-.\package.ps1 -JdkHome "C:\Program Files\Microsoft\jdk-25.0.4.101-hotspot"
-```
-
-Si PowerShell refuse de lancer le script (stratégie d'exécution), utiliser :
-`powershell -ExecutionPolicy Bypass -File .\package.ps1`
-
-Le script :
-
-1. compile `src/` (Java 17) et crée `ProjectEnvironnement-3D.jar` ;
-2. rassemble les jars JOGL et extrait les DLL natives Windows des jars `*-natives-windows-amd64.jar` ;
-3. lance `jpackage` avec un runtime Java embarqué et l'icône `assets/icon.ico` ;
-4. copie `models/`, `textures/` et `landscapes/` à côté de l'exe ;
-5. produit `build/dist/ProjectEnvironnement-3D/ProjectEnvironnement-3D.exe` et `build/ProjectEnvironnement-3D-<version>-windows-x64.zip`.
-
-Le dossier `build/` n'est pas versionné. Pour publier une version, joindre le `.zip` à une [Release GitHub](https://github.com/KasselFelix/ProjectEnvironnement-3D/releases) plutôt que de le commiter : le runtime embarqué dépasse la taille maximale d'un fichier sur GitHub.
+| `.\package.ps1` | (Windows, PowerShell) Construit l'exécutable Windows et son archive `.zip` (détails dans l'en-tête du script) |
 
 ## Contrôles en jeu
 
@@ -250,6 +225,7 @@ ProjectEnvironnement-3D/
 ├── test/                      # Tests JUnit 5 (miroir de src/ par package)
 ├── landscapes/                # Images PNG de paysages prédéfinis
 ├── models/                    # Modèles 3D GLB (Mouton, Loup, arbre)
+├── textures/                  # Textures du sol (noise.png) et atlas
 ├── assets/                    # Icône de l'exécutable Windows (icon.ico)
 ├── docs/                      # Rapports thématiques, PDFs, captures d'écran
 ├── archive/                   # Version pédagogique originale (intacte)
