@@ -281,6 +281,27 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private int  autoshotStep = 0;        // index d'étape franchie
 		private long odoratMark = 0L;         // horodatage (mode odorat) du tir loup → cadence le reste
 
+		// Mode gif (-Dautoshot=gif) : séquence d'images du GIF de présentation
+		// (README). Rendu « image par image » : chaque image rendue avance la
+		// simulation d'un nombre FIXE de steps et le scénario est piloté par le
+		// numéro d'image, pas par l'horloge réelle — le résultat ne dépend donc
+		// pas du FPS de la machine. À 10 images/s dans le GIF, 2 steps par image
+		// = vitesse réelle d'une simulation à 20 Hz.
+		private static final boolean AUTOSHOT_GIF = "gif".equalsIgnoreCase(AUTOSHOT_MODE);
+		private static final int GIF_STEPS_PER_FRAME = 2;
+		private static final int GIF_WARMUP_FRAMES   = 20;  // images non capturées (mise en place)
+		private static final int GIF_AERIAL_END   = 40;     // vue aérienne de jour
+		private static final int GIF_FOLLOW_END   = 72;     // gros plan sur un animal
+		private static final int GIF_ERUPTION_END = 102;    // éruption vue de loin
+		private static final int GIF_NIGHT_END    = 136;    // tombée de la nuit sur la lave
+		private static final int GIF_NIGHTFALL_FRAMES = 28; // durée du passage jour → nuit (accéléré)
+		private int gifFrame = -1;          // index d'image depuis le démarrage (échauffement compris)
+		private int gifItDelta = 0;         // avance d'horloge jour/nuit visée pour atteindre la nuit
+		private int gifItApplied = 0;       // part de cette avance déjà ajoutée à it
+		private float gifFollowYaw0 = 0f;   // orientation de départ de l'orbite du gros plan
+		// Cible explicite de la prochaine capture (mode gif). Null → nom horodaté.
+		private volatile File screenshotFile = null;
+
 		// Texture de bruit grayscale tileable, modulée par la couleur de cellule
 		// (sable/montagne/eau via getCellColorValue). Null si chargement échoué.
 		private Texture groundTex;
@@ -1768,6 +1789,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 return;
             }
             long t = now - autoshotStartMs;
+            if (AUTOSHOT_GIF)    { runAutoshotGif(); return; }
             if (AUTOSHOT_3D)     { runAutoshot3D(t); return; }
             if (AUTOSHOT_SELECT) { runAutoshotSelect(t); return; }
             if (AUTOSHOT_MOON)   { runAutoshotMoon(t); return; }
@@ -1784,6 +1806,131 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 case 6: if (t >= 16000){ shoot("04-nuit-eruption");        autoshotStep = 7; } break;
                 case 7: if (t >= 17500){ System.out.println("[autoshot] terminé"); Runtime.getRuntime().halt(0); } break;
             }
+        }
+
+        /**
+         * Séquence d'images du GIF de présentation (mode {@code -Dautoshot=gif}) :
+         * vue aérienne du relief autour du volcan, gros plan sur un animal entouré
+         * d'autres agents, éruption vue de loin, puis tombée de la nuit sur la
+         * lave. Une image par appel (cf. {@link #GIF_STEPS_PER_FRAME}), écrite
+         * dans {@code screenshots/gif/frame-NNNN.png} ; {@code tools/make-gif.sh}
+         * les assemble en {@code docs/presentation.gif}.
+         */
+        private void runAutoshotGif() {
+            gifFrame++;
+            int f = gifFrame - GIF_WARMUP_FRAMES;   // < 0 : échauffement, pas de capture
+            if (gifFrame == 0) {
+                File dir = new File("screenshots", "gif");
+                File[] old = dir.listFiles((d, n) -> n.startsWith("frame-") && n.endsWith(".png"));
+                if (old != null) for (File o : old) o.delete();
+                dir.mkdirs();
+                VIEW_FROM_ABOVE = false;
+            }
+            if (f >= GIF_NIGHT_END) {
+                // La dernière image a été écrite à la fin du display() précédent.
+                System.out.println("[autoshot] gif : " + GIF_NIGHT_END + " images dans screenshots/gif");
+                Runtime.getRuntime().halt(0);
+            }
+
+            if (f < GIF_AERIAL_END) {
+                // Vue aérienne de jour : lente orbite qui se rapproche du relief.
+                float u = smoothstep(0f, 1f, Math.max(0, f) / (float) (GIF_AERIAL_END - 1));
+                centerCameraOnCrater();
+                rotateX           = lerp(-20f, 30f, u);
+                cameraPitch       = lerp(36f, 30f, u);
+                cameraDistance3D  = lerp(-150f, -115f, u);
+            } else if (f < GIF_FOLLOW_END) {
+                // Gros plan 3e personne sur l'animal le plus entouré.
+                if (f == GIF_AERIAL_END) {
+                    Agent a = mostSurroundedAgent();
+                    if (a != null) {
+                        setSelectedAgent(a, _myWorld.moutons.contains(a)
+                                ? _myWorld.moutons.indexOf(a) : _myWorld.loups.indexOf(a));
+                        cameraFollow = true;
+                    }
+                    gifFollowYaw0 = orbitYaw;
+                }
+                float u = smoothstep(0f, 1f, (f - GIF_AERIAL_END) / (float) (GIF_FOLLOW_END - GIF_AERIAL_END - 1));
+                orbitRadius = lerp(16f, 10f, u);
+                orbitPitch  = lerp(40f, 30f, u);   // assez plongeant pour passer au-dessus des arbres
+                orbitYaw    = gifFollowYaw0 + lerp(0f, 60f, u);
+            } else if (f < GIF_ERUPTION_END) {
+                // Retour au volcan, vu de loin : l'éruption démarre (sans secousse,
+                // qui rendrait le GIF illisible et lourd).
+                if (f == GIF_FOLLOW_END) {
+                    setSelectedAgent(null, -1);
+                    cameraFollow = false;
+                    wasErupting = true;   // pas de front montant → pas de screen shake
+                    LavaCA.setbErupt(1);
+                }
+                float u = smoothstep(0f, 1f, (f - GIF_FOLLOW_END) / (float) (GIF_ERUPTION_END - GIF_FOLLOW_END - 1));
+                centerCameraOnCrater();
+                rotateX          = lerp(40f, 75f, u);
+                cameraPitch      = lerp(26f, 30f, u);
+                cameraDistance3D = lerp(-175f, -150f, u);
+            } else {
+                // Tombée de la nuit (horloge accélérée) sur la lave qui continue de couler.
+                int fullCycle = 2 * _myWorld.getDureeJour();
+                if (f == GIF_ERUPTION_END) {
+                    float phase = (it % fullCycle) / (float) fullCycle;
+                    float d = 0.665f - phase;           // ≈ 22 h avec l'horloge « 6 + t × 24 »
+                    if (d < 0f) d += 1f;
+                    gifItDelta = (int) (d * fullCycle);
+                    gifItApplied = 0;
+                }
+                float n = smoothstep(0f, 1f, (f - GIF_ERUPTION_END) / (float) GIF_NIGHTFALL_FRAMES);
+                int want = (int) (gifItDelta * n);
+                it += want - gifItApplied;
+                gifItApplied = want;
+                float u = smoothstep(0f, 1f, (f - GIF_ERUPTION_END) / (float) (GIF_NIGHT_END - GIF_ERUPTION_END - 1));
+                centerCameraOnCrater();
+                rotateX          = lerp(75f, 115f, u);
+                cameraPitch      = lerp(30f, 22f, u);
+                cameraDistance3D = lerp(-150f, -135f, u);
+            }
+
+            if (f >= 0) {
+                screenshotFile = new File(new File("screenshots", "gif"), String.format("frame-%04d.png", f));
+                screenshotRequested = true;
+            }
+        }
+
+        /** Centre la vue 3D libre sur le cratère (épicentre figé en init). */
+        private void centerCameraOnCrater() {
+            int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+            movingX = ((LavaCA.sourceX - dxView / 2) % w + w) % w;
+            movingY = ((LavaCA.sourceY - dyView / 2) % h + h) % h;
+        }
+
+        /** Mouton (ou loup) ayant le plus d'animaux à moins de 6 cases (tore), donc dans le cadre du gros plan, et aucun humain proche. */
+        private Agent mostSurroundedAgent() {
+            int w = _myWorld.getWidth(), h = _myWorld.getHeight();
+            java.util.List<Agent> all = new java.util.ArrayList<>();
+            all.addAll(_myWorld.moutons);
+            all.addAll(_myWorld.loups);
+            Agent best = null;
+            int bestScore = -1;
+            for (Agent a : all) {
+                int score = 0;
+                for (Agent b : all) {
+                    if (b == a) continue;
+                    int dx = Math.abs(a.x - b.x) % w; dx = Math.min(dx, w - dx);
+                    int dy = Math.abs(a.y - b.y) % h; dy = Math.min(dy, h - dy);
+                    if (dx * dx + dy * dy <= 36) score++;
+                }
+                // Les humains n'ont pas de modèle 3D (simples triangles) : on évite
+                // de les avoir dans le gros plan.
+                for (Agent b : _myWorld.humains) {
+                    int dx = Math.abs(a.x - b.x) % w; dx = Math.min(dx, w - dx);
+                    int dy = Math.abs(a.y - b.y) % h; dy = Math.min(dy, h - dy);
+                    if (dx * dx + dy * dy <= 100) score -= 5;
+                }
+                // À égalité, préférer un mouton (modèle le plus détaillé).
+                if (score > bestScore || (score == bestScore && _myWorld.moutons.contains(a) && !_myWorld.moutons.contains(best))) {
+                    best = a; bestScore = score;
+                }
+            }
+            return best;
         }
 
         /** Variante vue 3D perspective centrée sur le volcan (lune, panaches, relief, arbres). */
@@ -2207,6 +2354,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             		// lecture tourne (en pause : world figé, caméra libre).
             		int stepsThisFrame = timeKeeper.stepsToRun(hz * speed,
             				TimeKeeper.MAX_STEPS_PER_FRAME * speed);
+            		// Mode gif : pas FIXE par image rendue (rendu image par image,
+            		// indépendant du FPS — cf. AUTOSHOT_GIF).
+            		if (AUTOSHOT_GIF && gifFrame >= 0) stepsThisFrame = GIF_STEPS_PER_FRAME;
             		if (playback.isRunning()) {
             			for (int s = 0; s < stepsThisFrame; s++) {
             				_myWorld.step();
@@ -2617,7 +2767,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	// Menu de lancement opaque : couvre la scène 3D derrière.
 	            	launchMenu.draw(gl, ui, viewportWidth, viewportHeight);
 	            } else {
-	            	if (DISPLAY_FPS) {
+	            	// Mode gif : pas de bandeau (texte illisible une fois réduit, et
+	            	// FPS sans signification en rendu image par image).
+	            	if (DISPLAY_FPS && !AUTOSHOT_GIF) {
 	            		double gameHour24 = (6.0 + currentDayPhase * 24.0) % 24.0;
 	            		int hr = (int) gameHour24;
 	            		int mn = (int) ((gameHour24 - hr) * 60.0);
@@ -2630,7 +2782,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            		         config != null && config.showDamageHud);
 	            	}
 	            	// Fiche détaillée de l'agent suivi (Phase 8), si présent.
-	            	if (selectedAgent != null) {
+	            	if (selectedAgent != null && !AUTOSHOT_GIF) {   // mode gif : image dégagée
 	            		agentInfoPanel.draw(gl, ui, viewportWidth, viewportHeight,
 	            		                    selectedAgent, selectedAgentIndex, cameraFollow);
 	            	}
@@ -2707,6 +2859,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 if (screenshotRequested) {
                     screenshotRequested = false;
                     String label = screenshotLabel; screenshotLabel = null;
+                    File target = screenshotFile; screenshotFile = null;
                     try {
                         File dir = new File("screenshots");
                         if (!dir.exists()) dir.mkdirs();
@@ -2714,7 +2867,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                         String name = (label != null)
                             ? "autoshot-" + label + "-" + stamp + ".png"
                             : "screenshot-" + stamp + ".png";
-                        File file = new File(dir, name);
+                        File file = (target != null) ? target : new File(dir, name);
                         Screenshot.writeToFile(file, gLDrawable.getWidth(), gLDrawable.getHeight());
                         System.out.println("Screenshot saved: " + file.getAbsolutePath());
                     } catch (Exception e) {

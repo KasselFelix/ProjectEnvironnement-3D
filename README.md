@@ -5,7 +5,7 @@ plusieurs mécanismes : automates cellulaires, système de décision des agents,
 générateur d'altitude, modèle proie-prédateur, bruit de Perlin, système de
 Lindenmayer (L-système) et monde torique.
 
-![Capture d'écran de la simulation](docs/screenshot.png)
+![Aperçu de la simulation : vue aérienne de l'île, gros plan sur un mouton, éruption volcanique puis tombée de la nuit sur la lave](docs/presentation.gif)
 
 Voir [docs/presentation-projet.pdf](docs/presentation-projet.pdf) pour la présentation académique du projet.
 
