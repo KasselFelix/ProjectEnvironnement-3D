@@ -198,6 +198,7 @@ public abstract class World {
     			list.add(cpt);
 	    		cpt++;
     	}
+    	heightVersion++;   // relief (re)généré → caches dérivés périmés
     	// worldCeiling initial (sans échelle, sera multiplié par verticalScale
     	// quand Landscape appellera setVerticalScale après calcul de heightFactor
     	// × heightBooster). DELTA absolu en unités-monde de la stack.
@@ -286,10 +287,14 @@ public abstract class World {
 	/** Saison courante (L5). Avance d'un cran tous les {@code seasonLengthDays}
 	 *  jours-jeu, en boucle PRINTEMPS→ÉTÉ→AUTOMNE→HIVER. Été perpétuel si la durée
 	 *  de saison est ≤ 0. */
+	/** Season.values() recopie le tableau à chaque appel ; currentSeason() est
+	 *  appelé par case et par tick dans les CA → on garde une copie unique. */
+	private static final Season[] SEASONS = Season.values();
+
 	public Season currentSeason() {
 		if (seasonLengthDays <= 0) return Season.SUMMER;
-		int idx = (getCurrentDay() / seasonLengthDays) % Season.values().length;
-		return Season.values()[idx];
+		int idx = (getCurrentDay() / seasonLengthDays) % SEASONS.length;
+		return SEASONS[idx];
 	}
 
 	/** Multiplicateur de fertilité saisonnier lu par les CA de végétation (L5). */
@@ -651,12 +656,44 @@ public abstract class World {
 	
     public double getCellHeight(int x, int y) // used by the visualization code to set correct height values
     {
+    	if (x >= 0 && x < dxCA && y >= 0 && y < dyCA) return cellsHeightValuesCA.getCellState(x, y); // = x%dxCA, y%dyCA
     	return cellsHeightValuesCA.getCellState(x%dxCA,y%dyCA);
     }
     
     public void setCellHeight(int x,int y, double state){
     	cellsHeightValuesCA.setCellState(x%dxCA,y%dyCA,state);
+    	heightVersion++;
     }
+
+    /**
+     * Ordre de visite aléatoire des cases pour la mise à jour asynchrone des CA :
+     * permutation uniforme de {@link #list}, remélangée à chaque appel
+     * (Fisher-Yates sur un int[] réutilisé). Équivaut à
+     * {@code Collections.shuffle(list)} — toute permutation reste équiprobable —
+     * sans le coût des Integer boxés (4 mélanges de toute la grille par tick).
+     * Le tableau renvoyé est partagé : à consommer avant le prochain appel.
+     */
+    public int[] shuffledCellOrder() {
+    	int n = list.size();
+    	if (cellOrder == null || cellOrder.length != n || cellOrderVersion != heightVersion) {
+    		cellOrder = new int[n];
+    		for (int k = 0; k < n; k++) cellOrder[k] = list.get(k);
+    		cellOrderVersion = heightVersion;
+    	}
+    	java.util.concurrent.ThreadLocalRandom rnd = java.util.concurrent.ThreadLocalRandom.current();
+    	for (int k = n - 1; k > 0; k--) {
+    		int r = rnd.nextInt(k + 1);
+    		int tmp = cellOrder[k]; cellOrder[k] = cellOrder[r]; cellOrder[r] = tmp;
+    	}
+    	return cellOrder;
+    }
+    private int[] cellOrder;
+    private int cellOrderVersion = -1;
+
+    /** Incrémenté à chaque modification du relief : permet aux caches dérivés
+     *  des hauteurs (ex. proximité de l'eau de ForestCA) de se savoir périmés. */
+    private int heightVersion = 0;
+    public int getHeightVersion() { return heightVersion; }
     
     public double getcellsHeightAmplitudeCA(int x, int y)
     {
@@ -750,6 +787,8 @@ public abstract class World {
 	// ============================================================
 
 	private int stackIndex(int x, int y) {
+		// Cas courant (coordonnées déjà dans la grille) sans les deux modulos.
+		if (x >= 0 && x < dxCA && y >= 0 && y < dyCA) return x * dyCA + y;
 		int xm = ((x % dxCA) + dxCA) % dxCA;
 		int ym = ((y % dyCA) + dyCA) % dyCA;
 		return xm * dyCA + ym;

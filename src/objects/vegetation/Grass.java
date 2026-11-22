@@ -28,6 +28,27 @@ public class Grass {
         return GRASS_SAPLING_MIN + (1f - GRASS_SAPLING_MIN) * f;
     }
 
+    /**
+     * Émet, dans le glBegin(GL_QUADS) de la passe 2a (culling coupé, cf.
+     * Landscape), le « V » de brins de pied (bx,by,bz) et de pointes t1, t2 :
+     * le triangle (pied, t1, t2).
+     *
+     * <p>Le sommet dupliqué est en positions 1-2 (voisines), si bien que les deux
+     * découpages possibles du quad donnent le même triangle. L'ancien encodage
+     * (pied, t1, pied, t2) dupliquait les sommets 1 et 3 : un pilote qui coupe le
+     * quad selon la diagonale 1-3 (NVIDIA) n'obtenait que deux triangles plats et
+     * l'herbe disparaissait ; selon la diagonale 2-4 (Intel), il donnait ce même
+     * triangle dans les deux sens.
+     */
+    private static void emitV(GL2 gl, float bx, float by, float bz,
+                              float t1x, float t1y, float t1z,
+                              float t2x, float t2y, float t2z) {
+        gl.glVertex3f(bx, by, bz);
+        gl.glVertex3f(bx, by, bz);
+        gl.glVertex3f(t1x, t1y, t1z);
+        gl.glVertex3f(t2x, t2y, t2z);
+    }
+
     public static void displayObjectAt(World myWorld, GL2 gl, int cellState, float x, float y, double height, float offset, float stepX, float stepY, float lenX, float lenY, float normalizeHeight,int movingX,int movingY, float bladeScale )
     {
 
@@ -64,10 +85,9 @@ public class Grass {
             		             (float)(0.1*stableNoise(cellX,cellY,12)));
             		break;
             }
-    		gl.glVertex3f( px, py, altitude );
-            gl.glVertex3f( px, py+lenY*0.4f*bladeScale, altitude+bladeScale);
-            gl.glVertex3f( px, py, altitude );
-            gl.glVertex3f( px, py-lenY*0.4f*bladeScale, altitude+bladeScale);
+            emitV(gl, px, py, altitude,
+                  px, py+lenY*0.4f*bladeScale, altitude+bladeScale,
+                  px, py-lenY*0.4f*bladeScale, altitude+bladeScale);
 
             switch ( cellState )
             {
@@ -83,10 +103,9 @@ public class Grass {
             		             (float)(0.2*stableNoise(cellX,cellY,22)));
             		break;
             }
-            gl.glVertex3f( px, py, altitude );
-            gl.glVertex3f( px-lenX*0.4f*bladeScale, py, altitude+bladeScale);
-    		gl.glVertex3f( px, py, altitude );
-            gl.glVertex3f( px+lenX*0.4f*bladeScale, py, altitude+bladeScale);
+            emitV(gl, px, py, altitude,
+                  px-lenX*0.4f*bladeScale, py, altitude+bladeScale,
+                  px+lenX*0.4f*bladeScale, py, altitude+bladeScale);
         }
     }
 }

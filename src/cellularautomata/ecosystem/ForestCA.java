@@ -91,7 +91,7 @@ public class ForestCA extends CellularAutomataInteger {
 			// de l'arbre / l'ombre de la canopée plutôt qu'un disque coloré.
 			out[0] = 60/255f; out[1] = 42/255f; out[2] = 26/255f;
 		} else if (s >= FIRE_FIRST && s <= FIRE_LAST) {   // en feu
-			if (Math.random() < 0.5) { out[0] = 1f; out[1] = 40/255f;  out[2] = 0f; }
+			if (java.util.concurrent.ThreadLocalRandom.current().nextDouble() < 0.5) { out[0] = 1f; out[1] = 40/255f;  out[2] = 0f; }
 			else                     { out[0] = 1f; out[1] = 206/255f; out[2] = 0f; }
 		} else if (s == BURNT) {            // brûlé
 			out[0] = 0f; out[1] = 0f; out[2] = 0f;
@@ -112,6 +112,12 @@ public class ForestCA extends CellularAutomataInteger {
 	 * Pilote la vitesse de croissance ET la taille adulte max.
 	 */
 	public double fertility(int x, int y) {
+		return fertility(x, y, world.seasonalFertility());
+	}
+
+	/** {@link #fertility(int, int)} avec le facteur saisonnier déjà lu (constant
+	 *  sur un pas) : même calcul, dans le même ordre. */
+	private double fertility(int x, int y, double seasonal) {
 		double maxH = world.getMaxEverHeight();
 		double hN = (maxH > 0) ? world.getCellHeight(x, y) / maxH : 0.0;
 		double d = (hN - 0.5) / 0.5;
@@ -129,7 +135,30 @@ public class ForestCA extends CellularAutomataInteger {
 		// L5 — modulation saisonnière : la forêt pousse vite au printemps, à
 		// l'arrêt l'hiver. Multiplie germination ET croissance (fertility est
 		// lue par les deux).
-		return fAlt * fSoil * fComp * waterProximityFactor(x, y) * world.seasonalFertility();
+		return fAlt * fSoil * fComp * waterProximityFactor(x, y) * seasonal;
+	}
+
+	/** Instantané, pris au début de step(), de « lave au sommet » (getLavaCAValue != 0). */
+	private boolean[][] lavaAt;
+
+	/** Remplit {@link #lavaAt} ; renvoie vrai s'il y a de la lave quelque part. */
+	private boolean snapshotLava() {
+		if (lavaAt == null) lavaAt = new boolean[_dx][_dy];
+		boolean any = false;
+		for (int x = 0; x < _dx; x++)
+			for (int y = 0; y < _dy; y++) {
+				boolean l = world.getLavaCAValue(x, y) != 0;
+				lavaAt[x][y] = l;
+				any |= l;
+			}
+		return any;
+	}
+
+	private boolean anyTreeOnFire() {
+		for (int x = 0; x < _dx; x++)
+			for (int y = 0; y < _dy; y++)
+				if (isTreeOnFire(this.getCellState(x, y))) return true;
+		return false;
 	}
 
 	/**
@@ -142,6 +171,27 @@ public class ForestCA extends CellularAutomataInteger {
 	 * seulement au cœur des terres sèches.
 	 */
 	private double waterProximityFactor(int x, int y) {
+		// Ne dépend que du relief : mis en cache par case, invalidé quand le
+		// relief change (World.getHeightVersion, ex. creusement du cratère).
+		// Appelé par case-arbre et par tick (croissance) + par arbre et par frame
+		// (taille de rendu) → le scan en anneaux dominait le coût de la forêt.
+		if (waterProxCache == null || waterProxVersion != world.getHeightVersion()) {
+			if (waterProxCache == null) waterProxCache = new double[_dx][_dy];
+			for (double[] row : waterProxCache) java.util.Arrays.fill(row, Double.NaN);
+			waterProxVersion = world.getHeightVersion();
+		}
+		int xm = ((x % _dx) + _dx) % _dx, ym = ((y % _dy) + _dy) % _dy;
+		double cached = waterProxCache[xm][ym];
+		if (!Double.isNaN(cached)) return cached;
+		double v = computeWaterProximityFactor(xm, ym);
+		waterProxCache[xm][ym] = v;
+		return v;
+	}
+
+	private double[][] waterProxCache;
+	private int waterProxVersion = -1;
+
+	private double computeWaterProximityFactor(int x, int y) {
 		for (int r = 1; r <= WATER_REACH; r++) {
 			for (int dx = -r; dx <= r; dx++)
 				for (int dy = -r; dy <= r; dy++) {
@@ -172,6 +222,14 @@ public class ForestCA extends CellularAutomataInteger {
 	 *    les peuplements existants plutôt que par germination uniforme.
 	 * Fonction pure (lecture seule). Bornée par construction à pA × (1 + K).
 	 */
+	/** Majorant de {@link #germinationProb} sur toute case : pA × cendre × (1 + K),
+	 *  la pierre (facteur < 1) ne faisant que réduire et la pression de graines
+	 *  étant ≤ 1. Sert à rejeter le tirage sans calculer la vraie proba. */
+	double germinationUpperBound() {
+		return pA * Math.max(1.0, STONE_GROWTH_FACTOR) * Math.max(1.0, ASH_BOOST_FACTOR)
+				* (1.0 + SEED_DISPERSAL_K);
+	}
+
 	public double germinationProb(int x, int y) {
 		double p = pA;
 		if (world.getStoneCAValue(x, y) > 0) p *= STONE_GROWTH_FACTOR;
@@ -281,7 +339,7 @@ public class ForestCA extends CellularAutomataInteger {
     		{
     			if ( _cellsHeightValuesCA.getCellState(x,y) >= 0 )
     			{
-    				if ( Math.random() < darbre){ // was: 0.71
+    				if ( java.util.concurrent.ThreadLocalRandom.current().nextDouble() < darbre){ // was: 0.71
     					this.setCellState(x, y, 1); // tree
     					NbArbreSaint+=1;
     				}
@@ -311,10 +369,25 @@ public class ForestCA extends CellularAutomataInteger {
 	public void step()
 	{
 		//MISE a jour asynchrone randomiser
-    	Collections.shuffle(world.list);
+    	int[] order = world.shuffledCellOrder();   // permutation aléatoire (mise à jour asynchrone)
     	for (boolean[] row : ignitedThisTick) java.util.Arrays.fill(row, false);  // Option 2 : borne le feu à 1 case/tick
-    	for(int d=0;d<world.list.size();d++){
-    		int c=world.list.get(d);                 // encodage World : c = x*_dy + y
+    	// La lave ne change pas pendant le pas de la forêt : relue une fois, en
+    	// balayage séquentiel, au lieu de jusqu'à 5 lectures de pile par case.
+    	final boolean anyLava = snapshotLava();
+    	// Un voisin compte comme « en feu » s'il brûle sans avoir pris feu CE tick,
+    	// donc s'il brûlait déjà au début du pas : sans foyer au départ, le
+    	// balayage des 8 voisins ne trouverait rien (qNoCatch resterait 1).
+    	final boolean anyFire = anyTreeOnFire();
+    	// Constantes du pas (mêmes expressions qu'avant, évaluées une fois).
+    	final double ts = tickRateScale();
+    	final double germBound = germinationUpperBound() * ts;
+    	final double envFactor = world.fireSpreadFactor() * tickRateScale();
+    	final double pSpontaneous = pF * envFactor;
+    	final double pAdvance = stateAdvanceProbability();
+    	final double invTicksToAdult = 1.0 / ticksToAdult();
+    	final double seasonal = world.seasonalFertility();
+    	for(int d=0;d < order.length;d++){
+    		int c = order[d];                 // encodage World : c = x*_dy + y
 			int i=c/_dy;                             // x
 			int j=c%_dy;                             // y
 			if (ashBoost[i][j] > 0) ashBoost[i][j]--;   // l'enrichissement cendre s'épuise (1×/cellule/tick)
@@ -328,8 +401,12 @@ public class ForestCA extends CellularAutomataInteger {
     				//     possible — avec proba réduite (sol moins fertile).
     				//   - sol au-dessus du niveau de la mer (height >= 0).
     				if ( this.getCellState(i,j) == 0
-    						&& world.getLavaCAValue(i, j)==0){
-    					if(Math.random() < germinationProb(i, j) * tickRateScale() && world.getCellHeight(i,j) >= 0){
+    						&& !(anyLava && lavaAt[i][j])){
+    					// Tirage d'abord, comparé à un MAJORANT de germinationProb : si u le dépasse,
+    					// il dépasse aussi la vraie proba → même issue, sans le balayage des 8 voisins
+    					// (pA est minuscule → ~99,99 % des cases sont rejetées ici).
+    					double u = java.util.concurrent.ThreadLocalRandom.current().nextDouble();
+    					if(u < germBound && u < germinationProb(i, j) * ts && world.getCellHeight(i,j) >= 0){
     						this.setCellState(i,j,1);
     						NbArbreSaint+=1;
     					}
@@ -342,7 +419,7 @@ public class ForestCA extends CellularAutomataInteger {
     				// Pour une case avec arbre
 	    			else if ( this.getCellState(i,j) == 1 ) // tree?
 	    			{
-	    				if(world.getLavaCAValue(i, j)!=0){
+	    				if(anyLava && lavaAt[i][j]){
 	    					// Lave directement sur la cellule. projectBurningTree décide :
 	    					//  - dans cratère → projection explosive en arc (vrai)
 	    					//  - hors cratère + voisin LAVA → poussée en aval (vrai)
@@ -366,13 +443,13 @@ public class ForestCA extends CellularAutomataInteger {
 		    				//    synchrone sans double-buffer ; le CA reste async ailleurs).
 		    				//  - lave adjacente = chaleur directe → embrase toujours.
 		    				//  - pluie (fireSpreadFactor) et hz (tickRateScale) modulent.
-		    				boolean lavaAdj =
-		    						world.getLavaCAValue( (i+_dx-1)%(_dx) , j ) != 0 ||
-		    						world.getLavaCAValue( (i+_dx+1)%(_dx) , j ) != 0 ||
-		    						world.getLavaCAValue( i , (j+_dy+1)%(_dy) ) != 0 ||
-		    						world.getLavaCAValue( i , (j+_dy-1)%(_dy) ) != 0;
-		    				double envFactor = world.fireSpreadFactor() * tickRateScale();
+		    				boolean lavaAdj = anyLava && (
+		    						lavaAt[(i+_dx-1)%(_dx)][j] ||
+		    						lavaAt[(i+_dx+1)%(_dx)][j] ||
+		    						lavaAt[i][(j+_dy+1)%(_dy)] ||
+		    						lavaAt[i][(j+_dy-1)%(_dy)]);
 		    				double qNoCatch = 1.0;   // proba de NE PAS s'enflammer ce tick
+		    				if (anyFire)
 		    				for (int wx = -1; wx <= 1; wx++)
 		    					for (int wy = -1; wy <= 1; wy++) {
 		    						if (wx == 0 && wy == 0) continue;
@@ -383,7 +460,7 @@ public class ForestCA extends CellularAutomataInteger {
 		    							// borne chaque terme à [0,1] pour garder un produit de probabilités monotone.
 		    							qNoCatch *= Math.max(0.0, 1.0 - dirSpreadWeight(wx, wy) * world.fireWindFactor(-wx, -wy) * envFactor);
 		    					}
-		    				if ( lavaAdj || Math.random() < 1.0 - qNoCatch )
+		    				if ( lavaAdj || (qNoCatch < 1.0 && java.util.concurrent.ThreadLocalRandom.current().nextDouble() < 1.0 - qNoCatch) ) // qNoCatch == 1 : tirage « u < 0 » inutile
 		    				{
 		    					this.setCellState(i,j, FIRE_FIRST);
 		    					ignitedThisTick[i][j] = true;
@@ -391,7 +468,7 @@ public class ForestCA extends CellularAutomataInteger {
 		    					world.events.treesBurned++;   // V6 — compteur de dommages
 		    				}
 		    				else
-		    					if ( Math.random() < pF * envFactor ) // feu spontané
+		    					if ( java.util.concurrent.ThreadLocalRandom.current().nextDouble() < pSpontaneous ) // feu spontané
 		    					{
 		    						this.setCellState(i,j, FIRE_FIRST);
 		    						ignitedThisTick[i][j] = true;
@@ -410,7 +487,7 @@ public class ForestCA extends CellularAutomataInteger {
 	    				int curState = this.getCellState(i, j);
 	    				// Si la lave atteint l'arbre en feu (n'importe quel sub-state), il est
 	    				// emporté/projeté par la coulée. projectBurningTree gère la direction.
-	    				if (world.getLavaCAValue(i, j) != 0) {
+	    				if (anyLava && lavaAt[i][j]) {
 	    					if (projectBurningTree(i, j)) {
 	    						this.setCellState(i,j,0); // arbre parti en vol
 	    					} else {
@@ -419,7 +496,7 @@ public class ForestCA extends CellularAutomataInteger {
 	    				}
 	    				else if (curState < FIRE_LAST) {
 	    					// Progresse via proba 1/40 → chaque sub-state dure ~2 sec à 20 Hz
-	    					if (Math.random() < stateAdvanceProbability()) {
+	    					if (java.util.concurrent.ThreadLocalRandom.current().nextDouble() < pAdvance) {
 	    						this.setCellState(i,j, curState + 1);
 	    					} else {
 	    						this.setCellState(i,j, curState); // reste en feu
@@ -427,7 +504,7 @@ public class ForestCA extends CellularAutomataInteger {
 	    				}
 	    				else {
 	    					// Dernier sub-state feu → devient brûlé (toujours avec proba)
-	    					if (Math.random() < stateAdvanceProbability()) {
+	    					if (java.util.concurrent.ThreadLocalRandom.current().nextDouble() < pAdvance) {
 	    						this.setCellState(i,j, BURNT);
 	    					} else {
 	    						this.setCellState(i,j, curState);
@@ -438,7 +515,7 @@ public class ForestCA extends CellularAutomataInteger {
 	    				int s = this.getCellState(i,j);
 	    				if (s == BURNT) {
 	    					// Brûlé visible (noir) : reste ~2 sec via proba 1/40
-	    					if (Math.random() < stateAdvanceProbability()) {
+	    					if (java.util.concurrent.ThreadLocalRandom.current().nextDouble() < pAdvance) {
 	    						this.setCellState(i,j, s + 1);
 	    					} else {
 	    						this.setCellState(i,j, s);
@@ -453,7 +530,7 @@ public class ForestCA extends CellularAutomataInteger {
 	    			// tout autre état (feu, brûlé, vide, germination ce tick)
 	    			// remet la croissance à 0 → une repousse repart en pousse.
 	    			if ( this.getCellState(i, j) == 1 )
-	    				growth[i][j] = grownValue(i, j);
+	    				growth[i][j] = Math.min(1.0, growth[i][j] + invTicksToAdult * fertility(i, j, seasonal)); // = grownValue(i, j)
 	    			else
 	    				growth[i][j] = 0.0;
     			}
@@ -475,8 +552,8 @@ public class ForestCA extends CellularAutomataInteger {
 	private boolean projectBurningTree(int i, int j) {
 		if (cellularautomata.ecosystem.LavaCA.isInActiveEruptionRadius(world, i, j)) {
 			// Cratère : explosion → projection en arc dans une direction aléatoire.
-			double angle = Math.random() * 2 * Math.PI;
-			double r = 8.0 + Math.random() * 12.0;  // 8-20 cellules
+			double angle = java.util.concurrent.ThreadLocalRandom.current().nextDouble() * 2 * Math.PI;
+			double r = 8.0 + java.util.concurrent.ThreadLocalRandom.current().nextDouble() * 12.0;  // 8-20 cellules
 			spawnTreeProjectile(i, j, angle, r, 25f, 25);
 			return true;
 		}
@@ -494,7 +571,7 @@ public class ForestCA extends CellularAutomataInteger {
 
 		// Aval = direction opposée à l'upstream (delta inversé, évite bug wrap-around toroïdal)
 		double angle = Math.atan2(-upstreamDelta[1], -upstreamDelta[0]);
-		double r = 3.0 + Math.random() * 3.0;  // 3-6 cellules
+		double r = 3.0 + java.util.concurrent.ThreadLocalRandom.current().nextDouble() * 3.0;  // 3-6 cellules
 		spawnTreeProjectile(i, j, angle, r, 15f, 25);
 		return true;
 	}

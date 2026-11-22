@@ -103,13 +103,13 @@ public class GrassCA extends CellularAutomataInteger {
 	/** Fait tendre les brins de la case vers son max saisonnier : repousse si en
 	 *  dessous, décroissance douce si au-dessus (le max a baissé en hiver).
 	 *  Probabilité par tick dérivée d'un taux par seconde-jeu → hz-invariant (on
-	 *  divise par simulationHz), même idiome Math.random()/tick que la germination. */
-	private void regrowBrins(int x, int y) {
+	 *  divise par simulationHz), même idiome tirage-uniforme/tick que la germination.
+	 *  Le tirage précède le calcul du max (indépendants → même loi) : on évite
+	 *  maxBrinsAt (fertilité, Math.pow…) sur la grande majorité des appels. */
+	private void regrowBrins(int x, int y, double p) {
+		if (java.util.concurrent.ThreadLocalRandom.current().nextDouble() >= p) return;
 		int m = maxBrinsAt(x, y);
 		if (brins[x][y] == m) return;
-		double p = brinsRegrowthPerSec * world.seasonalFertility()
-				/ SimulationConfig.getInstance().simulationHz;
-		if (Math.random() >= p) return;
 		if (brins[x][y] < m) brins[x][y]++;   // repousse
 		else                  brins[x][y]--;   // décroît si au-dessus du max saisonnier
 	}
@@ -143,6 +143,33 @@ public class GrassCA extends CellularAutomataInteger {
 		return (dx == 0 || dy == 0) ? FIRE_P_CARD : FIRE_P_DIAG;
 	}
 
+	/** Bits de {@link #heat} : lave au sommet (getLavaCAValue != 0), arbre en feu. */
+	private static final byte HEAT_LAVA = 1, HEAT_TREE_FIRE = 2;
+	/** Instantané, pris au début de step(), des sources de chaleur externes. */
+	private byte[][] heat;
+
+	/** Remplit {@link #heat} ; renvoie vrai s'il existe au moins une source. */
+	private boolean snapshotHeat() {
+		if (heat == null) heat = new byte[_dx][_dy];
+		boolean any = false;
+		for (int x = 0; x < _dx; x++)
+			for (int y = 0; y < _dy; y++) {
+				byte h = 0;
+				if (world.getLavaCAValue(x, y) != 0) h |= HEAT_LAVA;
+				if (ForestCA.isTreeOnFire(world.getForestCAValue(x, y))) h |= HEAT_TREE_FIRE;
+				heat[x][y] = h;
+				any |= h != 0;
+			}
+		return any;
+	}
+
+	private boolean anyCellInState(int state) {
+		for (int x = 0; x < _dx; x++)
+			for (int y = 0; y < _dy; y++)
+				if (this.getCellState(x, y) == state) return true;
+		return false;
+	}
+
 	public boolean canGrowGrass(int x, int y) {
 		double maxH = world.getMaxEverHeight();
 		double h = world.getCellHeight(x, y);
@@ -156,6 +183,25 @@ public class GrassCA extends CellularAutomataInteger {
 	 *  sinon bosse lisse avec optimum au milieu de la bande [maxH/12, 0.7·maxH].
 	 *  Donne le gradient 1-5 (≠ le booléen canGrowGrass). */
 	public double grassFertility(int x, int y) {
+		// Ne dépend que du relief : mise en cache par case, invalidée quand le
+		// relief change (World.getHeightVersion). Lue à chaque repousse de brin.
+		if (fertCache == null || fertVersion != world.getHeightVersion()) {
+			if (fertCache == null) fertCache = new double[_dx][_dy];
+			for (double[] row : fertCache) java.util.Arrays.fill(row, Double.NaN);
+			fertVersion = world.getHeightVersion();
+		}
+		int xm = ((x % _dx) + _dx) % _dx, ym = ((y % _dy) + _dy) % _dy;
+		double cached = fertCache[xm][ym];
+		if (!Double.isNaN(cached)) return cached;
+		double v = computeGrassFertility(x, y);
+		fertCache[xm][ym] = v;
+		return v;
+	}
+
+	private double[][] fertCache;
+	private int fertVersion = -1;
+
+	private double computeGrassFertility(int x, int y) {
 		if (!canGrowGrass(x, y)) return 0.0;
 		double maxH = world.getMaxEverHeight();
 		double lo = maxH / 12.0, hi = maxH * 0.7;
@@ -205,7 +251,7 @@ public class GrassCA extends CellularAutomataInteger {
     		{
     			if ( _cellsHeightValuesCA.getCellState(x,y) >= 0 )
     			{
-    				if ( Math.random() < dherbe && canGrowGrass(x, y)){
+    				if ( java.util.concurrent.ThreadLocalRandom.current().nextDouble() < dherbe && canGrowGrass(x, y)){
     					this.setCellState(x, y, 1); // grass
     					int m = maxBrinsAt(x, y);
     					brins[x][y] = Math.max(1, (int) Math.round(m * brinsInitialFill));
@@ -228,10 +274,22 @@ public class GrassCA extends CellularAutomataInteger {
 	public void step()
 	{
 		//MISE a jour asynchrone randomiser
-    	Collections.shuffle(world.list);
+    	int[] order = world.shuffledCellOrder();   // permutation aléatoire (mise à jour asynchrone)
     	for (boolean[] row : ignitedThisTick) java.util.Arrays.fill(row, false);  // Option 2 : borne le feu à 1 case/tick
-    	for(int d=0;d<world.list.size();d++){
-    		int c=world.list.get(d);                 // encodage World : c = x*_dy + y
+    	// Lave et forêt ne changent pas pendant le pas de l'herbe : on les relit
+    	// une fois, en balayage séquentiel, au lieu de 5 lectures de pile par case.
+    	final boolean anyHeat = snapshotHeat();
+    	// Un voisin compte comme « en feu » s'il est à 2 sans avoir pris feu CE
+    	// tick, donc s'il brûlait déjà au début du pas : sans foyer au départ,
+    	// le balayage des 8 voisins ne trouverait rien (qNoCatch resterait 1).
+    	final boolean anyBurning = anyCellInState(2);
+    	// Constantes du pas (mêmes expressions qu'avant, évaluées une fois).
+    	final double envFactor = world.fireSpreadFactor() * tickRateScale();
+    	final double pSpontaneous = pF * tickRateScale();
+    	final double pRegrow = brinsRegrowthPerSec * world.seasonalFertility()
+    			/ SimulationConfig.getInstance().simulationHz;
+    	for(int d=0;d < order.length;d++){
+    		int c = order[d];                 // encodage World : c = x*_dy + y
 			int i=c/_dy;                             // x
 			int j=c%_dy;                             // y
 			if (ashBoost[i][j] > 0) ashBoost[i][j]--;   // l'enrichissement cendre s'épuise (1×/cellule/tick)
@@ -244,8 +302,8 @@ public class GrassCA extends CellularAutomataInteger {
     				// mais avec proba réduite (sol minéral peu fertile).
     				// V4 : une cellule encore RASE (récemment broutée) ne repousse pas.
     				if ( this.getCellState(i,j) == 0
-    						&& world.getLavaCAValue(i, j)==0 && grazed[i][j]==0){
-    					regrowBrins(i, j);                 // 0 → 1+ brin si le max le permet
+    						&& (heat[i][j] & HEAT_LAVA) == 0 && grazed[i][j]==0){
+    					regrowBrins(i, j, pRegrow);        // 0 → 1+ brin si le max le permet
     					if (brins[i][j] > 0) { this.setCellState(i,j,1); NbHerbe+=1; }
 	    			}
     				//pour un herbe en cendre
@@ -256,8 +314,8 @@ public class GrassCA extends CellularAutomataInteger {
     				// Pour une case avec herbe
 	    			else if ( this.getCellState(i,j) == 1 ) // grass
 	    			{
-	    				regrowBrins(i, j);   // repousse vers le max saisonnier (ou décroît si au-dessus)
-	    				if(world.getLavaCAValue(i, j)!=0){
+	    				regrowBrins(i, j, pRegrow);   // repousse vers le max saisonnier (ou décroît si au-dessus)
+	    				if((heat[i][j] & HEAT_LAVA) != 0){
 	    					// Lave directement sur la cellule : l'herbe (petite) est
 	    					// consumée instantanément, pas de phase visible de combustion.
 	    					this.setCellState(i,j,0);
@@ -266,17 +324,13 @@ public class GrassCA extends CellularAutomataInteger {
 		    				// Propagation — Option 2 : herbe→herbe 8-connexe probabiliste
 		    				// bornée par tick (ignitedThisTick) ; sources de chaleur EXTERNES
 		    				// (lave / arbre en feu adjacents) = ignition immédiate.
-		    				boolean extHeat =
-		    						world.getLavaCAValue( (i+_dx-1)%(_dx) , j ) != 0 ||
-		    						world.getLavaCAValue( (i+_dx+1)%(_dx) , j ) != 0 ||
-		    						world.getLavaCAValue( i , (j+_dy+1)%(_dy) ) != 0 ||
-		    						world.getLavaCAValue( i , (j+_dy-1)%(_dy) ) != 0 ||
-		    						ForestCA.isTreeOnFire(world.getForestCAValue( (i+_dx-1)%(_dx) , j )) ||
-		    						ForestCA.isTreeOnFire(world.getForestCAValue( (i+_dx+1)%(_dx) , j )) ||
-		    						ForestCA.isTreeOnFire(world.getForestCAValue( i , (j+_dy+1)%(_dy) )) ||
-		    						ForestCA.isTreeOnFire(world.getForestCAValue( i , (j+_dy-1)%(_dy) ));
-		    				double envFactor = world.fireSpreadFactor() * tickRateScale();
+		    				boolean extHeat = anyHeat && (
+		    						heat[(i+_dx-1)%(_dx)][j] != 0 ||
+		    						heat[(i+_dx+1)%(_dx)][j] != 0 ||
+		    						heat[i][(j+_dy+1)%(_dy)] != 0 ||
+		    						heat[i][(j+_dy-1)%(_dy)] != 0);
 		    				double qNoCatch = 1.0;
+		    				if (anyBurning)
 		    				for (int wx = -1; wx <= 1; wx++)
 		    					for (int wy = -1; wy <= 1; wy++) {
 		    						if (wx == 0 && wy == 0) continue;
@@ -287,7 +341,9 @@ public class GrassCA extends CellularAutomataInteger {
 		    							// borne chaque terme à [0,1] pour garder un produit de probabilités monotone.
 		    							qNoCatch *= Math.max(0.0, 1.0 - dirSpreadWeight(wx, wy) * world.fireWindFactor(-wx, -wy) * envFactor);
 		    					}
-		    				if ( extHeat || Math.random() < 1.0 - qNoCatch )
+		    				// qNoCatch == 1 : le tirage « u < 0 » échouerait toujours → on le saute.
+		    				if ( extHeat || (qNoCatch < 1.0
+		    						&& java.util.concurrent.ThreadLocalRandom.current().nextDouble() < 1.0 - qNoCatch) )
 		    				{
 		    					this.setCellState(i,j,2);
 		    					ignitedThisTick[i][j] = true;
@@ -295,7 +351,7 @@ public class GrassCA extends CellularAutomataInteger {
 		    					brins[i][j] = 0;   // invariant I1 : brins>0 ⟺ cellState==1
 		    				}
 		    				else
-		    					if ( Math.random() < pF * tickRateScale() ) // feu spontané
+		    					if ( java.util.concurrent.ThreadLocalRandom.current().nextDouble() < pSpontaneous ) // feu spontané
 		    					{
 		    						this.setCellState(i,j,2);
 		    						ignitedThisTick[i][j] = true;
@@ -338,7 +394,7 @@ public class GrassCA extends CellularAutomataInteger {
 	    					color[2] = 0.f;
 	    					break;
 	    				case 2: // burning grass
-	    					if(Math.random()<0.5){
+	    					if(java.util.concurrent.ThreadLocalRandom.current().nextDouble()<0.5){
 		    					color[0] = 255/255f;
 		    					color[1] = 40/255f;
 		    					color[2] = 0f;

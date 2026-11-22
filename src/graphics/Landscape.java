@@ -272,6 +272,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		private static final String  AUTOSHOT_MODE = System.getProperty("autoshot");      // null, "true"/"top", ou "3d"
 		private static final boolean AUTOSHOT = (AUTOSHOT_MODE != null);
 		private static final boolean AUTOSHOT_3D = "3d".equalsIgnoreCase(AUTOSHOT_MODE); // vue perspective centrée volcan
+		private static final boolean AUTOSHOT_PERF = "perf".equalsIgnoreCase(AUTOSHOT_MODE); // 3D 15 s puis quitte (avec -Dprofile=true)
 		private static final boolean AUTOSHOT_SELECT = "select".equalsIgnoreCase(AUTOSHOT_MODE); // suivi agent + halo V3
 		private static final boolean AUTOSHOT_MOON = "moon".equalsIgnoreCase(AUTOSHOT_MODE);   // cadrage lune V1 (balayage azimut)
 		private static final boolean AUTOSHOT_RAIN = "rain".equalsIgnoreCase(AUTOSHOT_MODE);   // pluie : tint d'eau + séchage (L7)
@@ -367,6 +368,19 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         // Module 1 (refonte 2026-05) : fixed-timestep découplé du framerate.
         // Remplace l'ancien `_myWorld.step()` synchro frame par un loop accumulator.
         private final TimeKeeper timeKeeper = new TimeKeeper();
+        // Chronométrage par passe (-Dprofile=true) — no-op sinon.
+        private final FrameProfiler profiler = new FrameProfiler();
+        // Couleurs de sommet du terrain (RGB) de la frame courante — cf. passe 1a.
+        private float[] vertexColorCache = new float[0];
+        /** Terrain en vertex arrays (un seul glDrawElements). {@code -Dterrain.immediate=true}
+         *  revient à l'ancien rendu immédiat (comparaison, ou pilote récalcitrant). */
+        private final TerrainMesh terrainMesh = new TerrainMesh();
+        private static final boolean TERRAIN_IMMEDIATE = Boolean.getBoolean("terrain.immediate");
+        /** Eau en vertex arrays (passe 1b). {@code -Dwater.immediate=true} revient au
+         *  rendu immédiat ({@link #emitWaterVertex}), lu à chaque frame. */
+        private final WaterMesh waterMesh = new WaterMesh();
+        // Pyramide de vue pour le culling des arbres (passe 2b).
+        private final Frustum treeFrustum = new Frustum();
         // Contrôle de lecture (pause + vitesse x1/x2/x4/x8), façon lecteur vidéo.
         private final PlaybackControl playback = new PlaybackControl();
 
@@ -1386,6 +1400,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 
                 // Enable VSync
                 gl.setSwapInterval(1);
+                // Carte graphique réellement utilisée : sous Windows, chaque exécutable
+                // (java.exe, javaw.exe d'Eclipse, l'exe packagé) a son propre réglage
+                // « Hautes performances » ; sur l'iGPU la vue 3D s'effondre.
+                System.out.println("GPU : " + gl.glGetString(GL.GL_RENDERER) + " (" + gl.glGetString(GL.GL_VENDOR)
+                        + "), OpenGL " + gl.glGetString(GL.GL_VERSION));
                 // END of GO FAST ???
 
 
@@ -1748,6 +1767,85 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
          * 3:SO} de la case (x,y)) à z=0, coloré selon la profondeur moyenne aux
          * 4 cases du coin (bordure claire → large bleu nuit), assombri jour/nuit.
          */
+        /**
+         * Passe 1b en vertex arrays : mêmes triangles, dans le même ordre, que la
+         * boucle immédiate ({@link #emitWaterVertex}), mais chaque sommet de la grille
+         * n'est coloré qu'une fois. La profondeur d'un sommet somme les 4 cases qui le
+         * partagent dans le même ordre ((-1,-1), (0,-1), (-1,0), (0,0)) ; ajouter 0.0
+         * pour une case émergée ne change pas la somme, d'où des couleurs identiques
+         * au bit près. Les positions suivent la même formule que le terrain en
+         * vertex arrays (sommet partagé = coin +len de la case précédente).
+         */
+        private void drawWaterArrays(GL2 gl, int[] xWin, int[] yWin, int nx, int ny, double maxD, float dayF) {
+        	final int vxCount = xWin[1] - xWin[0] + 1;
+        	final int vyCount = yWin[1] - yWin[0] + 1;
+        	final int cw = vxCount + 1, ch = vyCount + 1;   // cases x ∈ [xWin0-1, xWin1]
+        	waterMesh.begin(vxCount, vyCount);
+        	double[] cellH = waterMesh.cellH;
+        	for (int i = 0; i < cw; i++) {
+        		int wx = ((xWin[0] - 1 + i + movingX) % nx + nx) % nx;
+        		for (int j = 0; j < ch; j++) {
+        			int wy = ((yWin[0] - 1 + j + movingY) % ny + ny) % ny;
+        			cellH[i * ch + j] = _myWorld.getCellHeight(wx, wy);
+        		}
+        	}
+        	// Sommets : position + couleur.
+        	float[] pos = waterMesh.pos, col = waterMesh.col;
+        	final double sat = maxD * WATER_DEPTH_SAT;
+        	for (int vx = 0; vx < vxCount; vx++) {
+        		float px = offset + (xWin[0] + vx - 1) * stepX + lenX;
+        		for (int vy = 0; vy < vyCount; vy++) {
+        			int k = vx * vyCount + vy;
+        			// cases (X-1,Y-1), (X,Y-1), (X-1,Y), (X,Y) du sommet (X,Y) = xWin0+vx
+        			double h0 = cellH[vx * ch + vy],       h1 = cellH[(vx + 1) * ch + vy];
+        			double h2 = cellH[vx * ch + vy + 1],   h3 = cellH[(vx + 1) * ch + vy + 1];
+        			double dsum = 0;
+        			if (h0 < 0) dsum += -h0;
+        			if (h1 < 0) dsum += -h1;
+        			if (h2 < 0) dsum += -h2;
+        			if (h3 < 0) dsum += -h3;
+        			float t = (float)Math.min(1.0, (dsum/4.0) / sat);
+        			pos[k*3]   = px;
+        			pos[k*3+1] = offset + (yWin[0] + vy - 1) * stepY + lenY;
+        			pos[k*3+2] = 0f;
+        			col[k*4]   = (WATER_SHALLOW[0] + (WATER_DEEP[0]-WATER_SHALLOW[0])*t) * dayF;
+        			col[k*4+1] = (WATER_SHALLOW[1] + (WATER_DEEP[1]-WATER_SHALLOW[1])*t) * dayF;
+        			col[k*4+2] = (WATER_SHALLOW[2] + (WATER_DEEP[2]-WATER_SHALLOW[2])*t) * dayF;
+        			col[k*4+3] = WATER_ALPHA_SHALLOW + (WATER_ALPHA_DEEP - WATER_ALPHA_SHALLOW) * t;
+        		}
+        	}
+        	// Triangles : même choix et même ordre que la boucle immédiate.
+        	for (int x = xWin[0]; x < xWin[1]; x++) {
+        		int vx = x - xWin[0];
+        		for (int y = yWin[0]; y < yWin[1]; y++) {
+        			int vy = y - yWin[0];
+        			int c = (vx + 1) * ch + (vy + 1);              // case (x, y)
+        			// coins : 0 = (x, y+1), 1 = (x+1, y+1), 2 = (x+1, y), 3 = (x, y)
+        			int i0 = vx * vyCount + vy + 1, i1 = (vx + 1) * vyCount + vy + 1;
+        			int i2 = (vx + 1) * vyCount + vy, i3 = vx * vyCount + vy;
+        			if (cellH[c] < 0) {
+        				waterMesh.add(i0); waterMesh.add(i1); waterMesh.add(i2);
+        				waterMesh.add(i0); waterMesh.add(i2); waterMesh.add(i3);
+        			} else {
+        				boolean wN = cellH[c + 1] < 0, wS = cellH[c - 1] < 0;
+        				boolean wE = cellH[c + ch] < 0, wW = cellH[c - ch] < 0;
+        				int omit = -1;
+        				if      (wN && wE) omit = 3;
+        				else if (wE && wS) omit = 0;
+        				else if (wS && wW) omit = 1;
+        				else if (wW && wN) omit = 2;
+        				if (omit >= 0) {
+        					if (omit != 0) waterMesh.add(i0);
+        					if (omit != 1) waterMesh.add(i1);
+        					if (omit != 2) waterMesh.add(i2);
+        					if (omit != 3) waterMesh.add(i3);
+        				}
+        			}
+        		}
+        	}
+        	waterMesh.draw(gl, vxCount * vyCount);
+        }
+
         private void emitWaterVertex(GL2 gl, int x, int y, int ci, int nx, int ny, double maxD, float dayF) {
         	int xIt   = (ci==1||ci==2) ? 1   : 0;
         	int yIt   = (ci==0||ci==1) ? 1   : 0;
@@ -1791,6 +1889,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             long t = now - autoshotStartMs;
             if (AUTOSHOT_GIF)    { runAutoshotGif(); return; }
             if (AUTOSHOT_3D)     { runAutoshot3D(t); return; }
+            if (AUTOSHOT_PERF)   { runAutoshotPerf(t); return; }
             if (AUTOSHOT_SELECT) { runAutoshotSelect(t); return; }
             if (AUTOSHOT_MOON)   { runAutoshotMoon(t); return; }
             if (AUTOSHOT_RAIN)   { runAutoshotRain(t); return; }
@@ -1934,6 +2033,21 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         }
 
         /** Variante vue 3D perspective centrée sur le volcan (lune, panaches, relief, arbres). */
+        /**
+         * Mesure de performance (mode {@code -Dautoshot=perf}) : bascule en vue 3D
+         * avec la caméra par défaut, laisse tourner 15 s puis quitte. À combiner
+         * avec {@code -Dprofile=true} pour le détail par passe dans la console.
+         */
+        private int perfFrames0;
+
+        private void runAutoshotPerf(long t) {
+            switch (autoshotStep) {
+                case 0: VIEW_FROM_ABOVE = false; autoshotStep = 1; break;
+                case 1: if (t >= 3000) { perfFrames0 = renderFrames; autoshotStep = 2; } break; // 3 s de chauffe (JIT, chargement)
+                case 2: if (t >= 15000) { System.out.printf("[autoshot] perf : FPS moyen=%.1f%n", (renderFrames - perfFrames0) / 12.0); Runtime.getRuntime().halt(0); } break;
+            }
+        }
+
         private void runAutoshot3D(long t) {
             // Recentre en continu la caméra sur le cratère (l'épicentre est figé en init).
             int w = _myWorld.getWidth(), h = _myWorld.getHeight();
@@ -2119,6 +2233,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         		// ** clean screen
 
         		final GL2 gl = gLDrawable.getGL().getGL2();
+        		profiler.begin(gl);
 
         		// Pilotage manuel : (dé)capture du curseur (mouse-look 3D) et
         		// recalcul du cap de l'agent selon la vue, à chaque frame.
@@ -2345,6 +2460,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
         		//    n'a pas été validé (Phase 6).
         		// Module 1 (refonte 2026-05) : on exécute 0..MAX_STEPS_PER_FRAME
         		// steps selon le temps réel écoulé (fixed-timestep accumulator).
+            	profiler.mark(gl, "camera+ciel");
             	if (config == null || !config.awaitingStart) {
             		int hz = (config != null) ? config.simulationHz : 20;
             		int speed = playback.multiplier();
@@ -2369,8 +2485,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
             			// par step) : figée en pause, ×N en accéléré, et la durée du jour
             			// respecte enfin cycleTotalSec au lieu du FPS de rendu.
             			it += stepsThisFrame;
+            			profiler.addSteps(stepsThisFrame);
             		}
             	}
+            	profiler.mark(gl, "simulation");
 
         		// ** draw everything
     		//
@@ -2408,6 +2526,68 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                         groundTex.bind(gl);
                 }
 
+                // Couleur de sommet calculée UNE fois par sommet et par frame : un
+                // sommet est partagé par 4 cases, et sa couleur (terrain + teintes
+                // forêt/broutage/eau/neige) ne dépend que de ses coordonnées monde.
+                // Le cache donne donc exactement les mêmes couleurs, 4× moins cher.
+                final int vxCount = xWin[1] - xWin[0] + 1;
+                final int vyCount = yWin[1] - yWin[0] + 1;
+                if (vertexColorCache.length < vxCount * vyCount * 3)
+                	vertexColorCache = new float[vxCount * vyCount * 3];
+                {
+                	worlds.WorldOfCells wcTint = (worlds.WorldOfCells)_myWorld;
+                	for (int vx = 0; vx < vxCount; vx++) {
+                		for (int vy = 0; vy < vyCount; vy++) {
+                			int wx = xWin[0] + vx + movingX, wy = yWin[0] + vy + movingY;
+                			float[] vcol = wcTint.getVertexTerrainColor(wx, wy);
+                			wcTint.applyForestTint(wx, wy, vcol); // marqueur de forêt : teinte le sol
+                			wcTint.applyGrazedTint(wx, wy, vcol); // V4 — herbe broutée (sous la neige)
+                			wcTint.applyWaterTint(wx, wy, vcol);  // L7 — eau de ruissellement
+                			wcTint.applySnowTint(wx, wy, vcol);   // L7 — neige (par-dessus la forêt)
+                			int k = (vx * vyCount + vy) * 3;
+                			vertexColorCache[k] = vcol[0]; vertexColorCache[k+1] = vcol[1]; vertexColorCache[k+2] = vcol[2];
+                		}
+                	}
+                }
+
+                // Sommets partagés (grille) : valable tant que les 4 coins d'une
+                // case ont le même facteur de lissage (toujours 1 aujourd'hui).
+                final boolean terrainVA = !TERRAIN_IMMEDIATE
+                		&& smoothFactor[0] == smoothFactor[1] && smoothFactor[1] == smoothFactor[2]
+                		&& smoothFactor[2] == smoothFactor[3];
+                if (terrainVA) {
+                	if ( MY_LIGHT_RENDERING_HIGHT && MY_LIGHT_RENDERING && VIEW_FROM_ABOVE != true)
+                	{
+                		float[] lightColorSpecular = {0.8f, 0.8f, 0.3f, 1f};
+                		gl.glMaterialfv( GL.GL_FRONT_AND_BACK, GL2.GL_SPECULAR, lightColorSpecular, 0 );
+                		gl.glMateriali( GL.GL_FRONT_AND_BACK, GL2.GL_SHININESS, 5 );
+                	}
+                	terrainMesh.ensureCapacity(vxCount, vyCount);
+                	float[] pos = terrainMesh.pos, nrm = terrainMesh.nrm, tex = terrainMesh.tex;
+                	for (int vx = 0; vx < vxCount; vx++) {
+                		int gx = xWin[0] + vx;
+                		int cx = (gx + movingX) % (dxView-1);
+                		float px = offset + (gx - 1) * stepX + lenX; // = coin +lenX de la case gx-1
+                		for (int vy = 0; vy < vyCount; vy++) {
+                			int gy = yWin[0] + vy;
+                			int cy = (gy + movingY) % (dyView-1);
+                			int k = vx * vyCount + vy;
+                			float zValue = 0.f;
+                			if ( VIEW_FROM_ABOVE == false ) {
+                				double altitude = _myWorld.getCellHeight(cx, cy) * heightBooster;
+                				zValue = heightFactor*(float)altitude * smoothFactor[0];
+                			}
+                			pos[k*3]   = px;
+                			pos[k*3+1] = offset + (gy - 1) * stepY + lenY;
+                			pos[k*3+2] = zValue;
+                			float[] n = normals[cx][cy];
+                			nrm[k*3] = n[0]; nrm[k*3+1] = n[1]; nrm[k*3+2] = n[2];
+                			tex[k*2]   = (gx + movingX) * TEX_TILES_PER_CELL;
+                			tex[k*2+1] = (gy + movingY) * TEX_TILES_PER_CELL;
+                		}
+                	}
+                	terrainMesh.draw(gl, vertexColorCache, useTex);
+                } else {
             	gl.glBegin(GL2.GL_QUADS);
 
                 for ( int x = xWin[0] ; x < xWin[1] ; x++ ){
@@ -2453,25 +2633,18 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	                        float[] n = normals[(x+xIt+movingX) % (dxView-1)][(y+yIt+movingY) % (dyView-1)];
 	                        gl.glNormal3f(n[0], n[1], n[2]);
 	                        gl.glTexCoord2f(u, v);
-	                        float[] vcol = ((worlds.WorldOfCells)_myWorld).getVertexTerrainColor(x+xIt+movingX, y+yIt+movingY);
-	                        // Marqueur de forêt : on TEINTE le sol directement (suit le
-	                        // relief, toujours visible) au lieu d'un disque flottant.
-	                        ((worlds.WorldOfCells)_myWorld).applyForestTint(x+xIt+movingX, y+yIt+movingY, vcol);
-	                        // V4 — herbe broutée : brunit le sol tondu (sous la neige).
-	                        ((worlds.WorldOfCells)_myWorld).applyGrazedTint(x+xIt+movingX, y+yIt+movingY, vcol);
-	                        // L7 — eau de ruissellement : bleuit les ruisseaux/flaques.
-	                        ((worlds.WorldOfCells)_myWorld).applyWaterTint(x+xIt+movingX, y+yIt+movingY, vcol);
-	                        // L7 — neige : blanchit les sommets enneigés (par-dessus la forêt).
-	                        ((worlds.WorldOfCells)_myWorld).applySnowTint(x+xIt+movingX, y+yIt+movingY, vcol);
-	                        gl.glColor3f(vcol[0], vcol[1], vcol[2]);
+	                        int ck = ((x + xIt - xWin[0]) * vyCount + (y + yIt - yWin[0])) * 3;
+	                        gl.glColor3f(vertexColorCache[ck], vertexColorCache[ck+1], vertexColorCache[ck+2]);
 	                        gl.glVertex3f( offset+x*stepX+xSign*lenX, offset+y*stepY+ySign*lenY, zValue);
                         }
                 	}
         		}
 
 	            gl.glEnd();
+                }
 
 	            if (useTex) gl.glDisable(GL.GL_TEXTURE_2D);
+	            profiler.mark(gl, "terrain");
 
 	            // ** PASSE 1b : EAU — quads à z=0 colorés PAR PROFONDEUR (bordure claire
 	            //    -> large bleu nuit), lighting OFF (couleur stable, pas de scintillement
@@ -2506,6 +2679,9 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	// une case de TERRE de rivage avec EXACTEMENT 2 voisins eau
 	            	// ADJACENTS reçoit un triangle d'eau qui coupe son coin → la côte
 	            	// passe d'un angle droit (90°) à une diagonale (45°).
+	            	if (!Boolean.getBoolean("water.immediate")) {
+	            		drawWaterArrays(gl, xWin, yWin, nx, ny, maxD, dayF);
+	            	} else {
 	            	gl.glBegin(GL2.GL_TRIANGLES);
 	            	for ( int x = xWin[0] ; x < xWin[1] ; x++ ) {
 	            		for ( int y = yWin[0] ; y < yWin[1] ; y++ ) {
@@ -2536,9 +2712,11 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            		}
 	            	}
 	            	gl.glEnd();
+	            	}
 	            	gl.glPopAttrib();
 	            }
-	            
+	            profiler.mark(gl, "eau");
+
 	            // ** PASSE 2 : objets non-texturés
 
 	            gl.glBegin(GL2.GL_QUADS);
@@ -2602,7 +2780,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	                    	// Végétation : Tree / Grass utilisent leur propre
 	                    	// altitude via World.getCellTopAltitude (cf. patch).
 	                    	_myWorld.displayObjectTree(_myWorld,gl,forestState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeight,movingX,movingY);
-	                    	_myWorld.displayObjectGrass(_myWorld,gl,herbeState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeight,movingX,movingY);
+	                    	// L'herbe est dessinée juste après, dans son propre lot (passe 2a).
 	                	}
 	                }
 
@@ -2621,20 +2799,49 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 	            gl.glEnd();
 
+	            // ** PASSE 2a : herbe. Chaque touffe est un « V » de brins dont les deux
+	            //    faces doivent se voir : on coupe le culling le temps de ce lot plutôt
+	            //    que d'émettre chaque brin dans les deux sens (2× moins de sommets).
+	            //    Opaque + test de profondeur : l'ordre par rapport aux couches et aux
+	            //    agents ne change pas l'image. Normale (0,0,1) comme dans la passe 2.
+	            if ( DISPLAY_OBJECTS == true )
+	            {
+	            	boolean cullWasOn = gl.glIsEnabled(GL.GL_CULL_FACE);
+	            	gl.glDisable(GL.GL_CULL_FACE);
+	            	gl.glNormal3f(0f, 0f, 1f);
+	            	float normalizeHeightGrass = ( smoothFactor[0] + smoothFactor[1] + smoothFactor[2] + smoothFactor[3] ) / 4.f * (float)heightBooster * heightFactor;
+	            	gl.glBegin(GL2.GL_QUADS);
+	            	for ( int x = xWin[0] ; x < xWin[1] ; x++ ) {
+	            		for ( int y = yWin[0] ; y < yWin[1] ; y++ ) {
+	            			int herbeState = _myWorld.getGrassCAValue(x+movingX,y+movingY);
+	            			if (herbeState < 1 || herbeState > 4) continue;
+	            			double height = _myWorld.getCellHeight(x+movingX,y+movingY);
+	            			_myWorld.displayObjectGrass(_myWorld,gl,herbeState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeightGrass,movingX,movingY);
+	            		}
+	            	}
+	            	gl.glEnd();
+	            	if (cullWasOn) gl.glEnable(GL.GL_CULL_FACE);
+	            }
+	            profiler.mark(gl, "couches+herbe+decor");
+
 	            // ** PASSE 2b : arbres complets (tronc cylindre + feuillage cône via display lists).
 	            // Hors d'un glBegin — display lists ouvrent leur propre glBegin en interne.
 	            if ( DISPLAY_OBJECTS == true )
 	            {
 	            	float normalizeHeightTrees = ( smoothFactor[0] + smoothFactor[1] + smoothFactor[2] + smoothFactor[3] ) / 4.f * (float)heightBooster * heightFactor;
+	            	treeFrustum.update(gl);   // caméra de cette frame → arbres hors champ sautés
+	            	objects.vegetation.Tree.beginTrees(gl);   // états du modèle posés une fois pour tous les arbres
 	            	for ( int x = xWin[0] ; x < xWin[1] ; x++ ) {
 	            		for ( int y = yWin[0] ; y < yWin[1] ; y++ ) {
 	            			int forestState = _myWorld.getForestCAValue(x+movingX, y+movingY);
 	            			if (forestState < 1 || forestState > 5) continue;
 	            			double height = _myWorld.getCellHeight(x+movingX, y+movingY);
-	            			objects.vegetation.Tree.displayTreeAt(_myWorld, gl, forestState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeightTrees, movingX, movingY);
+	            			objects.vegetation.Tree.displayTreeAt(_myWorld, gl, forestState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeightTrees, movingX, movingY, treeFrustum);
 	            		}
 	            	}
+	            	objects.vegetation.Tree.endTrees(gl);
 	            }
+	            profiler.mark(gl, "arbres");
 
 
 	            // Passe 2c : moutons via modèle GLB Blender (modddif.com, 10k faces).
@@ -2689,6 +2896,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            			movingX, movingY, offset, stepX, stepY,
 	            			lenX, lenY, normalizeHeightMoutons);
 	            }
+	            profiler.mark(gl, "agents");
 
 	            // V3 — halo de sélection au sol sous l'agent suivi (cercle pulsant).
 	            if (selectedAgent != null && isAgentStillAlive(selectedAgent)) {
@@ -2756,6 +2964,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	gl.glMatrixMode(GLMatrixFunc.GL_MODELVIEW);
 	            }
 
+	            profiler.mark(gl, "effets+picking");
 	            ui.begin2D(gl, viewportWidth, viewportHeight);
 	            // V8 — flash blanc de foudre (bref, plein écran, fondu rapide).
 	            if (_myWorld.lightningFlash > 0) {
@@ -2851,6 +3060,8 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	            	}
 	            }
 	            ui.end2D(gl);
+	            profiler.mark(gl, "ui");
+	            profiler.end();
 	            // ==================================================================
 
                 gl.glFlush(); // GO FAST ???//was desable
