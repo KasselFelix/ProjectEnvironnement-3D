@@ -15,11 +15,18 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# Natives à vérifier et conseil d'installation du JDK selon l'OS courant.
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) NATIVES=windows-amd64;    JDK_HINT="installe un JDK 17+ (ex. winget install Microsoft.OpenJDK.21)" ;;
+    Darwin*)              NATIVES=macosx-universal; JDK_HINT="installe un JDK 17+ (ex. brew install openjdk@17)" ;;
+    *)                    NATIVES=linux-amd64;      JDK_HINT="sudo apt install -y openjdk-17-jdk" ;;
+esac
+
 REQUIRED=(
     "JOGL/jar/gluegen-rt.jar"
     "JOGL/jar/jogl-all.jar"
-    "JOGL/jar/gluegen-rt-natives-linux-amd64.jar"
-    "JOGL/jar/jogl-all-natives-linux-amd64.jar"
+    "JOGL/jar/gluegen-rt-natives-${NATIVES}.jar"
+    "JOGL/jar/jogl-all-natives-${NATIVES}.jar"
 )
 
 missing=0
@@ -50,7 +57,7 @@ fi
 
 if ! command -v javac >/dev/null; then
     echo "Erreur : javac introuvable." >&2
-    echo "Installe un JDK : sudo apt install -y openjdk-17-jdk" >&2
+    echo "Pour l'installer : ${JDK_HINT}" >&2
     exit 1
 fi
 
