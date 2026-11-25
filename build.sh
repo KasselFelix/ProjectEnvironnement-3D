@@ -11,7 +11,7 @@ if [ ! -d JOGL/jar ] || [ -z "$(ls -A JOGL/jar 2>/dev/null)" ]; then
 fi
 
 if ! command -v javac >/dev/null; then
-    echo "Erreur : javac introuvable. Installe un JDK : sudo apt install -y openjdk-17-jdk" >&2
+    echo "Erreur : javac introuvable. Installe un JDK 17+ (Linux : sudo apt install -y openjdk-17-jdk ; Windows : winget install Microsoft.OpenJDK.21)" >&2
     exit 1
 fi
 
