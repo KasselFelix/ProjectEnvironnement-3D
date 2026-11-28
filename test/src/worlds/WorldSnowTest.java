@@ -49,11 +49,9 @@ class WorldSnowTest {
     @Test
     void stepSnowEnneigeLesSommetsEnHiver() {
         WorldOfCells w = AgentTestSupport.buildWorld();
-        // Un sommet à 90% de l'altitude max, sec et net.
         int hx = 25, hy = 25;
         double maxH = w.getMaxEverHeight();
         org.junit.jupiter.api.Assumptions.assumeTrue(maxH > 0);
-        w.setCellHeight(hx, hy, maxH * 0.9);
 
         // Atteint l'hiver, nuit → température bien négative.
         w.setDureeJour(1);
@@ -63,6 +61,13 @@ class WorldSnowTest {
         assertEquals(Season.WINTER, w.currentSeason());
         w.setJour(0); w.setRaining(false);
         assertTrue(w.getTemperature() <= 0.0, "nuit d'hiver → gel");
+
+        // Un sommet à 90% de l'altitude max, posé APRÈS les pas de simulation : le
+        // premier step creuse le cratère (LavaCA.digHole) autour d'un épicentre tiré au
+        // hasard parmi les cases les plus hautes ; s'il tombait à moins de rCratere de
+        // (hx, hy), le sommet posé avant passait sous la ligne de neige (test instable).
+        w.setCellHeight(hx, hy, maxH * 0.9);
+        w.setSnowDepth(hx, hy, 0.0);
 
         double before = w.getSnowDepth(hx, hy);
         for (int k = 0; k < 5; k++) w.stepSnow();
