@@ -3470,30 +3470,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				int rdy = mouse.getY() - lastDragY;
 				lastDragX = mouse.getX();
 				lastDragY = mouse.getY();
-
-				// Déplacement caméra désiré (en cellules, fractionnaire) façon
-				// « agrippe le sol » (Google Maps) :
-				//   souris vers le BAS → caméra AVANCE ;  HAUT → recule.
-				//   souris vers la GAUCHE → caméra va à DROITE ;  inverse à droite.
-				float moveX, moveY;
-				if (VIEW_FROM_ABOVE) {
-					// Vue de dessus (nord = +Y vers le haut écran, est = +X à droite).
-					moveX = -rdx * PAN_SENSITIVITY;   // souris gauche → +X (droite)
-					moveY =  rdy * PAN_SENSITIVITY;   // souris bas    → +Y (avance)
-				} else {
-					// 3D libre : base relative au yaw caméra. Avant = (sin, cos),
-					// droite = (cos, -sin) — même base que le pilotage d'agent.
-					double th = Math.toRadians(rotateX);
-					double s = Math.sin(th), c = Math.cos(th);
-					float fwd   =  rdy * PAN_SENSITIVITY_3D;   // bas → avance
-					float right = -rdx * PAN_SENSITIVITY_3D;   // gauche → droite
-					moveX = (float) (fwd * s + right * c);
-					moveY = (float) (fwd * c - right * s);
-				}
-
-				// Delta fractionnaire, appliqué par applyPendingPan (thread de rendu) :
-				// pas de modification en plein milieu d'une frame, et pas d'arrondi.
-				queuePan(moveX, moveY);
+				panFromDrag(rdx, rdy);
 				return;
 			}
 
@@ -3531,6 +3508,16 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 
 			boolean follow3D = !VIEW_FROM_ABOVE && cameraFollow && selectedAgent != null;
 
+			// Ctrl + glisser gauche = pan, dans toutes les vues : au pavé tactile, deux
+			// doigts enfoncés donnent un clic droit instantané puis un défilement, jamais
+			// de glisser droit. Comme le drag droit, il quitte le suivi en 3D ; sans
+			// effet en pilotage (le glisser y tourne la caméra).
+			if (mouse.isControlDown() && !controllingAgent()) {
+				if (follow3D) cameraFollow = false;
+				panFromDrag(dx, dy);
+				return;
+			}
+
 			if (firstPersonControl()) {
 				// Pilotage 1ère personne : le clic gauche prolongé tourne la
 				// caméra (yaw = rotateX, tangage = cameraPitch) — mêmes champs
@@ -3554,6 +3541,32 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				rotateX    += dx * ROT_SENSITIVITY;
 				cameraPitch = Math.max(-80f, Math.min(80f, cameraPitch + dy * ROT_SENSITIVITY));
 			}
+		}
+
+		/**
+		 * Pan « agrippe le sol » (style Google Maps) pour un déplacement souris de
+		 * (rdx, rdy) pixels : souris vers le bas → la caméra avance ; vers la gauche
+		 * → elle va à droite. Delta en cases fractionnaires, appliqué par
+		 * applyPendingPan sur le thread de rendu (pas de modification en pleine
+		 * frame, pas d'arrondi). Partagé par le drag droit et Ctrl + drag gauche.
+		 */
+		private void panFromDrag(int rdx, int rdy) {
+			float moveX, moveY;
+			if (VIEW_FROM_ABOVE) {
+				// Vue de dessus (nord = +Y vers le haut écran, est = +X à droite).
+				moveX = -rdx * PAN_SENSITIVITY;   // souris gauche → +X (droite)
+				moveY =  rdy * PAN_SENSITIVITY;   // souris bas    → +Y (avance)
+			} else {
+				// 3D libre : base relative au yaw caméra. Avant = (sin, cos),
+				// droite = (cos, -sin) — même base que le pilotage d'agent.
+				double th = Math.toRadians(rotateX);
+				double s = Math.sin(th), c = Math.cos(th);
+				float fwd   =  rdy * PAN_SENSITIVITY_3D;   // bas → avance
+				float right = -rdx * PAN_SENSITIVITY_3D;   // gauche → droite
+				moveX = (float) (fwd * s + right * c);
+				moveY = (float) (fwd * c - right * s);
+			}
+			queuePan(moveX, moveY);
 		}
 
 		@Override

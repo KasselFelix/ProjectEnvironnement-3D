@@ -1332,7 +1332,7 @@ public class Agent extends UniqueDynamicObject{
 
 	/** Taille du triangle d'orientation, en fraction d'une case (1 = une case de long
 	 *  et de large, l'ancienne taille, qui masquait le modèle). */
-	public static final float ORIENTATION_TRIANGLE_SCALE = 0.45f;
+	public static final float ORIENTATION_TRIANGLE_SCALE = 0.8f; // 0.45f
 
 	/**
 	 * Émet (dans un glBegin(GL_QUADS) déjà ouvert) un triangle isocèle pointant
@@ -1376,9 +1376,9 @@ public class Agent extends UniqueDynamicObject{
 	}
 
 	/** Longueur de l'encoche, en fraction de la demi-longueur de la flèche. */
-	private static final float ARROW_NOTCH_FRAC = 0.35f;
+	private static final float ARROW_NOTCH_FRAC = 0.6f;
 	/** Demi-largeur des ailes, en fraction de la demi-longueur de la flèche. */
-	private static final float ARROW_HALF_WIDTH = 0.75f;
+	private static final float ARROW_HALF_WIDTH = 0.9f;
 
 	/** Triangle (a, b, c) visible des deux côtés, dans un glBegin(GL_QUADS) en cours. */
 	private static void emitDoubleSidedTriangle(GL2 gl, float ax, float ay,

@@ -333,6 +333,10 @@ reflètent encore la caméra 3D, indispensable pour `gluProject`.
             * 3D libre + LMB → rotation FPS yaw + pitch
             * 3D follow + LMB → orbite (orbitYaw + orbitPitch)
             * 3D + RMB → pan « grab the ground »
+            * Top-down + RMB → pan (identique au LMB)
+            * Ctrl + LMB (toutes vues hors pilotage) → pan, pour le pavé
+              tactile : deux doigts enfoncés y produisent un clic droit
+              instantané puis un défilement, jamais un drag droit
 
     mouseReleased :
         Si !dragExceededThreshold et clic gauche :
