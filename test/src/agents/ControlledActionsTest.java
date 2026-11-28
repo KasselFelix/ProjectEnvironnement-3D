@@ -138,6 +138,27 @@ class ControlledActionsTest {
     }
 
     @Test
+    void ventCompteSurLeVraiPasEnDiagonale() {
+        // Pas Nord-Est, vent qui souffle vers le Nord : la moitié du vent est dans le dos.
+        // Avant, le vent lisait _orient (axe dominant, ici l'Est) : vent de travers, aucun effet.
+        WorldOfCells w = flat();
+        w.setWindEnabled(true);
+        w.setWindVector(Math.PI / 2, 12.0);
+        Loup l = new Loup(10, 10, w); l.isFounder = true; w.loups.add(l);
+        l.playerControlled = true; l.energie = l.energieD;
+        l.controlGait = Agent.ControlGait.TROT;
+        l.controlDx = 1; l.controlDy = 1; l.controlDir = 1;
+        int t = 0;
+        while (l.x == 10 && t < 100) { t++; w.setIteration(t); l.step(); }
+        assertEquals(11, l.x); assertEquals(11, l.y);
+        double attendu = w.windSpeedFactor(1, 1, l.windResistance());
+        assertTrue(attendu > 1.0, "un pas Nord-Est a le vent du Nord en partie dans le dos");
+        assertEquals(attendu, l.windDragFactor(), 1e-12, "vent calculé sur le pas diagonal");
+        assertEquals(1.0, w.windSpeedFactor(1, 0, l.windResistance()), 1e-9,
+                "l'axe Est seul aurait donné un vent de travers (ancien calcul)");
+    }
+
+    @Test
     void loupPiloteRepuTueAuContact() {
         // Règle provisoire (en attendant FRAPPER) : le seuil de faim ne vaut que pour l'IA.
         WorldOfCells w = flat();

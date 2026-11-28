@@ -115,8 +115,6 @@ public class Mouton extends Agent {
 	/** Direction de fuite imposée par l'alarme (cap du troupeau). -1 = aucune. */
 	public int alertDir=-1;
 	public int m=0;
-	public int lastX;
-	public int lastY;
 
 	/** Parent à suivre tant qu'on est bébé/jeune (§ 10.3). null pour un fondateur
 	 *  ou un orphelin. Le suivi cesse quand le parent meurt ou qu'on devient adulte. */
@@ -374,9 +372,7 @@ public class Mouton extends Agent {
 		if (alertTtl > 0) alertTtl--;        // l'alarme s'estompe (en TOURS, pas en ticks)
 		if(world.getCellHeight(x, y)>=0)earthSearch=0;
 		if(world.getCellHeight(x, y)<0){this._fireState=0;}
-
-		lastX=x;
-		lastY=y;
+		// lastX/lastY : posés par Agent.step au début du tour.
 	}
 
 	/** Rayon (cases) de propagation de l'alarme à un congénère. */

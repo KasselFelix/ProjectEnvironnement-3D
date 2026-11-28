@@ -412,6 +412,11 @@ public class Agent extends UniqueDynamicObject{
 	 *  été programmé ; un changement d'allure recale la fin du pas (isMyTurn). */
 	private double pilotTurnStart = -1;
 	private ControlGait pilotScheduledGait = null;
+	/** Case de l'agent au début de son tour (posée par {@link #step()} avant le
+	 *  déplacement). {@code postMove} la compare à (x, y) : coût du relief, « a bougé
+	 *  ce tour », et pas réel pour la traînée du vent ({@link #windDragFactor()}). */
+	public int lastX, lastY;
+
 	/** Pilotage : nombre de tours joués sous contrôle du joueur (Landscape y lit
 	 *  qu'un tour est passé, pour effacer un appui court retenu). */
 	public int pilotTurnCount = 0;
@@ -430,8 +435,8 @@ public class Agent extends UniqueDynamicObject{
 	/** Composante Y (N/S) du vecteur unitaire d'une orientation cardinale. */
 	protected static int orientDy(int o) { return (o == 0) ? -1 : (o == 2) ? 1 : 0; }
 
-	/** Facteur de traînée du vent pour CET agent, dans la direction où il se
-	 *  déplace ({@code _orient}) et selon sa taille. >1 dos au vent, <1 face au
+	/** Facteur de traînée du vent pour CET agent, dans la direction de son pas de
+	 *  ce tour (lastX/lastY → x/y ; {@code _orient} à l'arrêt) et selon sa taille. >1 dos au vent, <1 face au
 	 *  vent, 1 si vent nul/désactivé. Dans {@code postMove}, chaque espèce
 	 *  l'applique DEUX fois : {@code vitesse *= windDragFactor()} (le vent change la
 	 *  cadence/distance) ET {@code metabolicCost(1.0 / windF)} UNIQUEMENT si l'agent
@@ -443,7 +448,14 @@ public class Agent extends UniqueDynamicObject{
 	 *  INTRINSÈQUE (les muscles travaillent moins → moins d'énergie), alors que le
 	 *  vent est une force EXTERNE (l'agent fournit le même effort). */
 	protected double windDragFactor() {
-		return world.windSpeedFactor(orientDx(_orient), orientDy(_orient), windResistance());
+		// Direction du pas réellement fait ce tour (diagonale comprise, sur le tore) :
+		// _orient n'a que 4 valeurs, un pas Nord-Est y comptait comme un pas vers l'Est.
+		// À l'arrêt, la direction du corps.
+		int w = world.getWidth(), h = world.getHeight();
+		int mdx = (w > 0) ? torusSignedDelta(lastX, x, w) : 0;
+		int mdy = (h > 0) ? torusSignedDelta(lastY, y, h) : 0;
+		if (mdx == 0 && mdy == 0) { mdx = orientDx(_orient); mdy = orientDy(_orient); }
+		return world.windSpeedFactor(mdx, mdy, windResistance());
 	}
 
 	/** Énergie max de référence (santé = energie/energieMax). Surchargé par espèce ;
@@ -1406,7 +1418,9 @@ public class Agent extends UniqueDynamicObject{
 		if (preStepAbort()) return;     // mort (âge / plus en vie) → on n'avance pas
 		updateDayNight();               // ex: loup calcule attaqueNuit (no-op par défaut)
 		if (isMyTurn()) {               // gating vitesse par espèce
-			resetTickFlags();           // reset flags + lastX/lastY
+			lastX = x;                  // case du début du tour (relief, « a bougé », vent)
+			lastY = y;
+			resetTickFlags();           // reset des flags propres à l'espèce
 			wantsToMove = true;         // défaut : on bouge (un comportement peut l'annuler)
 			agents.ai.Percept p = agents.ai.Perception.sense(this, world, predators(), prey());
 			lastPercept = p;

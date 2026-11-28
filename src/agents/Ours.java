@@ -39,7 +39,6 @@ public class Ours extends Agent {
     private int[] recallTarget = null;
 
     public int m = 0;        // 1 si a mangé ce tour
-    public int lastX, lastY;
 
     public Ours(int x, int y, World w) {
         super(x, y, w);
@@ -119,8 +118,7 @@ public class Ours extends Agent {
     protected void resetTickFlags() {
         m = 0;
         if (world.getCellHeight(x, y) < 0) _fireState = 0;
-        lastX = x; lastY = y;
-        refreshMemoryCapacity();   // L1
+        refreshMemoryCapacity();   // L1 (lastX/lastY : posés par Agent.step)
     }
 
     /** L4 — l'ours chasse le LOUP. */

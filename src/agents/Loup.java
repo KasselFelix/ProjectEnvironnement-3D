@@ -107,9 +107,6 @@ public class Loup extends Agent {
 	 *  ils glissent ensemble quand on l'abaisse. */
 	private double hungerRatio() { return ui.SimulationConfig.getInstance().loupHungerRatio; }
 
-	public int lastX;
-	public int lastY;
-
 	// ===== Meute : hurlement (HOWL) + ralliement (LOCALISATION) =====
 	/** Portée d'audition du hurlement (omnidirectionnelle), en cases. Non-final :
 	 *  pilotée par SimulationConfig.howlRadius (menu in-game / lancement) via
@@ -276,9 +273,7 @@ public class Loup extends Agent {
 	protected void resetTickFlags() {
 		m = 0;
 		if(world.getCellHeight(x, y)<0){this._fireState=0;}
-
-		lastX=x;
-		lastY=y;
+		// lastX/lastY : posés par Agent.step au début du tour.
 
 		refreshMemoryCapacity();   // L1 — la capacité mémoire suit l'âge/intelligence (§ 5.1)
 	}
