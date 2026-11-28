@@ -909,7 +909,11 @@ public class WorldOfCells extends World {
 		switch ( cellState )
 		{
 		case 1: // grass vivante : échelle proportionnelle aux brins
-			float bs = objects.vegetation.Grass.bladeScale(getGrassBrins(x, y), getGrassMaxBrins(x, y));
+			// x, y sont des coordonnées de FENÊTRE : les brins se lisent sur la case du
+			// monde (+movingX/Y), sinon chaque touffe prend la taille d'une autre case
+			// et l'herbe clignote dès que la caméra avance d'une case (suivi, pan).
+			int wx = x + movingX, wy = y + movingY;
+			float bs = objects.vegetation.Grass.bladeScale(getGrassBrins(wx, wy), getGrassMaxBrins(wx, wy));
 			Grass.displayObjectAt(_myWorld,gl,cellState, x, y, height, offset, stepX, stepY, lenX, lenY, normalizeHeight,movingX,movingY, bs);
 			break;
 		case 2:

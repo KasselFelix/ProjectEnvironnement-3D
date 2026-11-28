@@ -150,6 +150,87 @@ C'est ce qu'on appelle du « picking par projection inverse » — simple,
 robuste, et qui marche même quand plusieurs agents se chevauchent
 visuellement (on prend le plus proche du clic).
 
+--- 3.4 Suivi fluide d'un agent en mouvement (2026-11-27) ---
+
+**Le problème.** La simulation est une grille : un agent change de case
+d'un coup, à son tour, puis reste immobile jusqu'au tour suivant (tous les
+7 ticks pour un loup qui erre, tous les 14 pour un mouton au pas). Dessiné
+tel quel, il « saute » de case en case, et la caméra suivie saute avec lui :
+le décor entier avance par à-coups d'une case. À 60 images par seconde pour
+20 ticks de simulation, l'œil voit nettement ces saccades.
+
+**L'idée : séparer la case simulée de la pose dessinée.** La simulation
+ne change pas : l'agent reste sur des cases entières et l'IA ne voit que
+cela. Le rendu, lui, dessine l'agent à une position flottante, entre deux
+cases, qui glisse continûment de l'une à l'autre. Trois pièces y concourent.
+
+    1. **Un journal des derniers tours.** À chaque tour, même immobile,
+       l'agent note sa case, le tick du tour et le tick où tombera le tour
+       suivant (connu d'avance : la période ne dépend que de sa vitesse,
+       qui ne change que pendant son propre tour). Quatre entrées suffisent.
+
+    2. **Une courbe lissée.** Le rendu relie les milieux des cases visitées
+       par une B-spline quadratique (courbe de Bézier à trois points,
+       raccordée sans cassure d'une case à l'autre). Ce choix donne le bon
+       comportement dans les trois cas typiques :
+           * en ligne droite, l'agent passe par les cases à vitesse constante ;
+           * en « escalier » (un pas en X, un pas en Y, en alternance), il
+             suit la diagonale droite, cap constant, au lieu de zigzaguer ;
+           * dans un virage de 90°, il décrit un arc où le cap tourne
+             toujours dans le même sens.
+       La contrepartie est un retard de 1 à 2 cases sur la simulation, et
+       un départ comme un arrêt étalés sur deux tours (pas d'arrêt sec).
+
+    3. **Une horloge continue.** Le temps rendu vaut
+       `itération − 1 + alpha`, où `alpha` est la fraction du tick en cours
+       (entre deux pas de simulation à fréquence fixe). En pause, l'horloge
+       se fige sans accumuler de retard : à la reprise, rien ne saute ; au
+       passage de x1 à x8, la courbe suit simplement plus vite.
+
+**Le cap.** Le modèle regarde dans la direction où la courbe avance. À
+l'arrêt, il garde la direction de son dernier pas. Sa rotation est bornée
+(30° par tick), ce qui étale un demi-tour sur place au lieu de le faire en
+une image ; en pause, le cap se fige comme le reste.
+
+**L'agent piloté.** Le retard de la courbe gêne quand c'est le joueur qui
+dirige (touche `c`) : un virage demandé n'apparaît qu'un à deux tours plus
+tard. L'agent piloté suit donc un tracé plus réactif : trajet droit de la
+case précédente à la case actuelle pendant le tour (au plus un tour de
+retard, coude net aux virages), et cap tourné tout de suite vers la
+direction demandée (60° par tick). Prendre ou rendre le pilotage fond les
+deux tracés en 10 ticks, sans saut. Changer d'allure au milieu d'un pas
+(Maj pour sprinter) agit tout de suite : le reste du pas se parcourt à la
+nouvelle vitesse, et le tracé est recalé de façon à ne pas sauter.
+
+**Le bord du tore et les téléportations.** Le journal garde ses
+coordonnées « déroulées » : un pas qui franchit le bord de la carte ajoute
+±1 au lieu de sauter d'un bord à l'autre, et la pose n'est repliée dans la
+carte qu'au moment de dessiner. Un saut de plus d'une case (renaissance,
+téléportation) remet le journal à zéro sur place : l'agent apparaît à sa
+nouvelle case, sans traverser la carte à l'écran.
+
+**Une seule pose par image.** La pose est calculée une fois par agent et
+par image, puis lue par toutes les passes : le modèle 3D, le triangle
+d'orientation, les cubes de l'humain et de l'ours, le culling, le picking,
+le survol, le halo de sélection et la caméra. L'ancre suit la façon dont
+le modèle est posé : coin de la case pour les modèles 3D du loup et du
+mouton, centre pour les cubes de l'ours et de l'humain. Ainsi le halo
+entoure toujours le modèle dessiné, et un clic sur un loup en pleine course le
+sélectionne là où on le voit.
+
+**La caméra suivie.** La fenêtre de rendu reste alignée sur la grille
+(décalage entier `movingX/movingY`, centré sur la case de la pose) ; la
+fraction de case restante est appliquée par un simple décalage de matrice
+(`glTranslatef`). Ce décalage est posé après les étoiles, pour que le ciel
+nocturne ne glisse pas avec le sol. L'altitude rendue (interpolée entre les
+quatre cases voisines) sert aussi de hauteur à la caméra suivie et à l'œil
+de la première personne, épaisseur des couches de pierre et de lave
+comprise. Le pan libre (glisser à la souris, flèches) profite du même
+mécanisme : il avance en fractions de case au lieu de cases entières.
+
+**Comparer avant / après.** L'option `-Dagents.smooth=false`, lue à
+chaque image, revient au rendu par cases d'avant.
+
 
 ================================================================================
 4. IMPLÉMENTATION TECHNIQUE
@@ -252,6 +333,10 @@ reflètent encore la caméra 3D, indispensable pour `gluProject`.
             * 3D libre + LMB → rotation FPS yaw + pitch
             * 3D follow + LMB → orbite (orbitYaw + orbitPitch)
             * 3D + RMB → pan « grab the ground »
+            * Top-down + RMB → pan (identique au LMB)
+            * Ctrl + LMB (toutes vues hors pilotage) → pan, pour le pavé
+              tactile : deux doigts enfoncés y produisent un clic droit
+              instantané puis un défilement, jamais un drag droit
 
     mouseReleased :
         Si !dragExceededThreshold et clic gauche :
@@ -294,13 +379,78 @@ Touches held (modificateurs sans auto-repeat NEWT) :
     `space` → keySpaceHeld = true (descend caméra chaque frame)
     `shift` → keyShiftHeld = true (monte caméra chaque frame)
 
+Depuis 2026-11-27, les déplacements de carte (flèches / ZQSD) sont eux
+aussi des touches tenues (`Landscape.applyKeyboardPan`, 22 cases par
+seconde, diagonale normalisée), et la perte de focus de la fenêtre vide
+l'ensemble des touches tenues (`windowLostFocus`), pour qu'une touche
+relâchée hors de la fenêtre ne reste pas enfoncée.
+
+--- 4.9 Suivi fluide : pose rendue, horloge, décalage (2026-11-27) ---
+
+    src/graphics/MotionTrack.java   journal de tours, courbe, tore, cap (classe pure, sans GL)
+        record(x, y, tick, tickSuivant, w, h)   ajoute un tour ; saut > 1 case → réinitialisation
+        ensureCell(x, y, w, h)          réinitialise si la case courante n'est pas la dernière entrée
+        evaluate(now, w, h[, linear])   pose au temps `now` (courbe, ou trajet droit si piloté)
+        updateHeading / updateHeadingToward   cap visuel, rotation bornée en degrés par tick
+        nextTurnTick(tick, période)     prochain multiple de la période
+        bilinear(fx, fy, sampler)       altitude interpolée sur les 4 cases
+        SIZE = 4, DEFAULT_MAX_TURN_DEG_PER_TICK = 30, PILOT_MAX_TURN_DEG_PER_TICK = 60,
+        MODE_BLEND_TICKS = 10
+
+    src/graphics/TimeKeeper.java    accumulateur compté en ticks
+        stepsToRun(hz, max)             pas de simulation à jouer cette image
+        hold()                          pause : avance l'horloge sans accumuler
+        alpha()                         fraction du tick en cours, dans [0, 1)
+
+    src/agents/Agent.java
+        motion                          journal (MotionTrack) de l'agent, écrit en fin de tour
+        updateRenderPose(...)           pose, altitude et cap de la frame
+        renderX2 / renderY2, renderAltitude, renderModelAngleDeg   accesseurs lus par le rendu
+
+    src/graphics/Landscape.java
+        updateAgentPoses()              une pose par agent, juste après les pas de simulation
+        agentAnchorX / agentAnchorY / agentBodyZ   ancre du modèle (culling, picking, survol, halo)
+        followShiftX / followShiftY     fraction de case de la caméra suivie ou du pan libre
+
+Ordre dans `display()` : pas de simulation (juste après l'application du
+pan), puis `updateAgentPoses`, puis recentrage de la caméra suivie, puis
+caméra, étoiles, `glTranslatef(−followShiftX, −followShiftY, 0)`, lampes
+lunaires, et enfin les passes de rendu. Calculer les poses avant la caméra
+garantit que la caméra et le modèle lisent la même pose dans la même image
+(sinon la caméra aurait une image de retard sur l'agent qu'elle suit).
+
+En capture automatique, `-Dautoshot=motion` suit un loup en mouvement et
+rend six images, un pas de simulation par image et `alpha` à 0 (comme le
+mode `gif`) ; la pose de chaque image est imprimée dans la console.
+
 
 ================================================================================
 5. TEST
 ================================================================================
 
-Pas de test JUnit dédié — toute cette couche dépend d'OpenGL et de la
-boucle d'événements NEWT, ce qui rendrait les tests coûteux.
+Les contrôles caméra et le picking n'ont pas de test JUnit dédié : ils
+dépendent d'OpenGL et de la boucle d'événements NEWT, ce qui rendrait les
+tests coûteux. Le suivi fluide, lui, est testé, car sa logique est isolée
+dans des classes sans OpenGL :
+
+    test/src/graphics/MotionTrackTest.java   ligne droite à vitesse constante,
+                                             escalier à moins de 0,01 case de
+                                             la diagonale au cap constant,
+                                             virage au cap monotone, départ et
+                                             arrêt sans à-coup, continuité au
+                                             bord du tore, téléportation,
+                                             même temps = même pose, tracé
+                                             piloté et fondu entre les deux
+    test/src/graphics/TimeKeeperTest.java    alpha dans [0, 1), inchangé par
+                                             hold() et par un changement de
+                                             vitesse (horloge injectée)
+    test/src/agents/AgentRenderPoseTest.java agent immobile = rendu par cases
+                                             (position, altitude, cap), avec
+                                             et sans lissage
+
+Captures : `-Dautoshot=motion` (six images d'un loup suivi, poses entre
+deux cases) et `-Dautoshot=perf` (même carte, FPS moyen de 65,0 contre
+64,5 avant le chantier : le lissage ne coûte rien de mesurable).
 
 Validation manuelle :
 
@@ -332,6 +482,13 @@ Validation manuelle :
     6. **Touches held** : maintenir Shift appuyé → la caméra monte
        continûment. Relâcher → elle s'arrête. Pareil pour Space.
 
+    7. **Suivi fluide** : suivre un loup en chasse en 3D, en vue de dessus
+       et en première personne : ni la caméra ni le modèle ne sautent de
+       case, et les étoiles restent immobiles la nuit. Mettre en pause puis
+       reprendre, passer en x8 : aucun saut. Cliquer sur un agent en
+       mouvement le sélectionne. Avec `-Dagents.smooth=false`, on retrouve
+       le rendu par cases.
+
 
 ================================================================================
 6. RÉSULTAT
@@ -349,6 +506,10 @@ L'utilisateur peut explorer la simulation de façon fluide et intuitive :
 Les contrôles sont cohérents (drag = bouger, molette = zoom, raccourcis
 clavier = actions ponctuelles), discriminés (clic court ≠ drag long), et
 ne gênent jamais l'UI (focus découplé).
+
+Depuis le suivi fluide, les agents glissent d'une case à l'autre au lieu
+de sauter : suivre un loup qui chasse donne un travelling continu, et le
+décor défile sous lui sans à-coups.
 
 Le picking en particulier offre une expérience moderne : on clique sur
 ce qu'on voit, ça marche. Pas besoin de menu déroulant ni de saisie

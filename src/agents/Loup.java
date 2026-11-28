@@ -30,6 +30,10 @@ public class Loup extends Agent {
 	/** Accesseur statique pour la carcasse : renvoie le modèle GLB déjà chargé (ou null). */
 	public static GLBModel getModel() { return loupModel; }
 
+	/** GLB planté au coin de case ; sans modèle, cube de repli centré. */
+	@Override
+	public boolean renderAnchoredAtCorner() { return loupModel != null; }
+
 	/**
 	 * Rend un loup via la display list GLB. À appeler HORS d'un glBegin.
 	 * Pattern identique à {@link Mouton#displayMoutonAt}. Scale ×2.0 (prédateur
@@ -43,12 +47,11 @@ public class Loup extends Agent {
 		if (!l._alive) return;
 		if (l.hiddenFP) return;   // 1ère personne : agent piloté non dessiné
 
-		int x2 = (l.x - (offsetCA_x % myWorld.getWidth()));
-		if (x2 < 0) x2 += myWorld.getWidth();
-		int y2 = (l.y - (offsetCA_y % myWorld.getHeight()));
-		if (y2 < 0) y2 += myWorld.getHeight();
+		// Pose rendue (lissée entre deux cases, cf. Agent.updateRenderPose).
+		float x2 = l.renderX2(myWorld, offsetCA_x);
+		float y2 = l.renderY2(myWorld, offsetCA_y);
 
-		float altitude = l.computeAgentAltitude(myWorld, l.x, l.y, normalizeHeight);
+		float altitude = l.renderAltitude(myWorld, normalizeHeight);
 		// Planté sur le SOMMET de terrain (coin de cellule) dont l'altitude est lue,
 		// pas au centre du quad — sinon décalage d'une demi-cellule → l'agent
 		// s'enfonce dans le sol en pente (même cause que les jeunes arbres, cf. Tree).
@@ -57,9 +60,8 @@ public class Loup extends Agent {
 		// prédateur : plus grand que le mouton, × taille individuelle (§ 10.2).
 		float scale = Math.abs(lenX) * 2.0f * (float) l.displaySize();
 
-		// Rotation Z : aligne le forward −Y du modèle vers la direction de marche.
-		double[] u = l.getLastUnit();
-		float angleZdeg = (float) Math.toDegrees(Math.atan2(u[0], -u[1]));
+		// Rotation Z : aligne le forward −Y du modèle sur le cap visuel.
+		float angleZdeg = l.renderModelAngleDeg();
 
 		gl.glPushMatrix();
 		gl.glTranslatef(px, py, altitude);
@@ -104,9 +106,6 @@ public class Loup extends Agent {
 	 *  souvenirs de nourriture — lisent ce même seuil via {@link #hungerRatio()}, donc
 	 *  ils glissent ensemble quand on l'abaisse. */
 	private double hungerRatio() { return ui.SimulationConfig.getInstance().loupHungerRatio; }
-
-	public int lastX;
-	public int lastY;
 
 	// ===== Meute : hurlement (HOWL) + ralliement (LOCALISATION) =====
 	/** Portée d'audition du hurlement (omnidirectionnelle), en cases. Non-final :
@@ -264,20 +263,17 @@ public class Loup extends Agent {
 	}
 
 	@Override
-	protected boolean isMyTurn() {
+	protected int turnPeriodTicks() {
 		// Math.max(1, …) : garde-fou anti division par zero. La vitesse evolue sans
-		// borne haute (cf. but de la simulation) → le diviseur peut tomber a 0
-		// (vitesse > 28). Au-dela de 28 l'agent agit simplement a chaque tick.
-		return world.getIteration() % Math.max(1, (int) ((1.0 / vitesse) * 28)) == 0;
+		// borne haute → (int)(28/vitesse) tombe a 0 au-dela de 28 : l'agent agit alors a chaque tick.
+		return Math.max(1, (int) ((1.0 / vitesse) * 28));
 	}
 
 	@Override
 	protected void resetTickFlags() {
 		m = 0;
 		if(world.getCellHeight(x, y)<0){this._fireState=0;}
-
-		lastX=x;
-		lastY=y;
+		// lastX/lastY : posés par Agent.step au début du tour.
 
 		refreshMemoryCapacity();   // L1 — la capacité mémoire suit l'âge/intelligence (§ 5.1)
 	}
@@ -289,6 +285,8 @@ public class Loup extends Agent {
 
 	private static final scent.ScentKind[] SCENT_PREY_KINDS   = { scent.ScentKind.MOUTON };
 	private static final scent.ScentKind[] SCENT_DANGER_KINDS = { scent.ScentKind.HUMAIN, scent.ScentKind.OURS };
+	@Override public boolean hasKeenSmell() { return true; }
+	@Override public boolean hasWalkGait() { return true; }
 	@Override public scent.ScentKind[] scentPreyKinds()   { return SCENT_PREY_KINDS; }
 	@Override public scent.ScentKind[] scentDangerKinds() { return SCENT_DANGER_KINDS; }
 	private static final worlds.Season[] MATING_SEASONS = { worlds.Season.WINTER };
@@ -315,10 +313,16 @@ public class Loup extends Agent {
 
 	@Override
 	protected void applyControlSpeed() {
-		switch (controlGait) {
-			case SPRINT: vitesse = vcourse; break;
-			case WALK:   vitesse = vpas;    break;
-			default:     vitesse = vtrot;   break;
+		vitesse = gaitSpeed(controlGait);
+	}
+
+	@Override
+	protected double gaitSpeed(ControlGait g) {
+		if (g == null) return 0;
+		switch (g) {
+			case SPRINT: return vcourse;
+			case WALK:   return vpas;
+			default:     return vtrot;
 		}
 	}
 
@@ -337,7 +341,9 @@ public class Loup extends Agent {
 		// Consommation gâtée par la FAIM (pas par 90% comme avant) : un loup repu
 		// (≥ HUNGER_RATIO) ne tue pas, même s'il rattrape un mouton la nuit — il
 		// n'a fait que l'effrayer. Évite qu'un seul loup décime tout le troupeau.
-		if (energie < energieD * hungerRatio()
+		// Loup piloté : il tue au contact quelle que soit sa faim (décision du
+		// 2026-11-27, en attendant l'action FRAPPER de la hotbar).
+		if (playerControlled || energie < energieD * hungerRatio()
 				* character.boldnessFactor(ui.SimulationConfig.getInstance().hungerBoldnessDelta)) {
 			for (Mouton ag : this.world.moutons) {
 				UniqueDynamicObject pag = (UniqueDynamicObject) ag;
@@ -875,15 +881,12 @@ public class Loup extends Agent {
 
 		// gl.glColor3f(0.f+(float)(0.5*Math.random()),0.f+(float)(0.5*Math.random()),0.f+(float)(0.5*Math.random()));
 
-		int x2 = (x - (offsetCA_x % myWorld.getWidth()));
-		if (x2 < 0)
-			x2 += myWorld.getWidth();
-		int y2 = (y - (offsetCA_y % myWorld.getHeight()));
-		if (y2 < 0)
-			y2 += myWorld.getHeight();
+		// Pose rendue (lissée entre deux cases, cf. Agent.updateRenderPose).
+		float x2 = renderX2(myWorld, offsetCA_x);
+		float y2 = renderY2(myWorld, offsetCA_y);
 
-		// Altitude unifiée (sol + stone + lave + clamp eau) → Agent.computeAgentAltitude.
-		float altitude = computeAgentAltitude(myWorld, x, y, normalizeHeight);
+		// Altitude unifiée (sol + stone + lave + clamp eau), interpolée sur la pose.
+		float altitude = renderAltitude(myWorld, normalizeHeight);
 
 		// Quand le modèle GLB est chargé, on saute le cube (rendu par displayLoupAt
 		// dans la passe 2d, hors glBegin). On garde le triangle d'orientation.
@@ -945,8 +948,11 @@ public class Loup extends Agent {
 		// au feu, cf. _fireState).
 		if (playerControlled) gl.glColor3f(0.1f, 0.9f, 1f);
 		else gl.glColor3f(_redValue, _greenValue, _blueValue);
+		// Au-dessus du modèle : le GLB est planté au coin de case (−lenX, cf.
+		// displayLoupAt), le cube de repli au centre.
+		float anchor = (loupModel != null) ? 1f : 0f;
 		emitOrientationTriangle(gl,
-				offset + x2 * stepX, offset + y2 * stepY,
+				offset + x2 * stepX - anchor * lenX, offset + y2 * stepY - anchor * lenY,
 				lenX, lenY,
 				altitude + 5.f);
 	}

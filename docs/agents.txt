@@ -233,6 +233,46 @@ agriculteur dans le futur.
 La boucle de pruning itère en sens inverse (i--) pour pouvoir retirer un
 élément sans déranger les indices restants.
 
+--- 4.7 Cadence des tours et journal du rendu (2026-11-27) ---
+
+**Cadence.** Un agent n'agit pas à chaque tick : il joue un « tour » tous
+les N ticks, N dépendant de sa vitesse. Cette période vit désormais dans un
+seul hook, `Agent.turnPeriodTicks()`, que chaque espèce redéfinit avec la
+même formule qu'avant :
+
+    période = max(1, (int)(28 / vitesse))     (en ticks)
+
+Le `max(1, …)` est un garde-fou : la vitesse évolue sans plafond (dérive
+évolutive voulue, voir `mutateDouble`), et au-delà de 28 la division
+donnerait 0. L'agent agit alors simplement à chaque tick. `isMyTurn()`,
+commun à toutes les espèces, vaut « l'itération est un multiple de la
+période » : exactement les mêmes tours qu'avant la factorisation.
+
+**Agent piloté.** Quand le joueur dirige un agent (touche `c`), un pas en
+diagonale parcourt √2 case pour un seul tour : l'agent irait plus vite en
+diagonale qu'en ligne droite. L'agent piloté a donc sa propre horloge de
+tours (`schedulePilotTurn`) : après une diagonale, le tour suivant attend
+√2 fois plus longtemps, la fraction de tick étant reportée d'un tour à
+l'autre pour que la vitesse moyenne soit juste. Changer d'allure au
+milieu d'un pas (Maj pour sprinter) recale la fin de ce pas au rapport
+des deux vitesses (`gaitSpeed`) : le sprint part tout de suite au lieu
+d'attendre la fin du pas lent. L'IA garde la cadence modulo (ses
+déplacements sont en 4-connexité).
+
+**Journal de tours.** À la fin de chaque tour, même immobile, `step()`
+ajoute dans `Agent.motion` (un `graphics.MotionTrack`) la case finale, le
+tick du tour et le tick du tour suivant. Ce dernier est prévisible : la
+période ne dépend que de `vitesse`, et `vitesse` ne s'écrit que pendant le
+tour de l'agent (`applyState`, `postMove` et leurs auxiliaires) ou à sa
+naissance. L'enregistrement se fait donc après `postMove`, qui peut encore
+corriger la vitesse (pénalité d'altitude, changement d'état).
+
+Ce journal sert uniquement au rendu, qui y lit la trajectoire de l'agent
+pour le faire glisser d'une case à l'autre au lieu de sauter (voir
+camera-picking.txt, section 3.4). Il n'est jamais lu par l'IA : la
+simulation reste strictement identique, case par case, avec ou sans
+lissage.
+
 
 ================================================================================
 5. TEST
@@ -254,6 +294,17 @@ Cette couche est couverte par plusieurs tests JUnit déterministes :
                                              sprint, repu qui ne tue pas
     test/src/agents/ai/                      Perception, Décision, Locomotion
                                              (les trois couches de la FSM)
+    test/src/agents/AgentCadenceTest.java    période = ancienne formule (vitesses
+                                             fixes et tirées au hasard), garde à
+                                             1 au-delà de 28, mêmes tours ; un
+                                             tour immobile ajoute une entrée au
+                                             journal ; sur 3 000 ticks (loups,
+                                             moutons, ours, relief), le tour
+                                             suivant prédit tombe toujours au
+                                             tick du tour réel
+    test/src/agents/ControlledActionsTest.java  agent piloté : pas < trot < sprint,
+                                             diagonale aussi rapide que la ligne
+                                             droite à 10 % près
 
 Le pattern de test est uniforme et réutilisable :
 

@@ -176,17 +176,25 @@ public final class ScentField {
      * moment du rendu ; le snapshot peut donc differer legerement du dernier
      * step() si un slider a bouge dans la meme frame (sans incidence — debug).
      */
-    public float[][] debugPuffSnapshot(int now) {
+    public float[][] debugPuffSnapshot(int now) { return debugPuffSnapshot(now, Integer.MIN_VALUE); }
+
+    /** Idem, sans les puffs de l'émetteur {@code excludeEmitterId} (l'agent piloté ne
+     *  voit pas sa propre odeur, pour ne pas la confondre avec celle de ses congénères). */
+    public float[][] debugPuffSnapshot(int now, int excludeEmitterId) {
         final int hz = hz();
         final double te = tauEff(SimulationConfig.getInstance().scentLifetimeSec,
                                  Math.hypot(world.getWindX(), world.getWindY()), world.isRaining());
-        float[][] out = new float[puffs.size()][5];
-        for (int i = 0; i < puffs.size(); i++) {
-            ScentPuff p = puffs.get(i);
+        int kept = 0;
+        for (ScentPuff p : puffs) if (p.emitterId != excludeEmitterId) kept++;
+        float[][] out = new float[kept][5];
+        for (int j = 0, i = 0; j < puffs.size(); j++) {
+            ScentPuff p = puffs.get(j);
+            if (p.emitterId == excludeEmitterId) continue;
             out[i][0] = p.cx; out[i][1] = p.cy;
             out[i][2] = (float) peakIntensity(p, now, hz, te);
             out[i][3] = p.kind.ordinal();
             out[i][4] = p.mating ? 1f : 0f;          // sous-projet E
+            i++;
         }
         return out;
     }

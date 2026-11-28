@@ -50,6 +50,7 @@ public class InGameMenu {
         shortLines.add(new ShortLine(SLKind.INFO, null, "--- Souris (non modifiable) ---"));
         shortLines.add(new ShortLine(SLKind.INFO, null, "Clic gauche: selection / drag camera"));
         shortLines.add(new ShortLine(SLKind.INFO, null, "Clic droit: pan ; Molette: zoom/scroll"));
+        shortLines.add(new ShortLine(SLKind.INFO, null, "Ctrl + glisser: pan (pave tactile)"));
         shortLines.add(new ShortLine(SLKind.INFO, null, "Echap: plein ecran (reserve)"));
     }
 

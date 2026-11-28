@@ -74,7 +74,7 @@ public class Grass {
     		switch ( cellState )
             {
             	case 1:
-            		gl.glColor3f(0,(float)((220*0.6/255)+(220*0.4/255)*(myWorld.getCellHeight((int)x,(int)y)/myWorld.getMaxEverHeight())-0.05*r2),0);
+            		gl.glColor3f(0,(float)((220*0.6/255)+(220*0.4/255)*(myWorld.getCellHeight(cellX,cellY)/myWorld.getMaxEverHeight())-0.05*r2),0);
             		break;
             	case 2:
             		gl.glColor3f(1.f,127/255f-(float)(0.2*r2),0.f);
@@ -92,7 +92,7 @@ public class Grass {
             switch ( cellState )
             {
             	case 1:
-            		gl.glColor3f(0,(float)((220*0.6/255)+(220*0.4/255)*(myWorld.getCellHeight((int)x,(int)y)/myWorld.getMaxEverHeight())-0.05*r1),0);
+            		gl.glColor3f(0,(float)((220*0.6/255)+(220*0.4/255)*(myWorld.getCellHeight(cellX,cellY)/myWorld.getMaxEverHeight())-0.05*r1),0);
             		break;
             	case 2:
             		gl.glColor3f(1.f,127/255f-(float)(0.2*r1),0.f);
