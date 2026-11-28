@@ -109,10 +109,10 @@ public class Ours extends Agent {
     }
 
     @Override
-    protected boolean isMyTurn() {
-        // Math.max(1, …) : garde-fou anti division par zero (vitesse evolutive non
-        // bornee → diviseur 0 si vitesse > 28 ; au-dela l'ours agit chaque tick).
-        return world.getIteration() % Math.max(1, (int) ((1.0 / vitesse) * 28)) == 0;
+    protected int turnPeriodTicks() {
+        // Math.max(1, …) : garde-fou anti division par zero. La vitesse evolue sans
+        // borne haute → (int)(28/vitesse) tombe a 0 au-dela de 28 : l'agent agit alors a chaque tick.
+        return Math.max(1, (int) ((1.0 / vitesse) * 28));
     }
 
     @Override
@@ -131,6 +131,8 @@ public class Ours extends Agent {
 
     private static final scent.ScentKind[] SCENT_PREY_KINDS   = { scent.ScentKind.LOUP };
     private static final scent.ScentKind[] SCENT_DANGER_KINDS = { scent.ScentKind.HUMAIN };
+    @Override public boolean hasKeenSmell() { return true; }
+    @Override public boolean hasWalkGait() { return true; }
     @Override public scent.ScentKind[] scentPreyKinds()   { return SCENT_PREY_KINDS; }
     @Override public scent.ScentKind[] scentDangerKinds() { return SCENT_DANGER_KINDS; }
     private static final worlds.Season[] MATING_SEASONS = { worlds.Season.SPRING, worlds.Season.SUMMER };
@@ -144,10 +146,16 @@ public class Ours extends Agent {
 
     @Override
     protected void applyControlSpeed() {
-        switch (controlGait) {
-            case SPRINT: vitesse = vcourse; break;
-            case WALK:   vitesse = vpas;    break;
-            default:     vitesse = vtrot;   break;
+        vitesse = gaitSpeed(controlGait);
+    }
+
+    @Override
+    protected double gaitSpeed(ControlGait g) {
+        if (g == null) return 0;
+        switch (g) {
+            case SPRINT: return vcourse;
+            case WALK:   return vpas;
+            default:     return vtrot;
         }
     }
 

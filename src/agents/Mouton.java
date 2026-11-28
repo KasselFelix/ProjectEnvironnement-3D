@@ -35,6 +35,10 @@ public class Mouton extends Agent {
 	/** Accesseur statique pour la carcasse : renvoie le modèle GLB déjà chargé (ou null). */
 	public static GLBModel getModel() { return moutonModel; }
 
+	/** GLB planté au coin de case ; sans modèle, cube de repli centré. */
+	@Override
+	public boolean renderAnchoredAtCorner() { return moutonModel != null; }
+
 	/**
 	 * Rend un mouton via la display list GLB. À appeler HORS d'un glBegin.
 	 *
@@ -52,12 +56,11 @@ public class Mouton extends Agent {
 		if (!m._alive) return;
 		if (m.hiddenFP) return;   // 1ère personne : agent piloté non dessiné
 
-		int x2 = (m.x - (offsetCA_x % myWorld.getWidth()));
-		if (x2 < 0) x2 += myWorld.getWidth();
-		int y2 = (m.y - (offsetCA_y % myWorld.getHeight()));
-		if (y2 < 0) y2 += myWorld.getHeight();
+		// Pose rendue (lissée entre deux cases, cf. Agent.updateRenderPose).
+		float x2 = m.renderX2(myWorld, offsetCA_x);
+		float y2 = m.renderY2(myWorld, offsetCA_y);
 
-		float altitude = m.computeAgentAltitude(myWorld, m.x, m.y, normalizeHeight);
+		float altitude = m.renderAltitude(myWorld, normalizeHeight);
 		// Planté sur le SOMMET de terrain (coin de cellule) dont l'altitude est lue,
 		// pas au centre du quad — sinon décalage d'une demi-cellule → l'agent
 		// s'enfonce dans le sol en pente (même cause que les jeunes arbres, cf. Tree).
@@ -69,8 +72,7 @@ public class Mouton extends Agent {
 		// Rotation Z pour aligner −Y modèle (forward) vers (udx, udy) monde.
 		// Forward modèle = (0, −1), cible monde = (udx, udy).
 		// angle = atan2(udx, −udy) — résolu pour la rotation autour de Z+.
-		double[] u = m.getLastUnit();
-		float angleZdeg = (float) Math.toDegrees(Math.atan2(u[0], -u[1]));
+		float angleZdeg = m.renderModelAngleDeg();   // cap visuel de la pose rendue
 
 		gl.glPushMatrix();
 		gl.glTranslatef(px, py, altitude);
@@ -356,10 +358,10 @@ public class Mouton extends Agent {
 	}
 
 	@Override
-	protected boolean isMyTurn() {
-		// Math.max(1, …) : garde-fou anti division par zero (vitesse evolutive non
-		// bornee → diviseur 0 si vitesse > 28 ; au-dela l'agent agit chaque tick).
-		return world.getIteration() % Math.max(1, (int)((1.0/vitesse)*28)) == 0;
+	protected int turnPeriodTicks() {
+		// Math.max(1, …) : garde-fou anti division par zero. La vitesse evolue sans
+		// borne haute → (int)(28/vitesse) tombe a 0 au-dela de 28 : l'agent agit alors a chaque tick.
+		return Math.max(1, (int) ((1.0 / vitesse) * 28));
 	}
 
 	@Override
@@ -419,11 +421,14 @@ public class Mouton extends Agent {
 
 	@Override
 	protected void applyControlSpeed() {
-		// 2 allures seulement : SPRINT=vcourse ; WALK et TROT partagent vmarche.
-		switch (controlGait) {
-			case SPRINT: vitesse = vcourse;  break;
-			default:     vitesse = vmarche;  break;
-		}
+		vitesse = gaitSpeed(controlGait);
+	}
+
+	/** 2 allures seulement : SPRINT=vcourse ; WALK et TROT partagent vmarche. */
+	@Override
+	protected double gaitSpeed(ControlGait g) {
+		if (g == null) return 0;
+		return (g == ControlGait.SPRINT) ? vcourse : vmarche;
 	}
 
 	@Override
@@ -879,13 +884,12 @@ public class Mouton extends Agent {
 
 		//gl.glColor3f(0.f+(float)(0.5*Math.random()),0.f+(float)(0.5*Math.random()),0.f+(float)(0.5*Math.random()));
 
-		int x2 = (x-(offsetCA_x%myWorld.getWidth()));
-		if ( x2 < 0) x2+=myWorld.getWidth();
-		int y2 = (y-(offsetCA_y%myWorld.getHeight()));
-		if ( y2 < 0) y2+=myWorld.getHeight();
+		// Pose rendue (lissée entre deux cases, cf. Agent.updateRenderPose).
+		float x2 = renderX2(myWorld, offsetCA_x);
+		float y2 = renderY2(myWorld, offsetCA_y);
 
-		// Altitude unifiée (sol + stone + lave + clamp eau) → Agent.computeAgentAltitude.
-		float altitude = computeAgentAltitude(myWorld, x, y, normalizeHeight);
+		// Altitude unifiée (sol + stone + lave + clamp eau), interpolée sur la pose.
+		float altitude = renderAltitude(myWorld, normalizeHeight);
 
 		// Quand le modèle OBJ est chargé, on saute le cube (rendu par
 		// displayMoutonAt dans la passe 2b, hors glBegin). On garde quand
@@ -939,8 +943,11 @@ public class Mouton extends Agent {
 		// au feu ; le cyan reste distinct du bleu mouton via sa composante verte).
 		if (playerControlled) gl.glColor3f(0.1f, 0.9f, 1f);
 		else gl.glColor3f(_redValue,_greenValue,_blueValue);
+		// Au-dessus du modèle : le GLB est planté au coin de case (−lenX, cf.
+		// displayMoutonAt), le cube de repli au centre.
+		float anchor = (moutonModel != null) ? 1f : 0f;
 		emitOrientationTriangle(gl,
-				offset + x2 * stepX, offset + y2 * stepY,
+				offset + x2 * stepX - anchor * lenX, offset + y2 * stepY - anchor * lenY,
 				lenX, lenY,
 				altitude + 4.f);
 	}

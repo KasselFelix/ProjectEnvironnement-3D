@@ -53,6 +53,116 @@ class ControlledActionsTest {
                 "le hurlement pilote a touche l'ecouteur (memoire et/ou balise)");
     }
 
+    /** Cases parcourues en {@code ticks} ticks par un loup piloté vers +X à l'allure donnée. */
+    private static int casesParcourues(Agent.ControlGait gait, int ticks) {
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 10, w); l.isFounder = true; w.loups.add(l);
+        l.playerControlled = true; l.energie = l.energieD;
+        l.controlGait = gait;
+        l.controlDx = 1; l.controlDy = 0; l.controlDir = 1;
+        int moves = 0, lastX = l.x;
+        for (int t = 1; t <= ticks; t++) {
+            w.setIteration(t); l.step();
+            if (l.x != lastX) { moves++; lastX = l.x; }
+        }
+        return moves;
+    }
+
+    @Test
+    void sprintPiloteAccelereVraimentLaCadence() {
+        // Bout en bout (step complet, pénalités de postMove comprises) : Maj doit se
+        // voir sur la distance, pas seulement sur la valeur de vitesse.
+        int walk = casesParcourues(Agent.ControlGait.WALK, 200);
+        int trot = casesParcourues(Agent.ControlGait.TROT, 200);
+        int sprint = casesParcourues(Agent.ControlGait.SPRINT, 200);
+        assertTrue(trot > walk, "trot (" + trot + ") plus loin que pas (" + walk + ")");
+        assertTrue(sprint > trot, "sprint (" + sprint + ") plus loin que trot (" + trot + ")");
+    }
+
+    /** Distance (en cases) parcourue en {@code ticks} ticks par un loup piloté de pas (dx, dy). */
+    private static double distancePilotee(Agent.ControlGait gait, int dx, int dy, int ticks) {
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 10, w); l.isFounder = true; w.loups.add(l);
+        l.playerControlled = true; l.energie = l.energieD;
+        l.controlGait = gait;
+        l.controlDx = dx; l.controlDy = dy; l.controlDir = 1;
+        int moves = 0, lastX = l.x, lastY = l.y;
+        for (int t = 1; t <= ticks; t++) {
+            w.setIteration(t); l.step();
+            if (l.x != lastX || l.y != lastY) { moves++; lastX = l.x; lastY = l.y; }
+        }
+        return moves * Math.hypot(dx, dy);
+    }
+
+    @Test
+    void diagonalePiloteeAMemeVitesseQueLaLigneDroite() {
+        for (Agent.ControlGait g : Agent.ControlGait.values()) {
+            double droit = distancePilotee(g, 1, 0, 400);
+            double diag = distancePilotee(g, 1, 1, 400);
+            assertEquals(droit, diag, droit * 0.1,
+                    g + " : diagonale (" + diag + ") ~ ligne droite (" + droit + ")");
+        }
+    }
+
+    @Test
+    void sprintEnPleinPasRecaleLeTourSuivant() {
+        // Maj enfoncé au milieu d'un pas au pas : le reste du pas se fait au sprint,
+        // sans attendre l'échéance programmée à l'allure du pas.
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 10, w); l.isFounder = true; w.loups.add(l);
+        l.playerControlled = true; l.energie = l.energieD;
+        l.controlGait = Agent.ControlGait.WALK;
+        l.controlDx = 1; l.controlDy = 0; l.controlDir = 1;
+        int t = 0, moves = 0, lastX = l.x;
+        while (moves < 2 && t < 200) {                 // 2 pas : horloge du pilotage en route
+            t++; w.setIteration(t); l.step();
+            if (l.x != lastX) { moves++; lastX = l.x; }
+        }
+        assertEquals(2, moves, "le loup pilote avance au pas");
+        long walkDeadline = l.motion.lastNextTick();
+        assertTrue(walkDeadline - t >= 4, "pas assez long pour le test : " + (walkDeadline - t));
+        t++; w.setIteration(t); l.step();              // un tick du pas en cours, toujours au pas
+        assertEquals(lastX, l.x);
+        l.controlGait = Agent.ControlGait.SPRINT;
+        t++; w.setIteration(t); l.step();              // Maj : recalage au tick t
+        assertTrue(l.motion.lastNextTick() < walkDeadline,
+                "journal du rendu recale (" + l.motion.lastNextTick() + " < " + walkDeadline + ")");
+        int moveTick = -1;
+        for (int k = 0; k < 40 && moveTick < 0; k++) {
+            t++; w.setIteration(t); l.step();
+            if (l.x != lastX) moveTick = t;
+        }
+        assertTrue(moveTick > 0 && moveTick < walkDeadline,
+                "le pas suivant vient avant l'echeance du pas (" + moveTick + " < " + walkDeadline + ")");
+        assertEquals(l.motion.lastTick(), moveTick, "le journal a recu ce tour");
+    }
+
+    @Test
+    void loupPiloteRepuTueAuContact() {
+        // Règle provisoire (en attendant FRAPPER) : le seuil de faim ne vaut que pour l'IA.
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 10, w); l.isFounder = true; w.loups.add(l);
+        l.playerControlled = true; l.energie = l.energieD;   // repu
+        Mouton m = new Mouton(11, 10, w); m.isFounder = true; w.moutons.add(m);
+        l.controlDx = 1; l.controlDy = 0; l.controlDir = 1;
+        for (int t = 1; t <= 40 && m._alive; t++) {
+            w.setIteration(t); l.step();
+            if (l.x == 11) { l.controlDx = 0; l.controlDir = -1; }
+        }
+        assertFalse(m._alive, "le loup pilote repu a tue le mouton atteint");
+        assertEquals(1, w.carcasses.size(), "la mise a mort laisse une carcasse");
+    }
+
+    @Test
+    void loupIARepuNeTuePas() {
+        WorldOfCells w = flat();
+        Loup l = new Loup(10, 10, w); l.isFounder = true; w.loups.add(l);
+        l.energie = l.energieD;
+        Mouton m = new Mouton(10, 10, w); m.isFounder = true; w.moutons.add(m);
+        l.postMove(null);
+        assertTrue(m._alive, "un loup de l'IA repu ne tue pas au contact");
+    }
+
     @Test
     void alluresDePilotage() {
         WorldOfCells w = flat();

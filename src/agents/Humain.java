@@ -56,18 +56,22 @@ public class Humain extends Agent {
 	protected boolean preStepAbort() { return !_alive; }
 
 	@Override
-	protected boolean isMyTurn() {
-		// Math.max(1, …) : garde-fou anti division par zero (diviseur 0 si vitesse > 28).
-		return world.getIteration() % Math.max(1, (int)((1.0 / vitesse) * 28)) == 0;
+	protected int turnPeriodTicks() {
+		// Math.max(1, …) : garde-fou anti division par zero. La vitesse evolue sans
+		// borne haute → (int)(28/vitesse) tombe a 0 au-dela de 28 : l'agent agit alors a chaque tick.
+		return Math.max(1, (int) ((1.0 / vitesse) * 28));
 	}
 
 	@Override
 	protected void applyControlSpeed() {
-		// 2 allures seulement : SPRINT=vcourse ; WALK et TROT partagent vpas.
-		switch (controlGait) {
-			case SPRINT: vitesse = vcourse;  break;
-			default:     vitesse = vpas;     break;
-		}
+		vitesse = gaitSpeed(controlGait);
+	}
+
+	/** 2 allures seulement : SPRINT=vcourse ; WALK et TROT partagent vpas. */
+	@Override
+	protected double gaitSpeed(ControlGait g) {
+		if (g == null) return 0;
+		return (g == ControlGait.SPRINT) ? vcourse : vpas;
 	}
 
 	/** Le berger « perçoit » le troupeau : les moutons alimentent preyDir/preyVisible

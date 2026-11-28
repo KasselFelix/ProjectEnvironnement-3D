@@ -382,9 +382,38 @@ public class Agent extends UniqueDynamicObject{
 	/** Pas de déplacement demandé ce tour (dx, dy ∈ {-1,0,1}), permettant les
 	 *  diagonales (0,0 = immobile). Calculé par Landscape selon la vue/regard. */
 	public int controlDx = 0, controlDy = 0;
-	/** Allure imposee par le joueur en pilotage (Maj=SPRINT, W=WALK, defaut TROT). */
+	/** Allure imposee par le joueur en pilotage (Maj=SPRINT, MARCHER allumee=WALK, sinon TROT). */
 	public enum ControlGait { WALK, TROT, SPRINT }
 	public ControlGait controlGait = ControlGait.TROT;
+
+	/** Le modèle rendu est planté au coin de sa case (−lenX/−lenY, GLB du loup et du
+	 *  mouton) ; faux pour un cube centré sur la case ({@link #displayUniqueObject}).
+	 *  Lu par Landscape pour viser le modèle (caméra suivie, halo, picking, culling). */
+	public boolean renderAnchoredAtCorner() { return false; }
+
+	/** Odorat développé : piloté, l'agent voit les odeurs au sol (compétence
+	 *  passive ODORAT de la hotbar). Loup et Ours ; à terme selon l'espèce et les traits. */
+	public boolean hasKeenSmell() { return false; }
+	/** Compétence passive ODORAT allumée (overlay des odeurs en pilotage). Activée par défaut. */
+	public boolean scentSenseOn = true;
+	/** L'espèce a une marche distincte du trot (compétence passive MARCHER). Loup, Ours. */
+	public boolean hasWalkGait() { return false; }
+	/** Compétence passive MARCHER allumée : en pilotage, l'allure par défaut est le pas
+	 *  au lieu du trot (Maj reste le sprint). Éteinte par défaut. */
+	public boolean walkMode = false;
+
+	/** Pilotage : un pas en diagonale couvre √2 case, le tour suivant attend
+	 *  d'autant plus (même vitesse dans toutes les directions). */
+	public static final double PILOT_DIAGONAL_FACTOR = Math.sqrt(2.0);
+	/** Pilotage : tick (fractionnaire) du prochain tour ; -1 = pas d'horloge
+	 *  propre, cadence modulo de l'IA. La fraction se reporte d'un tour à l'autre. */
+	private double pilotNextTurn = -1;
+	/** Pilotage : début (fractionnaire) du pas en cours, et allure sur laquelle il a
+	 *  été programmé ; un changement d'allure recale la fin du pas (isMyTurn). */
+	private double pilotTurnStart = -1;
+	private ControlGait pilotScheduledGait = null;
+	/** Pilotage : le dernier tour a fait un pas en diagonale. */
+	private boolean pilotMovedDiagonally = false;
 
 	/**
 	 * Masque le rendu de cet agent (modèle + flèche) — utilisé par Landscape en
@@ -1298,9 +1327,13 @@ public class Agent extends UniqueDynamicObject{
 		return new double[] { _lastDx / mag, _lastDy / mag };
 	}
 
+	/** Taille du triangle d'orientation, en fraction d'une case (1 = une case de long
+	 *  et de large, l'ancienne taille, qui masquait le modèle). */
+	public static final float ORIENTATION_TRIANGLE_SCALE = 0.45f;
+
 	/**
 	 * Émet (dans un glBegin(GL_QUADS) déjà ouvert) un triangle isocèle pointant
-	 * dans la direction du dernier déplacement, encodé en deux quads dégénérés
+	 * selon le cap visuel de la pose rendue ({@link #renderHeadX()}), encodé en deux quads dégénérés
 	 * (sommet de pointe dupliqué, un quad par face). Cela permet aux agents de garder un
 	 * indicateur visuel d'orientation tout en restant batchés dans le big
 	 * glBegin du Landscape.
@@ -1311,9 +1344,11 @@ public class Agent extends UniqueDynamicObject{
 	 */
 	public void emitOrientationTriangle(GL2 gl, float cx, float cy,
 			float lenX, float lenY, float z) {
-		double[] u = getLastUnit();
-		double udx = u[0];
-		double udy = u[1];
+		// Réduit : à pleine taille (une case), il couvrait tout le modèle.
+		lenX *= ORIENTATION_TRIANGLE_SCALE;
+		lenY *= ORIENTATION_TRIANGLE_SCALE;
+		double udx = renderHeadX();   // cap visuel de la pose rendue
+		double udy = renderHeadY();
 		float apexX = (float) (cx + udx * lenX);
 		float apexY = (float) (cy + udy * lenY);
 		float baseX = (float) (cx - udx * lenX);
@@ -1365,9 +1400,12 @@ public class Agent extends UniqueDynamicObject{
 				applyControlSpeed();                 // cadence réactive (vcourse)
 				if (controlDir >= 0) _orient = controlDir;        // tourne le corps (visuel)
 				boolean acted = consumePlayerActions(p);     // hotbar : manger/hurler remplacent le pas
+				int px = x, py = y;
 				if (!acted && (controlDx != 0 || controlDy != 0) && canMove())  // déplacement (diagonales OK)
 					agents.ai.Locomotion.moveBy(this, world, controlDx, controlDy,
 							agents.ai.MoveConstraints.playerControlled());
+				// Diagonale effective (pas un glissement le long d'un mur sur un seul axe).
+				pilotMovedDiagonally = (x != px && y != py);
 				// La flèche d'orientation suit le cap, même à l'arrêt.
 				_lastDx = orientDx(_orient);
 				_lastDy = orientDy(_orient);
@@ -1380,14 +1418,177 @@ public class Agent extends UniqueDynamicObject{
 			}
 			postMove(p);                // blocs post-mouvement spécifiques (manger, feu, énergie, repro…)
 			recordVisit(x, y);          // mémoire spatiale : trace la cellule occupée ce tour
+			recordTurnForRender();      // journal de tours du rendu (après postMove : vitesse finale du tour)
 		}
 		postTick();                     // tourne CHAQUE tick (ex: drain de feu)
+	}
+
+	/**
+	 * Trajectoire rendue : journal des derniers tours, lu par le rendu seul (pose
+	 * lissée entre deux cases). Écrit à chaque tour, même immobile ; jamais lu par
+	 * l'IA ni par la simulation.
+	 */
+	public final graphics.MotionTrack motion = new graphics.MotionTrack();
+
+	// ── Pose rendue (une par frame, calculée par Landscape avant les passes agents) ──
+	// Position en cases (fraction comprise, repliée sur le tore), altitude monde et
+	// cap visuel unitaire. Tant que updateRenderPose n'a jamais tourné, les
+	// accesseurs rendent la case et le dernier déplacement (rendu par cases).
+	private boolean renderPoseSet = false;
+	private double renderX, renderY;
+	private float renderAlt;
+	private double renderHeadX = 0.0, renderHeadY = 1.0;
+
+	/**
+	 * Calcule la pose rendue de cette frame. {@code smooth} faux : rendu par cases
+	 * (case, altitude de la case, dernier déplacement). Sinon : courbe de
+	 * {@link #motion} au temps {@code now} (ticks, fraction comprise), altitude
+	 * bilinéaire de {@link #computeAgentAltitude} sur les 4 cases voisines (égale à
+	 * celle de la case sur une case entière), cap visuel à rotation bornée.
+	 */
+	public void updateRenderPose(World myWorld, double now, boolean smooth,
+			float normalizeHeight, double maxTurnDegPerTick) {
+		int w = myWorld.getWidth(), h = myWorld.getHeight();
+		double[] u = getLastUnit();
+		renderPoseSet = true;
+		if (!smooth || w <= 0 || h <= 0) {
+			renderX = x;
+			renderY = y;
+			renderAlt = computeAgentAltitude(myWorld, x, y, normalizeHeight);
+			renderHeadX = u[0];
+			renderHeadY = u[1];
+			return;
+		}
+		motion.ensureCell(x, y, w, h);
+		// Agent piloté : trajet droit (au plus un tour de retard) et cap qui suit la
+		// direction demandée tout de suite, pour que les commandes répondent vite.
+		boolean piloted = playerControlled;
+		motion.evaluate(now, w, h, piloted);
+		if (piloted) {
+			double tx = controlDx, ty = controlDy;   // pas demandé (diagonale possible)
+			if (tx == 0 && ty == 0 && controlDir >= 0) { tx = orientDx(controlDir); ty = orientDy(controlDir); }
+			if (tx == 0 && ty == 0) { tx = u[0]; ty = u[1]; }   // immobile : dernier cap
+			motion.updateHeadingToward(now, tx, ty, graphics.MotionTrack.PILOT_MAX_TURN_DEG_PER_TICK);
+		} else {
+			motion.updateHeading(now, u[0], u[1], maxTurnDegPerTick);
+		}
+		renderX = motion.poseX();
+		renderY = motion.poseY();
+		renderAlt = graphics.MotionTrack.bilinear(renderX, renderY, (cx, cy) ->
+				computeAgentAltitude(myWorld, Math.floorMod(cx, w), Math.floorMod(cy, h), normalizeHeight));
+		renderHeadX = motion.headingX();
+		renderHeadY = motion.headingY();
+	}
+
+	/** Position rendue en cases, dans [0, largeur) (case entière sans pose calculée). */
+	public double renderX() { return renderPoseSet ? renderX : x; }
+	public double renderY() { return renderPoseSet ? renderY : y; }
+	/** Cap visuel rendu, vecteur unitaire (repère de {@link #getLastUnit()}). */
+	public double renderHeadX() { return renderPoseSet ? renderHeadX : getLastUnit()[0]; }
+	public double renderHeadY() { return renderPoseSet ? renderHeadY : getLastUnit()[1]; }
+	/** Altitude monde rendue (pile comprise, −1 dans l'eau). */
+	public float renderAltitude(World myWorld, float normalizeHeight) {
+		return renderPoseSet ? renderAlt : computeAgentAltitude(myWorld, x, y, normalizeHeight);
+	}
+
+	/** Abscisse rendue dans la fenêtre décalée de {@code offsetCA_x} (même repli que
+	 *  l'ancien {@code x2} entier, fraction comprise). */
+	public float renderX2(World myWorld, int offsetCA_x) {
+		int w = myWorld.getWidth();
+		double x2 = renderX() - (offsetCA_x % w);
+		if (x2 < 0) x2 += w;
+		return (float) x2;
+	}
+	public float renderY2(World myWorld, int offsetCA_y) {
+		int h = myWorld.getHeight();
+		double y2 = renderY() - (offsetCA_y % h);
+		if (y2 < 0) y2 += h;
+		return (float) y2;
+	}
+
+	/** Angle (degrés, autour de Z+) qui aligne le forward −Y d'un modèle GLB sur le cap rendu. */
+	public float renderModelAngleDeg() {
+		return (float) Math.toDegrees(Math.atan2(renderHeadX(), -renderHeadY()));
+	}
+
+	/**
+	 * Ajoute le tour qui vient de se jouer à {@link #motion} : case finale, tick du
+	 * tour et tick du tour suivant. Appelé après {@code postMove}, qui peut encore
+	 * changer {@code vitesse} (pénalité d'altitude, état) : le tour suivant se prédit
+	 * sur la période finale. {@code vitesse} ne s'écrit que pendant le tour de
+	 * l'agent (et au spawn), donc la prédiction est exacte.
+	 */
+	private void recordTurnForRender() {
+		int w = world.getWidth(), h = world.getHeight();
+		if (w <= 0 || h <= 0) return;   // monde pas encore initialisé
+		long tick = world.getIteration();
+		long next = playerControlled ? schedulePilotTurn(tick)
+				: graphics.MotionTrack.nextTurnTick(tick, turnPeriodTicks());
+		motion.record(x, y, tick, next, w, h);
+	}
+
+	/**
+	 * Horloge du pilotage : le prochain tour vient une période après celui-ci,
+	 * ×√2 après un pas en diagonale. La fraction est reportée (base = échéance
+	 * précédente) pour que la moyenne soit juste malgré la période entière.
+	 * @return le tick entier du prochain tour
+	 */
+	private long schedulePilotTurn(long tick) {
+		double base = (pilotNextTurn > tick - 1 && pilotNextTurn <= tick) ? pilotNextTurn : tick;
+		double period = turnPeriodTicks() * (pilotMovedDiagonally ? PILOT_DIAGONAL_FACTOR : 1.0);
+		pilotTurnStart = base;
+		pilotNextTurn = base + period;
+		pilotScheduledGait = controlGait;
+		return (long) Math.ceil(pilotNextTurn);
+	}
+
+	/**
+	 * Pilotage : l'allure a changé depuis la programmation du pas en cours (Maj
+	 * enfoncé ou relâché, MARCHER). Le reste du pas se parcourt tout de suite à la
+	 * nouvelle allure : durée du pas × ancienne vitesse / nouvelle, avancement gardé
+	 * au tick {@code it}. Le journal du rendu est recalé de même (pose sans saut).
+	 * Les pénalités du pas (pente, nage, diagonale) restent dans la durée d'origine.
+	 */
+	private void retimePilotTurnForGait(long it) {
+		ControlGait from = pilotScheduledGait;
+		pilotScheduledGait = controlGait;
+		double vFrom = gaitSpeed(from), vTo = gaitSpeed(controlGait);
+		if (!(vFrom > 0) || !(vTo > 0) || vFrom == vTo) return;
+		double t0 = pilotTurnStart, t1 = pilotNextTurn;
+		if (t1 <= t0 || it >= t1) return;                 // pas déjà fini : le tour est dû
+		double u = Math.max(0.0, (it - t0) / (t1 - t0));
+		double len = (t1 - t0) * vFrom / vTo;
+		pilotNextTurn = it + (1 - u) * len;
+		pilotTurnStart = pilotNextTurn - len;
+		motion.retimeLast(it, Math.ceil(pilotNextTurn));
 	}
 
 	// ===== Hooks du Template Method (overridés par les sous-classes) =====
 	protected boolean preStepAbort() { return false; }
 	protected void updateDayNight() {}
-	protected boolean isMyTurn() { return true; }
+	/** Période d'un tour en ticks (1 = l'agent agit à chaque tick). Les espèces la
+	 *  tirent de {@code vitesse} ; seule source de la cadence (pas de 28/vitesse ailleurs). */
+	protected int turnPeriodTicks() { return 1; }
+	/** Vitesse de base de l'allure {@code g} en pilotage (sans pénalité de pente,
+	 *  de nage ni de vent) ; 0 si l'espèce ne pilote pas d'allure. */
+	protected double gaitSpeed(ControlGait g) { return 0; }
+
+	/** Tour de l'agent : l'itération courante est un multiple de sa période. */
+	protected boolean isMyTurn() {
+		long it = world.getIteration();
+		if (!playerControlled) {
+			pilotNextTurn = -1;
+			pilotTurnStart = -1;
+			pilotScheduledGait = null;
+			pilotMovedDiagonally = false;
+			return it % turnPeriodTicks() == 0;
+		}
+		// Pilotage : horloge propre (schedulePilotTurn) ; à la prise, la cadence
+		// modulo donne le premier tour. Un changement d'allure recale la fin du pas.
+		if (pilotNextTurn < 0) return it % turnPeriodTicks() == 0;
+		if (controlGait != pilotScheduledGait) retimePilotTurnForGait(it);
+		return it >= pilotNextTurn;
+	}
 	protected void resetTickFlags() {}
 	protected java.util.List<? extends objects.UniqueDynamicObject> predators() { return null; }
 	protected java.util.List<? extends objects.UniqueDynamicObject> prey() { return null; }
@@ -1408,14 +1609,13 @@ public class Agent extends UniqueDynamicObject{
         
         //gl.glColor3f(0.f+(float)(0.5*Math.random()),0.f+(float)(0.5*Math.random()),0.f+(float)(0.5*Math.random()));
         
-    	int x2 = (x-(offsetCA_x%myWorld.getWidth()));
-    	if ( x2 < 0) x2+=myWorld.getWidth();
-    	int y2 = (y-(offsetCA_y%myWorld.getHeight()));
-    	if ( y2 < 0) y2+=myWorld.getHeight();
+    	// Pose rendue (lissée entre deux cases, cf. updateRenderPose).
+    	float x2 = renderX2(myWorld, offsetCA_x);
+    	float y2 = renderY2(myWorld, offsetCA_y);
 
     	// Altitude unifiée (sol + stone + lave + clamp eau) — même règle que
-    	// Loup/Mouton via Agent.computeAgentAltitude.
-    	float altitude = computeAgentAltitude(myWorld, x, y, normalizeHeight);
+    	// Loup/Mouton via Agent.computeAgentAltitude, interpolée sur la pose.
+    	float altitude = renderAltitude(myWorld, normalizeHeight);
 
         gl.glColor3f(1.f,1.f,1.f);
         gl.glVertex3f( offset+x2*stepX-lenX, offset+y2*stepY-lenY, altitude);

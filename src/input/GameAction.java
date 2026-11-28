@@ -34,10 +34,10 @@ public enum GameAction {
     HEIGHT_DOWN      ("Relief -",              KeyContext.SIMULATION, ActionType.TAP, KeyEvent.VK_1),
     HEIGHT_UP        ("Relief +",              KeyContext.SIMULATION, ActionType.TAP, KeyEvent.VK_2),
     HELP_CONSOLE     ("Aide (console)",        KeyContext.SIMULATION, ActionType.TAP, KeyEvent.VK_H),
-    CAM_FWD          ("Camera avant",          KeyContext.SIMULATION, ActionType.TAP, KeyEvent.VK_Z, KeyEvent.VK_UP),
-    CAM_BACK         ("Camera arriere",        KeyContext.SIMULATION, ActionType.TAP, KeyEvent.VK_S, KeyEvent.VK_DOWN),
-    CAM_LEFT         ("Camera gauche",         KeyContext.SIMULATION, ActionType.TAP, KeyEvent.VK_Q, KeyEvent.VK_LEFT),
-    CAM_RIGHT        ("Camera droite",         KeyContext.SIMULATION, ActionType.TAP, KeyEvent.VK_D, KeyEvent.VK_RIGHT),
+    CAM_FWD          ("Camera avant",          KeyContext.SIMULATION, ActionType.HELD, KeyEvent.VK_Z, KeyEvent.VK_UP),
+    CAM_BACK         ("Camera arriere",        KeyContext.SIMULATION, ActionType.HELD, KeyEvent.VK_S, KeyEvent.VK_DOWN),
+    CAM_LEFT         ("Camera gauche",         KeyContext.SIMULATION, ActionType.HELD, KeyEvent.VK_Q, KeyEvent.VK_LEFT),
+    CAM_RIGHT        ("Camera droite",         KeyContext.SIMULATION, ActionType.HELD, KeyEvent.VK_D, KeyEvent.VK_RIGHT),
     CAM_DOWN         ("Camera bas (maintenu)", KeyContext.SIMULATION, ActionType.HELD, KeyEvent.VK_SPACE),
     CAM_UP           ("Camera haut (maintenu)",KeyContext.SIMULATION, ActionType.HELD, KeyEvent.VK_SHIFT),
 
@@ -49,7 +49,7 @@ public enum GameAction {
     TURN_CAM_LEFT    ("Tourner camera gauche", KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_A),
     TURN_CAM_RIGHT   ("Tourner camera droite", KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_E),
     SPRINT     ("Sprinter (maintenu)", KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_SHIFT),
-    WALK       ("Marcher (maintenu)",  KeyContext.PILOTAGE, ActionType.HELD, KeyEvent.VK_W),
+    WALK       ("Marcher (bascule)",   KeyContext.PILOTAGE, ActionType.TAP,  KeyEvent.VK_W),
     JUMP       ("Sauter (reserve)",    KeyContext.PILOTAGE, ActionType.TAP,  KeyEvent.VK_SPACE),
     // HOTBAR_1..HOTBAR_9 : DOIVENT rester consecutives (Landscape mappe via ordinal()).
     HOTBAR_1   ("Hotbar 1", KeyContext.PILOTAGE, ActionType.TAP, KeyEvent.VK_1),

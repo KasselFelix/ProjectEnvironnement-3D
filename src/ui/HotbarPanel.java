@@ -32,6 +32,8 @@ public final class HotbarPanel {
             boolean avail = !empty && a.available(controlled);
             boolean active = !empty && a.isActive(controlled);
             double cd = empty ? 0.0 : a.cooldownFraction(controlled);
+            boolean toggle = !empty && a.isToggle();
+            boolean on = toggle && a.isToggledOn(controlled);
 
             // Fond du slot.
             ui.drawQuad(gl, x, y0, SLOT_W, SLOT_H, 0.08f, 0.08f, 0.10f, 0.78f);
@@ -43,6 +45,12 @@ public final class HotbarPanel {
                 String label = a.label;
                 while (label.length() > 1 && ui.textWidth(label) > SLOT_W - 10) label = label.substring(0, label.length() - 1);
                 ui.drawText(gl, x + 6, y0 + 28, viewportHeight, label, c, c, c);
+            }
+            // Compétence passive : état ON/OFF en haut à droite.
+            if (toggle && avail) {
+                String st = on ? "ON" : "OFF";
+                ui.drawText(gl, x + SLOT_W - 4 - ui.textWidth(st), y0 + 13, viewportHeight, st,
+                        on ? 0.35f : 0.60f, on ? 0.90f : 0.60f, on ? 1.00f : 0.60f);
             }
 
             // Balayage radial du cooldown (sauf si l'action est en cours d'execution).
@@ -58,6 +66,8 @@ public final class HotbarPanel {
                 ui.drawBorder(gl, x, y0, SLOT_W, SLOT_H, 0.30f, 0.95f, 0.35f, 1f);
             } else if (refusing && i == flashSlot) {
                 ui.drawBorder(gl, x, y0, SLOT_W, SLOT_H, 0.95f, 0.25f, 0.20f, 1f);
+            } else if (on) {
+                ui.drawBorder(gl, x, y0, SLOT_W, SLOT_H, 0.35f, 0.85f, 1f, 1f);   // passive allumée : cyan fixe
             } else if (active) {
                 float pulse = 0.55f + 0.45f * (float) Math.sin(now * 0.012);
                 ui.drawBorder(gl, x, y0, SLOT_W, SLOT_H, 1f, 0.90f, 0.20f, pulse);

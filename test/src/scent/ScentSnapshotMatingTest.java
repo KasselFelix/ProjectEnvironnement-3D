@@ -37,4 +37,17 @@ class ScentSnapshotMatingTest {
         assertTrue(hasMating, "un puff mating present");
         assertTrue(hasPlain, "un puff ordinaire present");
     }
+
+    @Test
+    void snapshotSansLOdeurDeLAgentPilote() {
+        WorldOfCells w = flatWorld();
+        ScentField f = w.getScentField();
+        int now = w.getIteration();
+        f.emit(7, ScentKind.LOUP, -1, 10, 10, now, 1.0f, false);   // le loup pilote
+        f.emit(8, ScentKind.LOUP, -1, 20, 20, now, 1.0f, false);   // un congenere
+        float[][] snap = f.debugPuffSnapshot(now, 7);
+        assertEquals(1, snap.length, "sa propre odeur est retiree");
+        assertEquals(20f, snap[0][0], 1e-3, "celle du congenere reste");
+        assertEquals(2, f.debugPuffSnapshot(now).length, "sans filtre : tout");
+    }
 }

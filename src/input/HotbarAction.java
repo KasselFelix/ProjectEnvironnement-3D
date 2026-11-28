@@ -19,7 +19,11 @@ public enum HotbarAction {
     SAUTER        ("Sauter",        false),
     ORDRE         ("Donner ordre",  false),
     SE_SOUMETTRE  ("Se soumettre",  false),
-    SE_REPRODUIRE ("Se reproduire", false);
+    SE_REPRODUIRE ("Se reproduire", false),
+    /** Compétence passive (interrupteur) : voir les odeurs au sol en pilotage. */
+    ODORAT        ("Odorat",        true),
+    /** Compétence passive (interrupteur, aussi sur W) : le pas remplace le trot par défaut. */
+    MARCHER       ("Marcher",       true);
 
     public final String label;       // ASCII (UI GLUT)
     private final boolean implemented;
@@ -28,6 +32,18 @@ public enum HotbarAction {
 
     public boolean isImplemented() { return this != VIDE && implemented; }
 
+    /** Compétence passive : le slot allume ou éteint un effet au lieu de lancer une action. */
+    public boolean isToggle() { return this == ODORAT || this == MARCHER; }
+
+    /** État d'une compétence passive pour cet agent (false pour une action ordinaire). */
+    public boolean isToggledOn(Agent a) {
+        switch (this) {
+            case ODORAT:  return a.hasKeenSmell() && a.scentSenseOn;
+            case MARCHER: return a.hasWalkGait() && a.walkMode;
+            default:      return false;
+        }
+    }
+
     /** L'action est-elle realisable MAINTENANT par cet agent (grisage UI + gate d'execution) ? */
     public boolean available(Agent a) {
         if (!isImplemented()) return false;
@@ -35,6 +51,8 @@ public enum HotbarAction {
             case MANGER:  return a.canEatCarcassNow();
             case HURLER:  return (a instanceof Loup) && ((Loup) a).canHowlNow();
             case BROUTER: return a.canGrazeNow();
+            case ODORAT:  return a.hasKeenSmell();
+            case MARCHER: return a.hasWalkGait();
             default:      return false;
         }
     }
@@ -46,6 +64,8 @@ public enum HotbarAction {
             case MANGER:  a.playerWantsEat = true; break;
             case HURLER:  ((Loup) a).playerWantsHowl = true; break;
             case BROUTER: a.playerWantsGraze = true; break;
+            case ODORAT:  a.scentSenseOn = !a.scentSenseOn; break;   // immédiat, ne prend pas de tour
+            case MARCHER: a.walkMode = !a.walkMode; break;           // idem
             default: break;
         }
     }
