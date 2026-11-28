@@ -412,6 +412,9 @@ public class Agent extends UniqueDynamicObject{
 	 *  été programmé ; un changement d'allure recale la fin du pas (isMyTurn). */
 	private double pilotTurnStart = -1;
 	private ControlGait pilotScheduledGait = null;
+	/** Pilotage : nombre de tours joués sous contrôle du joueur (Landscape y lit
+	 *  qu'un tour est passé, pour effacer un appui court retenu). */
+	public int pilotTurnCount = 0;
 	/** Pilotage : le dernier tour a fait un pas en diagonale. */
 	private boolean pilotMovedDiagonally = false;
 
@@ -1349,29 +1352,45 @@ public class Agent extends UniqueDynamicObject{
 		lenY *= ORIENTATION_TRIANGLE_SCALE;
 		double udx = renderHeadX();   // cap visuel de la pose rendue
 		double udy = renderHeadY();
-		float apexX = (float) (cx + udx * lenX);
-		float apexY = (float) (cy + udy * lenY);
+		// Pointe de flèche à encoche (forme de curseur) : pointe à l'avant, deux
+		// ailes à l'arrière, encoche au milieu de l'arrière. Plus longue que large
+		// et creusée derrière, l'avant ne se confond pas avec l'arrière.
+		float tipX = (float) (cx + udx * lenX);
+		float tipY = (float) (cy + udy * lenY);
 		float baseX = (float) (cx - udx * lenX);
 		float baseY = (float) (cy - udy * lenY);
-		// perp_right de (udx, udy) = (udy, -udx). On reporte une demi-largeur
-		// de chaque côté → triangle isocèle large d'une cellule à la base.
-		float blX = (float) (baseX - udy * lenX);
-		float blY = (float) (baseY + udx * lenY);
-		float brX = (float) (baseX + udy * lenX);
-		float brY = (float) (baseY - udx * lenY);
-		// Sommet dupliqué en positions 1-2 (voisines) : les deux découpages
-		// possibles du quad donnent le même triangle. L'ancien ordre (apex, bl,
-		// apex, br) dupliquait les sommets 1 et 3 : coupé selon la diagonale 1-3
-		// (pilote NVIDIA), il ne restait que deux triangles plats → triangle
-		// invisible. Deux quads, un par sens d'enroulement (la scène cull une face).
-		gl.glVertex3f(apexX, apexY, z);
-		gl.glVertex3f(apexX, apexY, z);
-		gl.glVertex3f(blX,   blY,   z);
-		gl.glVertex3f(brX,   brY,   z);
-		gl.glVertex3f(apexX, apexY, z);
-		gl.glVertex3f(apexX, apexY, z);
-		gl.glVertex3f(brX,   brY,   z);
-		gl.glVertex3f(blX,   blY,   z);
+		float notchX = (float) (cx - udx * lenX * ARROW_NOTCH_FRAC);
+		float notchY = (float) (cy - udy * lenY * ARROW_NOTCH_FRAC);
+		// perp_right de (udx, udy) = (udy, -udx) : ailes à ARROW_HALF_WIDTH de l'axe.
+		float blX = (float) (baseX - udy * lenX * ARROW_HALF_WIDTH);
+		float blY = (float) (baseY + udx * lenY * ARROW_HALF_WIDTH);
+		float brX = (float) (baseX + udy * lenX * ARROW_HALF_WIDTH);
+		float brY = (float) (baseY - udx * lenY * ARROW_HALF_WIDTH);
+		// Forme concave : deux triangles (pointe, aile, encoche), jamais un quad
+		// concave (son découpage dépend du pilote). Chaque triangle est un quad
+		// dégénéré au sommet dupliqué en positions 1-2 (voisines : les deux
+		// découpages donnent le même triangle ; dupliquer 1 et 3 le rend invisible
+		// sur NVIDIA), émis dans les deux sens d'enroulement (la scène cull une face).
+		emitDoubleSidedTriangle(gl, tipX, tipY, blX, blY, notchX, notchY, z);
+		emitDoubleSidedTriangle(gl, tipX, tipY, notchX, notchY, brX, brY, z);
+	}
+
+	/** Longueur de l'encoche, en fraction de la demi-longueur de la flèche. */
+	private static final float ARROW_NOTCH_FRAC = 0.35f;
+	/** Demi-largeur des ailes, en fraction de la demi-longueur de la flèche. */
+	private static final float ARROW_HALF_WIDTH = 0.75f;
+
+	/** Triangle (a, b, c) visible des deux côtés, dans un glBegin(GL_QUADS) en cours. */
+	private static void emitDoubleSidedTriangle(GL2 gl, float ax, float ay,
+			float bx, float by, float cx, float cy, float z) {
+		gl.glVertex3f(ax, ay, z);
+		gl.glVertex3f(ax, ay, z);
+		gl.glVertex3f(bx, by, z);
+		gl.glVertex3f(cx, cy, z);
+		gl.glVertex3f(ax, ay, z);
+		gl.glVertex3f(ax, ay, z);
+		gl.glVertex3f(cx, cy, z);
+		gl.glVertex3f(bx, by, z);
 	}
 
 	//abstract public void step( );
@@ -1397,6 +1416,7 @@ public class Agent extends UniqueDynamicObject{
 				// Landscape). L'environnement (postMove/postTick) s'applique quand
 				// même — l'agent peut mourir dans la lave, prendre feu, manger.
 				currentState = agents.ai.AgentState.CONTROLLED;
+				pilotTurnCount++;
 				applyControlSpeed();                 // cadence réactive (vcourse)
 				if (controlDir >= 0) _orient = controlDir;        // tourne le corps (visuel)
 				boolean acted = consumePlayerActions(p);     // hotbar : manger/hurler remplacent le pas

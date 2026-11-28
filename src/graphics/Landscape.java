@@ -234,6 +234,10 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 		// Agent actuellement piloté (au plus UN à la fois). Sert à relâcher le
 		// précédent quand on en sélectionne / contrôle un autre.
 		private agents.Agent controlledAgent = null;
+		/** Appui court de déplacement en attente du tour de l'agent piloté (latchMoveTap). */
+		private final Object tapLock = new Object();
+		private int tapFwd = 0, tapStrafe = 0, tapTurnRef = -1;
+		private boolean tapPending = false;
 
 		// Slot de hotbar en echec (action indisponible) a faire clignoter (D5).
 		private int hotbarFlashSlot = -1;
@@ -2721,8 +2725,12 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
                 } else {
                     viewR = (config != null && config.viewDistanceCells > 0) ? config.viewDistanceCells : dxView;
                 }
-                int[] xWin = ViewWindow.of(dxView, viewR);
-                int[] yWin = ViewWindow.of(dyView, viewR);
+                // Vue de dessus : le cadrage remplit l'écran avec viewR cases pile ; le
+                // décalage fractionnaire (pan libre, suivi) glisse la carte jusqu'à une
+                // case : une rangée de plus de chaque côté évite de découvrir le ciel.
+                int winR = VIEW_FROM_ABOVE ? viewR + 1 : viewR;
+                int[] xWin = ViewWindow.of(dxView, winR);
+                int[] yWin = ViewWindow.of(dyView, winR);
 
                 final boolean useTex = (groundTex != null);
                 if (useTex) {
@@ -3629,6 +3637,19 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 					- (inputHandler.isHeld(input.GameAction.AGENT_BACK) ? 1 : 0);
 			int strafe = (inputHandler.isHeld(input.GameAction.AGENT_RIGHT) ? 1 : 0)
 					- (inputHandler.isHeld(input.GameAction.AGENT_LEFT) ? 1 : 0);
+			// Appui court retenu (latchMoveTap) : compte tant que l'agent n'a pas joué
+			// de tour depuis qu'il a été posé dans controlDx/Dy (cette méthode tourne
+			// avant les pas de simulation de la frame), puis s'efface.
+			synchronized (tapLock) {
+				if (tapPending) {
+					if (tapTurnRef < 0) tapTurnRef = a.pilotTurnCount;
+					else if (a.pilotTurnCount != tapTurnRef) { tapPending = false; tapFwd = 0; tapStrafe = 0; }
+				}
+				if (tapPending) {
+					if (fwd == 0) fwd = tapFwd;
+					if (strafe == 0) strafe = tapStrafe;
+				}
+			}
 
 			// Vecteur monde désiré. Au rendu : +X = Est (droite écran), +Y = Nord (HAUT
 			// écran — vue de dessus sans rotation). Vue de dessus : avancer = +Y (monte
@@ -4001,9 +4022,30 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 			// Idem pour W et pour un slot rebindé ailleurs que sur la rangée de chiffres
 			// (TOUCHES) : il passe par dispatchTap(HOTBAR_n) et basculerait à chaque répétition.
 			if (key.isAutoRepeat() && (direct == input.GameAction.WALK || isHotbarAction(direct))) return;
+			if (!key.isAutoRepeat() && controllingAgent()) latchMoveTap(direct);
 
 			// 5) Dispatch normal (TAP immédiat, HELD ajouté au held-set).
 			inputHandler.onKeyPressed(key.getKeyCode());
+		}
+
+		/**
+		 * Appui court sur une touche de déplacement en pilotage : retenu jusqu'au
+		 * prochain tour de l'agent (thread des événements). Sans cela, une touche
+		 * relâchée avant ce tour (7 à 14 ticks au pas) ne déplace pas l'agent.
+		 */
+		private void latchMoveTap(input.GameAction a) {
+			if (a == null) return;
+			synchronized (tapLock) {
+				switch (a) {
+				case AGENT_FWD:   tapFwd = 1;     break;
+				case AGENT_BACK:  tapFwd = -1;    break;
+				case AGENT_LEFT:  tapStrafe = -1; break;
+				case AGENT_RIGHT: tapStrafe = 1;  break;
+				default: return;
+				}
+				tapPending = true;
+				tapTurnRef = -1;
+			}
 		}
 
 		/** Action d'un slot de hotbar (HOTBAR_1..HOTBAR_9, consécutives dans l'enum). */
@@ -4072,6 +4114,7 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 				// est forcée et le clavier est rendu à la scène (menu défocalisé).
 				if (selectedAgent != null && isAgentStillAlive(selectedAgent)) {
 					inputHandler.clearHeld();
+					synchronized (tapLock) { tapPending = false; tapFwd = 0; tapStrafe = 0; }
 					if (selectedAgent.playerControlled) {
 						releaseControl(selectedAgent);          // contrôle OFF
 					} else {
