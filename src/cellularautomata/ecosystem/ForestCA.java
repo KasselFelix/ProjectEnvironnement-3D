@@ -1,7 +1,6 @@
 
 package cellularautomata.ecosystem;
 
-import java.util.Collections;
 
 import cellularautomata.CellularAutomataDouble;
 import cellularautomata.CellularAutomataInteger;

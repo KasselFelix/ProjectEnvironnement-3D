@@ -1,7 +1,6 @@
 package cellularautomata.ecosystem;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import agents.Humain;

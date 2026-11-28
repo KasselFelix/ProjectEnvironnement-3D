@@ -2948,7 +2948,6 @@ public class Landscape implements GLEventListener, KeyListener, MouseListener {
 	                	{
 		                	double height = _myWorld.getCellHeight(x+movingX,y+movingY);
 	           			 	int forestState = _myWorld.getForestCAValue(x+movingX,y+movingY);
-	           			 	int herbeState = _myWorld.getGrassCAValue(x+movingX,y+movingY);
 
 	                    	float normalizeHeight = ( smoothFactor[0] + smoothFactor[1] + smoothFactor[2] + smoothFactor[3] ) / 4.f * (float)heightBooster * heightFactor;
 	                    	nHeihtCommonObj=normalizeHeight;
